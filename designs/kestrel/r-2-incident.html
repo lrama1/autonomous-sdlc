@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>R · Incident INC-512 hotfix</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="aisha" data-nav="release" data-crumb="INC-512 <span>› Hotfix HF-003</span>" data-story="Nov 24 · incident">
+<div id="content">
+  <div class="callout dev" style="margin-bottom:14px"><span class="ci">🚨</span><div><b>Hotfix in effect, inside the change freeze.</b> Deployed under the hotfix path with a single approval. The follow-up review is <b>due in 21 h 40 m</b>. Follow-up <b>FU-031</b> was opened automatically. Normal releases are held until it is closed.</div></div>
+
+  <div class="page-head">
+    <div><div class="row"><h1>HF-003 · Checkout failing during peak week</h1><span class="pill dev">Follow-up review due</span></div>
+      <div class="muted">Incident INC-512 · Tuesday before Black Friday · the tax provider timed out and <b>6%</b> of checkouts failed</div></div>
+    <div class="actions"><button class="btn primary">Start follow-up review</button></div>
+  </div>
+
+  <div class="stepper">
+    <div class="step done"><span class="dot">✓</span>Declared</div><div class="step-line"></div>
+    <div class="step done"><span class="dot">✓</span>Hotfix approval</div><div class="step-line"></div>
+    <div class="step done"><span class="dot">✓</span>Deployed</div><div class="step-line"></div>
+    <div class="step active"><span class="dot">4</span>Follow-up review</div><div class="step-line"></div>
+    <div class="step"><span class="dot">5</span>Closed</div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card" id="what"><div class="card-h"><h2>What happened</h2></div>
+        <ul class="timeline small">
+          <li class="done"><b>Alert</b>: checkout error rate 6.1%. Tax quote calls to the provider time out.<div class="when">09:42</div></li>
+          <li class="done"><b>Aisha Khan declared a hotfix</b>: add a circuit breaker to the tax call and fall back to cached rates, behind a flag. One file, plus tests.<div class="when">09:50</div></li>
+          <li class="done"><b>Dmitri Volkov approved as the named hotfix approver</b> (single approval, ACT-0231)<div class="when">10:04</div></li>
+          <li class="done"><b>Deployed</b> by the pipeline to a 5% canary, then 100%. Error rate fell to 0.2%.<div class="when">10:18 – 10:31</div></li>
+          <li class="run"><b>Follow-up review</b> by the Product Owner, the Architect and QA required within 24 hours<div class="when">due Nov 25 10:31</div></li></ul></div>
+
+      <div class="card" id="dev"><div class="card-h"><h2>Follow-up FU-031</h2><span class="pill dev right">Open</span></div>
+        <dl class="kv small">
+          <dt>Skipped checks</dt><dd>Change-freeze rule, full G3 review, G4 re-verification</dd>
+          <dt>Safeguards used</dt><dd>Named hotfix approver, one-file scoped change, feature flag, 5% canary with automatic rollback, targeted tests run</dd>
+          <dt>Required to close</dt><dd>Retro-active review, a regression test for the timeout path, finance reconciles the estimated tax, and a change request for the permanent fix</dd></dl>
+        <div class="callout warn small" style="margin-top:10px"><span class="ci">⚠</span><div>Open follow-ups <b>hold every normal release</b> until FU-031 is closed. Security fixes and further hotfixes are still allowed.</div></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card" id="posthoc"><div class="card-h"><h3>Follow-up review tasks</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Nadia Rahman</b> · Product Owner<div class="muted">Review the justification and customer impact</div></div></li>
+          <li><span class="wt">●</span><div><b>Owen Brooks</b> · Architect<div class="muted">Review the code change and the fallback design</div></div></li>
+          <li><span class="wt">●</span><div><b>Chloe Tan</b> · QA Lead<div class="muted">Confirm the regression test was added</div></div></li>
+          <li><span class="wt">●</span><div><b>Finance</b><div class="muted">Reconcile 1,284 orders that used estimated tax: 0 of 1,284 done</div></div></li></ul></div>
+      <div class="card"><h3>Counts toward metrics</h3><p class="small muted" style="margin:0">Hotfixes this quarter: <b>1</b>. A rising count is flagged to the Product Owner in the weekly portfolio view.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

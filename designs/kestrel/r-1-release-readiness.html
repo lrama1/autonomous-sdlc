@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>R · G6 release readiness</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .lt td,.lt th{text-align:right}
+  .lt td:first-child,.lt th:first-child{text-align:left}
+  .cal{position:relative;height:72px;border:1px solid var(--border);border-radius:8px;background:#fafbfc;margin:6px 0 4px;overflow:hidden}
+  .cal .fz{position:absolute;top:44px;bottom:0;background:repeating-linear-gradient(45deg,#fde8e6,#fde8e6 6px,#fbd5d1 6px,#fbd5d1 12px);color:#a52a1f;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
+  .cal .m{position:absolute;top:4px;bottom:0;width:2px;background:var(--prog)}
+  .cal .m span{position:absolute;top:0;left:6px;font-size:11px;white-space:nowrap;color:#1d2939;font-weight:600}
+</style>
+</head>
+<body data-user="dmitri" data-nav="release" data-crumb="G6 · Release <span>› 4.2</span>" data-story="Nov 9 · 11:00">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G6 · Release 4.2 · Peak-season readiness</h1><span class="pill wait" id="statePill">Waiting on you</span></div>
+      <div class="muted">Prepared by <span class="chip agent">DevOps Agent</span> · commit <span class="hash">e1b84d9</span> · one approval needed from the Release Manager</div>
+    </div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">63</div><div class="l">Changes in this release (21 pre-approved)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">18</div><div class="l">Stories done</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Failing checks</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">8 days</div><div class="l">Until the change freeze</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card" id="load"><div class="card-h"><h2>Peak-load test</h2><span class="chip right">run Nov 8 on the staging copy</span></div>
+        <p class="small muted" style="margin-top:0">Traffic replayed at <b>3× last year's Black Friday peak</b>, with checkout, search and order tracking running together.</p>
+        <table class="t lt"><thead><tr><th>Measure</th><th>Limit</th><th>Result</th><th>Status</th></tr></thead><tbody>
+          <tr><td>Checkout p95 latency</td><td>900 ms</td><td>640 ms</td><td><span class="chip ok">✔ pass</span></td></tr>
+          <tr><td>Checkout error rate</td><td>1.0%</td><td>0.04%</td><td><span class="chip ok">✔ pass</span></td></tr>
+          <tr><td>Orders per minute sustained</td><td>1,500</td><td>2,310</td><td><span class="chip ok">✔ pass</span></td></tr>
+          <tr><td>Search p95 latency</td><td>400 ms</td><td>310 ms</td><td><span class="chip ok">✔ pass</span></td></tr>
+          <tr><td>Database CPU at peak</td><td>70%</td><td>58%</td><td><span class="chip ok">✔ pass</span></td></tr></tbody></table></div>
+
+      <div class="card" id="checklist"><div class="card-h"><h2>Release checklist</h2></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>CI green on the release commit. Dependency and secret scans clean.</div></li>
+          <li><span class="ok">✔</span><div>Payment-scope change (PR #118) had Architect and Security approval, no auto-merge</div></li>
+          <li><span class="ok">✔</span><div><b>Change-freeze calendar.</b> Nov 10 is before the freeze (Nov 18 to Dec 2). After that only security fixes and hotfixes may ship.</div></li>
+          <li><span class="ok">✔</span><div>Kill switches ready: <span class="mono">promo-scheduler</span>, <span class="mono">new-order-tracking</span></div></li>
+          <li><span class="ok">✔</span><div>Rollback rehearsed in staging in 4 minutes</div></li>
+          <li><span class="ok">✔</span><div>You did not author or start any change in this release. The pipeline deploys, not a person.</div></li></ul>
+        <div class="small muted" style="margin-top:6px">Calendar position</div>
+        <div class="cal"><div class="fz" style="left:61%;width:29%">Change freeze · Nov 18 – Dec 2</div>
+          <div class="m" style="left:45%"><span>Release 4.2 · Nov 10</span></div><div class="m" style="left:80%;background:#a52a1f"><span style="top:20px;left:auto;right:6px;color:#a52a1f">Black Friday · Nov 27</span></div></div></div>
+
+      <div class="card"><div class="card-h"><h2>Release notes</h2><span class="chip agent right">drafted by the DevOps Agent</span></div>
+        <ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px">
+          <li><b>New:</b> faster, safer checkout with hosted card fields and retry-safe orders.</li>
+          <li><b>New:</b> order tracking and self-service returns for customers.</li>
+          <li><b>New:</b> promotions scheduler for merchandising, with approval for discounts over 40%.</li>
+          <li><b>Changed:</b> warehouse labels print as PDF to match the carrier's Nov 12 change (CR-004).</li>
+          <li><b>Known:</b> order emails can arrive up to 2 minutes late during very high load.</li></ul></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Your approval</h3></div>
+        <div class="row"><button class="btn primary" id="approve">Approve release 4.2</button><button class="btn">Not yet</button></div>
+        <div class="small muted" style="margin-top:8px">One click. Recorded in the activity log.</div></div>
+
+      <div class="card" id="canary"><div class="card-h"><h3>Canary plan</h3></div>
+        <pre class="code">5% of shoppers for 30 min
+25% for 1 hour
+then 100%</pre>
+        <div class="small muted" style="margin:8px 0 4px"><b>Rolls back automatically</b> on business signals, not only errors:</div>
+        <ul class="checks small">
+          <li><span class="ok">●</span><div>Conversion drops more than <b>3%</b> against the control group</div></li>
+          <li><span class="ok">●</span><div>Payment failures exceed <b>1.5%</b></div></li>
+          <li><span class="ok">●</span><div>p95 checkout latency above <b>900 ms</b></div></li></ul></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Release 4.2 authorized.</b> The pipeline started the canary at 5%. Activity entry <b>ACT-0204</b>. Rollback fires on conversion, payment failure or latency.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('approve').addEventListener('click', () => {
+    document.getElementById('result').hidden = false;
+    const p = document.getElementById('statePill'); p.className = 'pill done'; p.textContent = 'Authorized';
+  });
+</script>
+</body>
+</html>

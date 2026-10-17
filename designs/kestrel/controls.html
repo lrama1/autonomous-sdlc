@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel · Product controls</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  tr[data-r]{cursor:pointer}
+  tr[data-r].sel td{background:#eef4ff}
+</style>
+</head>
+<body data-nav="controls">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Product controls</h1><span class="pill prog" id="pill"></span></div>
+      <div class="muted" id="sub"></div></div>
+    <div class="actions"><span class="small muted">Initiative:</span>
+      <select id="init" style="width:auto"><option value="303">INIT-303 · Merchandising</option><option value="304">INIT-304 · Fulfillment and support</option></select></div>
+  </div>
+
+  <div class="callout info small" style="margin-bottom:14px"><span class="ci">ℹ</span><div>These are Kestrel's <b>own business rules</b>, Each rule has a named owner, is written as a story, is protected by tests, and has a verified sandbox run. A rule with no test, or a test whose rule changed, shows up here as a gap.</div></div>
+
+  <div class="grid g4" id="tiles" style="margin-bottom:16px"></div>
+
+  <div class="grid g-main">
+    <div class="card flush"><table class="t"><thead><tr><th>Rule</th><th>What must always be true</th><th>Story</th><th>Tests</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div class="card" id="bc"></div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script>
+  const Q = new URLSearchParams(location.search);
+  const SETS = {
+    303: { id: 'INIT-303', name: 'Merchandising: catalog and promotions', story: 'Oct 28 · 15:40', sub: 'Rules for how products are priced and promoted · owner: Nadia Rahman',
+      rules: [
+        ['BC-01', 'A discount above 40% needs a second approver', 'US-311', 6, 'ok', 'RUN-0150', 'apps/merch/promotions/rules/discountLimit.ts', 'Deep discounts are the most common expensive mistake. A typo can turn 14% into 140%.'],
+        ['BC-02', 'No product is ever priced below its cost', 'US-312', 9, 'ok', 'RUN-0151', 'apps/merch/pricing/rules/floorPrice.ts', 'Selling at a loss is allowed only on purpose, through a separate clearance flow.'],
+        ['BC-03', 'Two promotions cannot overlap on the same product', 'US-313', 11, 'ok', 'RUN-0152', 'apps/merch/promotions/rules/noOverlap.ts', 'Overlaps stack discounts by accident. Verified with a fake clock across start and end times.'],
+        ['BC-04', 'Every price change is logged with who, when and why', 'US-314', 7, 'ok', 'RUN-0153', 'apps/merch/pricing/priceHistory.ts', 'Lets support explain a price and lets finance reconcile revenue.'],
+        ['BC-05', 'A scheduled promotion can be previewed as shoppers will see it', 'US-315', 5, 'wait', 'pending pilot', 'apps/merch/promotions/preview.ts', 'Tests pass. Real-world confirmation comes from the three-merchandiser pilot.']
+      ] },
+    304: { id: 'INIT-304', name: 'Fulfillment and support tools', story: 'Oct 31 · 09:15', sub: 'Rules for warehouse, shipping and customer support tools · owner: Nadia Rahman',
+      rules: [
+        ['BC-11', 'A refund over $200 needs a second person', 'US-321', 8, 'ok', 'RUN-0161', 'apps/support/refunds/rules/refundLimit.ts', 'Limits the damage from a mistake or a compromised support account.'],
+        ['BC-12', 'Customer personal details are masked, and every reveal is logged', 'US-322', 10, 'ok', 'RUN-0162', 'apps/support/pii/maskedView.ts', 'Support rarely needs a full address or phone number. A logged reveal makes snooping visible.'],
+        ['BC-13', 'The item scanned at packing must match the order line', 'US-323', 6, 'ok', 'RUN-0163', 'apps/warehouse/pick/scanMatch.ts', 'Wrong-item shipments are expensive to fix and annoy customers.'],
+        ['BC-14', 'Each shipment gets exactly one shipping label', 'US-324', 4, 'err', 'needs CR-004', 'apps/warehouse/labels/printLabel.ts', 'The carrier is changing its label format on Nov 12. This rule and its tests must be updated by change request CR-004.'],
+        ['BC-15', 'An inventory adjustment over 20 units needs a second person', 'US-325', 5, 'ok', 'RUN-0164', 'apps/warehouse/inventory/adjustLimit.ts', 'Large adjustments hide theft and counting errors.']
+      ] }
+  };
+  const S = SETS[Q.get('i')] || SETS[303];
+  document.body.dataset.user = Q.get('u') || 'nadia';
+  document.body.dataset.crumb = `${S.id} <span>› Product controls</span>`;
+  document.body.dataset.story = S.story;
+</script>
+<script src="../assets/app.js"></script>
+<script>
+  const ST = { ok: ['chip ok', '✔ Verified'], wait: ['chip warn', '⏳ Pilot pending'], err: ['chip err', '⚑ Needs change request'] };
+  document.getElementById('init').value = String(Object.keys(SETS).find(k => SETS[k] === S));
+  document.getElementById('sub').textContent = S.sub;
+  document.getElementById('pill').textContent = S.id + ' · ' + S.name;
+  const n = S.rules.length, tests = S.rules.reduce((a, r) => a + r[3], 0);
+  const verified = S.rules.filter(r => r[4] === 'ok').length, gaps = S.rules.filter(r => r[4] === 'err').length;
+  document.getElementById('tiles').innerHTML = `
+    <div class="card tile"><div class="n">${n}</div><div class="l">Business rules</div></div>
+    <div class="card tile"><div class="n">${tests}</div><div class="l">Tests protecting them</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">${verified}/${n}</div><div class="l">Verified in a sandbox run</div></div>
+    <div class="card tile"><div class="n" style="color:${gaps ? 'var(--block)' : 'var(--wait)'}">${gaps || n - verified}</div><div class="l">${gaps ? 'Need a change request' : 'Waiting on real-world pilot'}</div></div>`;
+  document.getElementById('rows').innerHTML = S.rules.map((r, i) =>
+    `<tr data-r="${i}"><td class="id">${r[0]}</td><td>${r[1]}</td><td class="id">${r[2]}</td><td>${r[3]}</td><td><span class="${ST[r[4]][0]}">${ST[r[4]][1]}</span></td></tr>`).join('');
+  function show(i) {
+    const r = S.rules[i];
+    document.querySelectorAll('#rows tr').forEach(t => t.classList.toggle('sel', +t.dataset.r === i));
+    document.getElementById('bc').innerHTML = `
+      <div class="card-h"><h3>${r[0]}</h3><span class="${ST[r[4]][0]} right">${ST[r[4]][1]}</span></div>
+      <p style="margin:0 0 10px"><b>${r[1]}</b></p>
+      <p class="small muted" style="margin:0 0 10px">${r[7]}</p>
+      <dl class="kv small" style="grid-template-columns:100px 1fr">
+        <dt>Rule owner</dt><dd><span class="chip human">Nadia Rahman</span></dd>
+        <dt>Story</dt><dd>${r[2]}</dd>
+        <dt>Enforced in</dt><dd class="mono">${r[6]}</dd>
+        <dt>Tests</dt><dd>${r[3]} tagged <span class="mono">@${r[0]}</span></dd>
+        <dt>Verified by</dt><dd>${r[4] === 'ok' ? `<span class="hash">${r[5]}</span> · sandbox run on commit` : r[5]}</dd></dl>
+      ${r[4] === 'err' ? '<div class="callout warn small" style="margin-top:10px"><span class="ci">⚑</span><div>A change request is open. After it is approved, the rule, its tests and its sandbox run are re-verified together.<br><a href="e2-1-change-request.html">Open CR-004</a></div></div>' : ''}`;
+  }
+  document.getElementById('rows').addEventListener('click', e => { const t = e.target.closest('tr[data-r]'); if (t) show(+t.dataset.r); });
+  document.getElementById('init').addEventListener('change', e => { location.search = '?i=' + e.target.value; });
+  const first = S.rules.findIndex(r => r[4] !== 'ok');
+  show(first >= 0 ? first : 0);
+</script>
+</body>
+</html>

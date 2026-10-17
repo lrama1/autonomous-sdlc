@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J2 · Live agent run</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .stream{background:#0f1729;color:#cfd9f6;border-radius:10px;padding:12px 14px;font:12px/1.6 var(--mono);max-height:300px;overflow:auto;white-space:pre-wrap}
+  .stream .t{color:#6f7da3}.stream .ok{color:#6ee7a8}.stream .tool{color:#9db8ff}.stream .warn{color:#ffd37a}
+</style>
+</head>
+<body data-user="carlos" data-nav="map" data-crumb="INIT-102 <span>› Agent run RUN-0231</span>" data-story="Day 6 · 10:40">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>Backend Engineer Agent · RUN-0231</h1><span class="pill prog">Running</span></div>
+      <div class="muted">Task: implement REQ-203 (contribution limits) and REQ-204 (idempotent funding) on <span class="mono">agent/run-0231</span> · Sponsor: <span class="chip human">Carlos Diaz</span> (you)</div>
+    </div>
+    <div class="actions"><button class="btn">⏸ Pause</button><button class="btn danger">Stop run</button></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Progress</h3></div>
+        <ul class="timeline small">
+          <li class="done"><b>Read requirements</b> REQ-203, REQ-204 and ADR-007 (payment rail behind a port)<div class="when">10:02</div></li>
+          <li class="done"><b>Declared assumption A-6</b> "the annual limit counts contributions across all of a customer's IRAs" → Assumptions Register<div class="when">10:04</div></li>
+          <li class="done"><b>Wrote tests first</b> 26 unit tests for the contribution domain<div class="when">10:09</div></li>
+          <li class="run"><b>Implementing</b> <span class="mono">domain/contribution/limitPolicy.ts</span> and the <span class="mono">FundingService</span> application port<div class="when">now</div></li>
+          <li><b>Verify in sandbox</b> unit tests, then start the app with an ephemeral Postgres sidecar and a simulated bank, health check, smoke tests: duplicate request, over-limit deposit<div class="when">uses the repo's shared <span class="mono">verify</span> entry point</div></li>
+          <li><b>Open pull request</b> into <span class="mono">main</span> only if verification passes, with requirement links, the verification report, and a SOUP record for the new money library</li>
+        </ul></div>
+
+      <div class="card"><div class="card-h"><h3>Live stream</h3><span class="chip right">read-only</span></div>
+<div class="stream"><span class="t">10:12:04</span> <span class="tool">Read</span> docs/requirements/REQ-203.md
+<span class="t">10:12:05</span> <span class="tool">Read</span> adrs/ADR-007-payment-rail-port.md
+<span class="t">10:12:19</span> <span class="tool">Edit</span> apps/funding/src/domain/contribution/limitPolicy.ts
+<span class="t">10:12:31</span> <span class="tool">Bash</span> npm test -- domain/contribution  <span class="ok">26 passed</span>
+<span class="t">10:12:44</span> <span class="warn">Policy</span> path domain/** is money movement → Architect and Security co-review required
+<span class="t">10:12:46</span> <span class="warn">Policy</span> new dependency "dinero.js" → SOUP record required
+<span class="t">10:12:52</span> <span class="tool">Edit</span> apps/funding/src/application/FundingService.ts
+<span class="t">10:13:07</span> <span class="tool">Write</span> docs/trace/REQ-203.links.md  <span class="t">(@covers REQ-203)</span>
+<span style="opacity:.6">▍</span></div></div>
+
+      <div class="card"><div class="card-h"><h3>Assumption declared by the agent</h3><span class="chip warn right">needs human disposition before the next baseline</span></div>
+        <div class="callout info"><span class="ci">ℹ</span><div><b>A-6</b> · The annual limit counts contributions across all of a customer's IRAs, and uses the contribution tax year, not the date the request arrives.</div></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Steer this run</h3></div>
+        <textarea placeholder="Add guidance for the agent…">Return a clear machine-readable reason code when a contribution is rejected so support can explain it.</textarea>
+        <div class="callout warn small" style="margin-top:8px"><span class="ci">⚖</span><div><b>You are the sponsor of this run.</b> Guidance is recorded as an input. People who inject guidance become <b>contributors</b> and cannot approve this change at G3.</div></div>
+        <div class="row" style="margin-top:8px"><button class="btn primary">Send guidance</button></div></div>
+
+      <div class="card"><div class="card-h"><h3>Run record</h3><span class="chip right">captured automatically</span></div>
+        <dl class="kv small" style="grid-template-columns:110px 1fr">
+          <dt>Agent definition</dt><dd>Backend Engineer v1.6.0 <span class="chip ok">approved</span></dd>
+          <dt>Model</dt><dd>Pinned · MCR-0011 · Bedrock</dd>
+          <dt>Sponsor</dt><dd>Carlos Diaz</dd>
+          <dt>Contributors</dt><dd>none yet</dd>
+          <dt>Sandbox</dt><dd>Ephemeral container · egress allow-listed (git host, Bedrock, package mirror)</dd>
+          <dt>Credentials</dt><dd>Short-lived GitHub App token for <span class="mono">harbor/ira-funding</span> only · cannot merge</dd>
+          <dt>Data</dt><dd>Test data only. No customer data in the sandbox.</dd>
+          <dt>Cost</dt><dd>$2.31 of $12 cap</dd></dl></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

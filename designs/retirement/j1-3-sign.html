@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J1 · Sign G1</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="maya" data-nav="map" data-crumb="INIT-101 <span>› G1 · Requirements baseline › Sign</span>" data-story="Day 1 · 14:48">
+<div id="content">
+  <div class="page-head"><div><h1>G1 · Requirements baseline</h1><div class="muted">The review pack behind this dialog is frozen at commit 5c91e07.</div></div></div>
+  <div class="card" style="opacity:.5"><div class="stack"><div style="height:18px;background:#eef0f3;border-radius:4px;width:60%"></div><div style="height:12px;background:#eef0f3;border-radius:4px"></div><div style="height:12px;background:#eef0f3;border-radius:4px;width:85%"></div></div></div>
+
+  <div class="scrim">
+    <div class="modal">
+      <div class="modal-h"><h2 style="margin:0">Sign gate decision</h2><span class="chip right" id="stepChip">Step 1 of 3</span></div>
+
+      <div class="modal-b" id="s1">
+        <div class="stepper"><div class="step active"><span class="dot">1</span>Confirm</div><div class="step-line"></div><div class="step"><span class="dot">2</span>Re-authenticate</div><div class="step-line"></div><div class="step"><span class="dot">3</span>Signed</div></div>
+        <dl class="kv small" style="margin-bottom:12px">
+          <dt>You are signing as</dt><dd><b>Maya Patel</b> · Product Owner <span class="muted">(role assignment v2)</span></dd>
+          <dt>Gate</dt><dd>G1 · Requirements baseline · INIT-101</dd>
+          <dt>Commit / tree</dt><dd><span class="hash">5c91e07</span> <span class="hash">tree 9a0e3b1</span></dd>
+          <dt>Content hash</dt><dd><span class="hash">sha256:b41d7c…07fa</span> <span class="chip ok">matches what you reviewed</span></dd>
+          <dt>Policy evaluated</dt><dd>Financial Services overlay v0.2 · SoD check <span class="chip ok">passed</span></dd>
+        </dl>
+        <div style="margin-bottom:10px"><div class="small muted">Meaning of this signature</div>
+          <div class="row wrap" style="margin-top:4px"><label class="chip"><input type="radio" name="m"> Reviewed</label><label class="chip"><input type="radio" name="m" checked> Approved (as accountable owner)</label></div></div>
+        <div style="margin-bottom:10px"><div class="small muted">Attestations</div>
+          <ul class="checks small" style="margin-top:4px">
+            <li><label><input type="checkbox" checked> I reviewed all 12 requirements and their mapping to controls</label></li>
+            <li><label><input type="checkbox" checked> I dispositioned every assumption</label></li>
+            <li><label><input type="checkbox" checked> I understand approval freezes baseline BL-1; later changes need a Change Request</label></li></ul></div>
+        <div><div class="small muted">Rationale (stored in the evidence record)</div><textarea>Requirements cover all three IRA types and the identity and eligibility controls. Limits stay in tax-year configuration. Spousal and inherited IRAs are deferred (A-3).</textarea></div>
+      </div>
+
+      <div class="modal-b" id="s2" hidden>
+        <div class="stepper"><div class="step done"><span class="dot">✓</span>Confirm</div><div class="step-line"></div><div class="step active"><span class="dot">2</span>Re-authenticate</div><div class="step-line"></div><div class="step"><span class="dot">3</span>Signed</div></div>
+        <div class="callout info" style="margin-bottom:12px"><span class="ci">🔐</span><div>Your session is not enough. Signing needs a fresh two-factor identity check with your company's identity provider.</div></div>
+        <div class="stack"><div><label class="small muted">User</label><input type="text" value="maya.patel@harbor-ret.example" disabled></div>
+          <div><label class="small muted">Password</label><input type="password" value="••••••••••"></div>
+          <div class="card" style="display:flex;gap:12px;align-items:center;background:#f9fafb"><span style="font-size:24px">📱</span><div><b>Approve the push notification</b><div class="small muted">Matching number: <b>17</b></div></div></div></div>
+      </div>
+
+      <div class="modal-b" id="s3" hidden>
+        <div class="stepper"><div class="step done"><span class="dot">✓</span>Confirm</div><div class="step-line"></div><div class="step done"><span class="dot">✓</span>Re-authenticate</div><div class="step-line"></div><div class="step done"><span class="dot">✓</span>Signed</div></div>
+        <div class="callout ok" style="margin-bottom:12px"><span class="ci">✔</span><div><b>Signed.</b> Evidence record <b>EV-000118</b> was appended to the ledger.</div></div>
+        <dl class="kv small">
+          <dt>Record hash</dt><dd class="hash">sha256:6e12…c9a4</dd>
+          <dt>Previous record</dt><dd class="hash">sha256:f07b…2d11 (EV-000117)</dd>
+          <dt>Platform signature</dt><dd>KMS key <span class="mono">alias/ledger-sign-2026</span> · valid</dd>
+          <dt>Trusted time</dt><dd>2026-10-12 14:48:09 UTC</dd>
+          <dt>Next</dt><dd>Waiting for <b>Elena Rossi</b> (Compliance &amp; Risk, independent). Baseline BL-1 freezes when both have signed. The Architect Agent starts after G1 is complete.</dd>
+        </dl>
+      </div>
+
+      <div class="modal-f">
+        <a class="btn" href="j1-2-review-g1.html" id="cancel">Cancel</a>
+        <button class="btn primary" id="next">Continue to re-authentication</button>
+        <a class="btn primary" id="done" href="map.html?i=101&s=s1" hidden>View on SDLC map</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  let n = 1;
+  const $ = id => document.getElementById(id);
+  function render() {
+    [1, 2, 3].forEach(i => $('s' + i).hidden = i !== n);
+    $('stepChip').textContent = 'Step ' + n + ' of 3';
+    $('cancel').hidden = n === 3; $('next').hidden = n === 3; $('done').hidden = n !== 3;
+    $('next').textContent = n === 1 ? 'Continue to re-authentication' : 'Verify & sign';
+  }
+  $('next').onclick = () => { n++; render(); };
+</script>
+</body>
+</html>

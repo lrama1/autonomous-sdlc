@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N5 · Attention queue</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .ask .ctx{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:8px 0 10px;font-size:13px}
+  .ask .ctx div b{display:block;font-size:11px;font-weight:600;color:#667085;text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px}
+  .opts{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px}
+  .opts label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff;cursor:pointer;font-size:13px}
+  .opts label:has(input:checked){border-color:var(--primary);background:var(--primary-weak)}
+  .opts input{margin-top:3px}
+  .opts .sub{color:#667085;font-size:12px}
+  .rank{font-weight:700;color:#98a2b3;font-size:12px}
+</style>
+</head>
+<body data-user="ben" data-nav="queue" data-crumb="Attention queue" data-story="Day 14 · 09:30">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Attention queue</h1><span class="pill wait" id="cnt">4 waiting on you</span></div>
+      <div class="muted">Ranked by what each ask blocks, then by deadline. No agent is idle while you read.</div></div>
+    <div class="actions"><span class="chip human">Hats: Tech Lead · Architect · Backend Engineer</span><a class="btn" href="n5-3-chat-answers.html">Slack view</a></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card ask" id="q1">
+        <div class="row wrap"><span class="rank">1</span><span class="chip warn">Decision request</span><span class="chip agent">Backend Agent · RUN-0431</span><span class="pill wait">Blocks the forecast service</span><span class="chip right">Default in 5 h 40 m</span></div>
+        <h3 style="margin:8px 0 0">Which weather provider should the forecast use?</h3>
+        <div class="ctx">
+          <div><b>What it was doing</b>Building the forecast service for US-3 and found three providers that fit.</div>
+          <div><b>Why it needs you</b>Hard to switch later: it adds a new external host and a monthly cost.</div>
+          <div><b>What is waiting</b>The forecast service only. Invite emails and the packing list continue.</div>
+        </div>
+        <div class="opts">
+          <label><input type="radio" name="q1" value="A" checked><div><b>A · Free tier, 3-day forecast</b> <span class="chip ok">recommended</span><div class="sub">$0. Enough for a weekend hike. Upgrade later without code changes.</div></div></label>
+          <label><input type="radio" name="q1" value="B"><div><b>B · Paid tier, 7-day forecast</b><div class="sub">$29 a month. Useful for longer trips.</div></div></label>
+          <label><input type="radio" name="q1" value="C"><div><b>C · Self-hosted open data</b><div class="sub">$0, but about two days more work and a server to run.</div></div></label>
+        </div>
+        <div class="row wrap"><button class="btn primary" id="ans1">Answer</button><label class="small"><input type="checkbox" id="std1"> Use this answer from now on</label><a href="#" class="small muted right" id="dnta1">Didn't need to ask</a></div>
+        <div class="callout ok small" id="r1" hidden style="margin-top:10px"><span class="ci">✔</span><div><b>Answered.</b> The Backend Agent continues with the free tier. Saved as standing decision <b>SD-07</b>, and the Weather API entry in the Integration Register is now confirmed.</div></div>
+      </div>
+
+      <div class="card ask" id="q2">
+        <div class="row wrap"><span class="rank">2</span><span class="chip warn">Review</span><span class="chip agent">Frontend Agent · RUN-0433</span><span class="pill wait">Blocks the merge of US-4</span></div>
+        <h3 style="margin:8px 0 0">PR #44 · Weather alerts</h3>
+        <div class="ctx">
+          <div><b>What happened</b>Alerts are built, tests pass, and the app ran in a browser before the PR opened.</div>
+          <div><b>Why it needs you</b>Trigger fired: a new dependency, <span class="mono">@weather/sdk</span>.</div>
+          <div><b>What is waiting</b>The merge of US-4, and the preview for Sofia.</div>
+        </div>
+        <div class="row"><a class="btn primary" href="n2-2-review-pr.html">Open review pack</a><button class="btn">Snooze 2 h</button></div>
+      </div>
+
+      <div class="card ask" id="q3">
+        <div class="row wrap"><span class="rank">3</span><span class="chip">Question</span><span class="chip agent">Frontend Agent · RUN-0433</span><span class="pill none">Not blocking</span><span class="chip right">Default in 4 h</span></div>
+        <h3 style="margin:8px 0 0">Difficulty labels: Easy / Moderate / Hard, or Beginner / Intermediate / Expert?</h3>
+        <div class="ctx">
+          <div><b>What it was doing</b>Writing the trip card.</div>
+          <div><b>Why it asks</b>The stories do not say.</div>
+          <div><b>What is waiting</b>Nothing. It is using <b>Easy / Moderate / Hard</b> and declared this as an assumption.</div>
+        </div>
+        <div class="row wrap"><button class="btn" id="keep3">Keep the default</button><button class="btn">Use Beginner / Intermediate / Expert</button><a href="#" class="small muted right" id="dnta3">Didn't need to ask</a></div>
+        <div class="callout info small" id="r3" hidden style="margin-top:10px"><span class="ci">ℹ</span><div><b>Noted.</b> The Frontend Agent will ask less about copy and labels, and this feeds the <a href="n5-4-interruptions.html">interruption metrics</a>.</div></div>
+      </div>
+
+      <div class="card ask" id="q4">
+        <div class="row wrap"><span class="rank">4</span><span class="chip">Notice</span><span class="chip agent">Backend Agent · RUN-0431</span></div>
+        <h3 style="margin:8px 0 0">Assumption declared: invite links expire after 7 days</h3>
+        <div class="small muted" style="margin:4px 0 8px">Used in the invite flow (US-5). Low risk. Accepting turns it into a requirement.</div>
+        <div class="row"><button class="btn sm">Accept</button><button class="btn sm">Reject</button><a class="small" href="n5-2-assumptions.html">See all assumptions</a></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Blocked work</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div>Forecast service waits on <b>#1</b>. The agent is building invite emails meanwhile.</div></li>
+          <li><span class="wt">●</span><div>Merge of US-4 waits on <b>#2</b>.</div></li>
+          <li><span class="ok">✔</span><div>No agent is idle. Agent time blocked this week: 6%.</div></li></ul></div>
+      <div class="card"><div class="card-h"><h3>How you are reached</h3></div>
+        <dl class="kv small" style="grid-template-columns:100px 1fr">
+          <dt>Slack</dt><dd>#trailmates-agents. Answer simple asks in chat.</dd>
+          <dt>Digest</dt><dd>17:00 for low-priority items</dd>
+          <dt>Quiet hours</dt><dd>20:00 to 08:00. Only hard stops get through.</dd>
+          <dt>Deputy</dt><dd>Sofia, if you do not answer in 4 h</dd></dl></div>
+      <div class="card"><div class="card-h"><h3>What makes a good ask</h3></div>
+        <p class="small muted" style="margin:0">Each card says what the agent was doing, why it needs a person, what is waiting, the options, a recommendation, and what happens if nobody answers.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  let left = 4;
+  const bump = () => { left--; const c = document.getElementById('cnt'); c.textContent = left ? left + ' waiting on you' : 'All clear'; if (!left) c.className = 'pill done'; };
+  document.getElementById('ans1').addEventListener('click', e => { e.target.classList.add('disabled'); document.getElementById('r1').hidden = false; bump(); });
+  document.getElementById('dnta1').addEventListener('click', e => e.preventDefault());
+  document.getElementById('dnta3').addEventListener('click', e => { e.preventDefault(); document.getElementById('r3').hidden = false; bump(); });
+  document.getElementById('keep3').addEventListener('click', e => { e.target.classList.add('disabled'); bump(); });
+</script>
+</body>
+</html>

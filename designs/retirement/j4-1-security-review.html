@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J4 · G5 security review</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="tariq" data-nav="map" data-crumb="INIT-104 <span>› G5 · Security review › Review pack</span>" data-story="Day 20 · 09:30">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G5 · Security review</h1><span class="pill wait">Waiting on you</span></div>
+      <div class="muted">Move Money · prepared by <span class="chip agent">Security Agent</span> RUN-0344 · scans ingested, threat model drafted · <b>advisory until you sign</b></div>
+    </div>
+    <div class="actions"><a class="btn" href="map.html?i=104&s=g5">Back to map</a><button class="btn primary">Review &amp; sign</button></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Critical findings</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">1 → 0</div><div class="l">High findings (fixed and re-tested)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">1</div><div class="l">Residual risk to accept (low)</div></div>
+    <div class="card tile"><div class="n">6 / 6</div><div class="l">Threats with a verified mitigation</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Threat model</h2><div class="small muted">Money-movement threats and the requirement and test that mitigate each</div></div>
+        <table class="t"><thead><tr><th>Threat</th><th>Mitigation</th><th>Requirement · test</th><th>Status</th></tr></thead><tbody>
+          <tr><td><b>Account takeover</b> then withdrawal</td><td class="small">Step-up authentication for withdrawals, hold on first-time destinations, notice to every contact channel</td><td class="small">REQ-403 · TEST-211…214</td><td><span class="chip ok">verified</span></td></tr>
+          <tr><td><b>Bank detail change</b> then immediate withdrawal</td><td class="small">Three-business-day cooling-off on a new or changed destination</td><td class="small">REQ-402 · TEST-205…207</td><td><span class="chip ok">verified</span></td></tr>
+          <tr><td><b>Duplicate or replayed</b> transfer</td><td class="small">Idempotency keys and a uniqueness constraint in the ledger</td><td class="small">REQ-404 · TEST-220…223</td><td><span class="chip ok">verified</span></td></tr>
+          <tr><td><b>Tampering</b> with amount or destination between review and submit</td><td class="small">Signed confirmation payload, server-side recomputation</td><td class="small">REQ-405 · TEST-230…232</td><td><span class="chip ok">verified</span></td></tr>
+          <tr><td><b>Insider override</b> of limits</td><td class="small">Dual control and an immutable audit log</td><td class="small">REQ-406 · TEST-240…242</td><td><span class="chip ok">verified</span></td></tr>
+          <tr><td><b>Withholding</b> miscalculation</td><td class="small">Financial-control tests against reference cases</td><td class="small">REQ-401 · TEST-250…258</td><td><span class="chip ok">verified</span></td></tr>
+        </tbody></table></div>
+
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Findings</h2></div>
+        <table class="t"><thead><tr><th>ID</th><th>Source</th><th>Severity</th><th>Finding</th><th>Status</th></tr></thead><tbody>
+          <tr><td class="id">F-01</td><td class="small">DAST</td><td><span class="chip err">High</span></td><td class="small">No rate limit on the transfer quote endpoint</td><td><span class="chip ok">fixed · re-tested</span></td></tr>
+          <tr><td class="id">F-02</td><td class="small">SAST</td><td><span class="chip warn">Medium</span></td><td class="small">Error message exposes the last digits of a bank account</td><td><span class="chip ok">fixed · re-tested</span></td></tr>
+          <tr><td class="id">F-03</td><td class="small">Review</td><td><span class="chip">Low</span></td><td class="small">SMS fallback for alerts is weaker than push</td><td><span class="chip warn">risk acceptance proposed</span></td></tr>
+        </tbody></table>
+        <div class="small muted" style="padding:10px 16px">Dependency scan: 0 critical. Secrets scan: clean. SBOM: 188 components, 3 new SOUP items evaluated.</div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Risk acceptance</h3><span class="chip warn right">your decision</span></div>
+        <p class="small" style="margin:0 0 8px"><b>RA-009 · F-03</b> SMS fallback for alerts.</p>
+        <p class="small muted" style="margin:0 0 10px">Compensating control: email and push alerts are always sent. Valid for 6 months, then re-reviewed.</p>
+        <div class="row"><button class="btn sm">Accept risk</button><button class="btn sm">Reject</button></div>
+        <div class="small muted" style="margin-top:8px">Accepting is a signed decision with its own evidence record.</div></div>
+
+      <div class="card"><div class="card-h"><h3>Who must sign</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Tariq Ahmed</b> · Security<div class="muted">Independent of the authors. Not a sponsor or contributor of any run on this initiative. ✔ Eligible.</div></div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h3>Gate checks</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Every threat has a requirement and a passing test</div></li>
+          <li><span class="ok">✔</span><div>No open high or critical findings</div></li>
+          <li><span class="ok">✔</span><div>Scans bound to commit 8b1f6d2</div></li>
+          <li><span class="wt">●</span><div>Risk acceptance RA-009 awaiting your decision</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>02 · New initiative (G0)</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .opt{border:2px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;background:#fff}
+  .opt.sel{border-color:var(--primary);background:var(--primary-weak)}
+  .opt.off{opacity:.5;cursor:not-allowed}
+  .opt h3{margin:0 0 2px}
+</style>
+</head>
+<body data-user="priya" data-nav="map" data-crumb="New initiative <span>› G0 · Plan &amp; risk intake</span>" data-story="Day 1 · 09:12">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Create initiative</h1><div class="muted">An initiative is governed by one compliance profile. Work does not proceed until the repository is verified and roles are assigned.</div></div>
+    <div class="actions"><span class="chip">Step <b id="stepNo">1</b> of 3</span></div>
+  </div>
+
+  <div class="stepper" id="stepper">
+    <div class="step active" data-s="1"><span class="dot">1</span>Goal &amp; intended use</div><div class="step-line"></div>
+    <div class="step" data-s="2"><span class="dot">2</span>Profile &amp; repository</div><div class="step-line"></div>
+    <div class="step" data-s="3"><span class="dot">3</span>Roles &amp; SoD preflight</div>
+  </div>
+
+  <!-- Step 1 -->
+  <div class="grid g-main" data-step="1">
+    <div class="card stack">
+      <div><label class="small muted">Initiative name</label><input type="text" value="Dose Calculation Service"></div>
+      <div><label class="small muted">Goal (stated by the Product Owner)</label>
+        <textarea style="min-height:110px">Provide a service that calculates infusion volumes from prescribed dose, concentration and pump resolution, with configurable rounding, and exposes them to the pump firmware gateway. Must be traceable to our hazard analysis.</textarea></div>
+      <div class="grid g2">
+        <div><label class="small muted">Intended use</label><input type="text" value="Support calculation of infusion volume for a clinical infusion pump"></div>
+        <div><label class="small muted">Software safety class (suggested by Product Agent)</label>
+          <select><option>Class B (suggested)</option><option>Class A</option><option>Class C</option></select></div>
+      </div>
+      <div class="callout warn"><span class="ci">⚠</span><div><b>Classification needs QRA confirmation.</b> The agent's suggestion is advisory. The class drives which gates and evidence are required, so Sam Ivanova (QRA) must confirm it at G0.</div></div>
+      <div class="row"><button class="btn primary" onclick="go(2)">Continue</button></div>
+    </div>
+    <div class="card"><h3>What happens next</h3>
+      <ol class="small" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:8px">
+        <li>You choose a compliance profile and connect a repository.</li>
+        <li>Platform verifies the repo and applies branch protection plus the required <span class="mono">sdlc/gate</span> check.</li>
+        <li>You assign roles. The platform checks separation of duties up front.</li>
+        <li>G0 is signed by you (Product Owner) and QRA. Only then does the Product Agent start drafting requirements.</li>
+      </ol></div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="grid g-main" data-step="2" hidden>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Compliance profile</h2></div>
+        <div class="grid g3">
+          <div class="opt sel"><h3>Regulated Baseline + IEC 62304 (Class B)</h3><div class="small muted">Gates G0–G7, e-signature with re-auth, SoD, traceability, SOUP control. v0.3.1</div><div style="margin-top:6px"><span class="chip ok">MVP</span></div></div>
+          <div class="opt"><h3>Regulated Baseline only</h3><div class="small muted">Common control set without lifecycle overlay.</div><div style="margin-top:6px"><span class="chip ok">MVP</span></div></div>
+          <div class="opt off"><h3>SOX ITGC / SOC 2 overlay</h3><div class="small muted">Change-management profile for fintech and SaaS.</div><div style="margin-top:6px"><span class="chip">Post-MVP</span></div></div>
+        </div>
+        <div style="margin-top:12px" class="row"><span class="muted small">Engineering standards pack:</span><select style="max-width:300px"><option>Default pack v1.0 (hexagonal, TS/Python, Postgres, Terraform, ADRs)</option><option>Customer pack…</option></select></div>
+      </div>
+      <div class="card"><div class="card-h"><h2>Strictness level</h2><span class="chip right">Deployment floor: Controlled</span></div>
+        <div class="grid g3">
+          <div class="opt off"><h3>Sandbox</h3><div class="small muted">Test data, OpenRouter allowed, direct commits. Not compliance evidence.</div><div style="margin-top:6px"><span class="chip">Below this deployment's floor</span></div></div>
+          <div class="opt"><h3>Controlled</h3><div class="small muted">Controls enforced, signed evidence, customer-account models, PR-only writes. OpenRouter only in a development deployment.</div></div>
+          <div class="opt sel"><h3>Regulated</h3><div class="small muted">Audit-grade: step-up signing, WORM export, requalified models.</div><div style="margin-top:6px"><span class="chip ok">Required by profile for release</span></div></div>
+        </div>
+        <p class="small muted" style="margin:8px 0 0">The level can be raised later but not lowered once evidence exists. The deployment floor is set at install time, not here.</p>
+      </div>
+      <div class="card"><div class="card-h"><h2>Repository</h2><span class="chip right ok">● Verified</span></div>
+        <div><label class="small muted">Select from the repository registry (agents can only use registered repositories)</label>
+          <select><option>acme-med/dose-calc · internal · branch_pr · levels: Controlled, Regulated</option><option disabled>acme-med/sandbox-playground · test · direct · Sandbox only (not allowed at this level)</option><option disabled>acme-med/pump-firmware-gw · regulated · read-only reference</option></select></div>
+        <ul class="checks" style="margin-top:12px">
+          <li><span class="ok">✔</span><div>Write mode <span class="mono">branch_pr</span>: agents push only to <span class="mono">agent/&lt;run-id&gt;/**</span> and open PRs into <span class="mono">main</span> (the integration branch). Merges are done by the separate Gate identity after approvals.</div></li>
+          <li><span class="ok">✔</span><div>Protected paths agents can never change: <span class="mono">.github/workflows/**</span>, <span class="mono">CODEOWNERS</span>, <span class="mono">.claude/**</span></div></li>
+          <li><span class="ok">✔</span><div>Agent App and Gate App installed on this repository only, with least-privilege permissions (<a href="trailmates/n6-1-github-connection.html">GitHub connection</a>)</div></li>
+          <li><span class="ok">✔</span><div>Branch ruleset applied to <span class="mono">main</span>: no direct push, no force-push, required reviews</div></li>
+          <li><span class="ok">✔</span><div>Required status check <span class="mono">sdlc/gate</span> registered. Agents cannot merge or edit protection.</div></li>
+          <li><span class="ok">✔</span><div>Repository empty. Standard layout and ADR template will be proposed by the Architect Agent at G2</div></li>
+        </ul>
+      </div>
+      <div class="card"><div class="card-h"><h2>Known integrations (optional)</h2><span class="chip right">Architect confirms at G1</span></div>
+        <label class="small muted">Links to any internal or vendor APIs this initiative is expected to use</label>
+        <textarea placeholder="One per line, for example the documentation or OpenAPI link for the hospital formulary API"></textarea>
+        <p class="small muted" style="margin:8px 0 0">The Architect Agent turns these into proposed entries in the <a href="trailmates/n6-2-integrations.html">Integrations</a>. Agents can only reach hosts that a person approved there.</p></div>
+      <div class="row"><button class="btn" onclick="go(1)">Back</button><button class="btn primary" onclick="go(3)">Continue</button></div>
+    </div>
+    <div class="card"><h3>Why the repo comes first</h3><p class="small muted">Git is the source of truth for requirements, ADRs, code and tests. Evidence records bind to commit SHAs and artifact hashes, so the platform cannot produce evidence until a verified repo exists.</p>
+      <div class="callout dev small"><span class="ci">⚖</span><div>If anyone changes branch protection outside the platform, a <b>deviation</b> is recorded automatically.</div></div></div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="grid g-main" data-step="3" hidden>
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px"><h2 style="margin:0">Role assignments</h2><div class="small muted">Effective-dated. Each assignment is a controlled change that produces an evidence record.</div></div>
+        <table class="t"><thead><tr><th>Role</th><th>Person</th><th>Authority at gates</th><th>Effective from</th></tr></thead><tbody>
+          <tr><td>Product Owner</td><td><span class="chip human">Priya Nair</span></td><td>G0, G1, G7</td><td>2026-10-12</td></tr>
+          <tr><td>Architect</td><td><span class="chip human">Marcus Chen</span></td><td>G2, G3 (path trigger)</td><td>2026-10-12</td></tr>
+          <tr><td>Backend Engineer</td><td><span class="chip human">Dana Okafor</span> <span class="chip human">Ethan Brooks</span></td><td>G3</td><td>2026-10-12</td></tr>
+          <tr><td>QA / Tester</td><td><span class="chip human">Lee Alvarez</span></td><td>G4</td><td>2026-10-12</td></tr>
+          <tr><td>Quality &amp; Regulatory</td><td><span class="chip human">Sam Ivanova</span></td><td>G0, G1, G6, G7</td><td>2026-10-12</td></tr>
+          <tr><td>Security</td><td><span class="chip human">Tom Reyes</span></td><td>G2, G5</td><td>2026-10-12</td></tr>
+          <tr><td>Release Approver</td><td><span class="chip human">Rita Haddad</span></td><td>G6</td><td>2026-10-12</td></tr>
+          <tr><td>DevOps (deployer)</td><td><span class="chip human">Omar Khan</span></td><td>Executes deploy only</td><td>2026-10-12</td></tr>
+        </tbody></table></div>
+      <div class="row"><button class="btn" onclick="go(2)">Back</button><a class="btn primary" href="06-sdlc-map.html">Create initiative &amp; request G0 sign-off</a></div>
+    </div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>SoD preflight</h3><span class="chip ok right">Passed</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>8 distinct humans assigned. Profile minimum is 4.</div></li>
+          <li><span class="ok">✔</span><div>Deployer (Omar) is not a Release Approver or code approver.</div></li>
+          <li><span class="ok">✔</span><div>QRA (Sam) is independent from every agent run sponsor so far.</div></li>
+          <li><span class="wt">●</span><div>Per-change checks run later: approver ≠ sponsor ≠ contributors.</div></li>
+          <li><span class="ok">✔</span><div>Platform Admin holds no approval role.</div></li>
+        </ul></div>
+      <div class="callout info small"><span class="ci">ℹ</span><div><b>Small team?</b> One person may hold several roles only if the profile permits it, and only with a documented exception approved by a second authorizer.</div></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  function go(n){
+    document.querySelectorAll('[data-step]').forEach(e=>e.hidden = e.dataset.step!=n);
+    document.getElementById('stepNo').textContent=n;
+    document.querySelectorAll('#stepper .step').forEach(s=>{const k=+s.dataset.s;s.classList.toggle('active',k===n);s.classList.toggle('done',k<n);s.querySelector('.dot').textContent=k<n?'✓':k;});
+  }
+</script>
+</body>
+</html>

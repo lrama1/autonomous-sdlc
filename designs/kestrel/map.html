@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel · SDLC map</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .gnode.s-skip{opacity:.5;border-style:dashed;border-top:5px dashed #cbd2dc;cursor:pointer;box-shadow:none;background:#fafbfc}
+  .pill.skip{background:#f2f4f7;color:#98a2b3}
+</style>
+</head>
+<body data-nav="map">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1 id="ttl"></h1></div><div class="row wrap small" style="margin-top:4px" id="chips"></div></div>
+    <div class="actions"><span class="small muted">Prototype state:</span>
+      <select id="snap" style="width:auto"><option value="s1">Spec &amp; design pending</option><option value="g3">Change merge in review</option><option value="g4">Verification</option><option value="g6">Release candidate</option></select></div>
+  </div>
+
+  <div class="card">
+    <div class="flow" id="flow"></div>
+    <div class="crloop"><span>Scope change: changes after approval re-enter at the affected checkpoint</span></div>
+    <div class="row wrap small" style="margin-top:22px">
+      <span class="pill skip">Not required</span><span class="pill none">Not started</span><span class="pill wait">Waiting on human</span><span class="pill done">Done</span>
+      <span class="muted right">Four decisions: spec and design, change merge, verification, release.</span>
+    </div>
+  </div>
+
+  <div class="grid g-main" style="margin-top:16px">
+    <div class="card" id="detail"></div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Where is my interaction?</h3></div><div id="you" class="small"></div></div>
+      <div class="card"><h3>Commerce setup</h3><p class="small muted" style="margin:0">Default workflow with the optional QA verification checkpoint switched on. A payment-scope trigger adds Architect and Security review, and blocks auto-merge, for any change under payment paths.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script>
+  const Q = new URLSearchParams(location.search);
+  const INIT = {
+    301: { id: 'INIT-301', name: 'Browse, cart and checkout',          pay: true,  st: 's1', story: 'Oct 19' },
+    302: { id: 'INIT-302', name: 'Orders, tracking and returns',       pay: false, st: 'g4', story: 'Oct 29', lnk: { G3: ['c2-1-agent-runs.html', 'Open agent runs'] } },
+    303: { id: 'INIT-303', name: 'Merchandising: catalog and promotions', pay: false, st: 'g3', story: 'Oct 22', peer: 'Owen Brooks', lnk: { G1: ['controls.html?i=303', 'Open product controls'], G3: ['e1-1-merch-agent.html', 'Open agent run and rollout'] } },
+    304: { id: 'INIT-304', name: 'Fulfillment and support tools',      pay: false, st: 'g3', story: 'Oct 30', cr: 'CR-004 open', lnk: { G1: ['controls.html?i=304', 'Open product controls'], G3: ['e2-1-change-request.html', 'Open change request CR-004'] } },
+    R42: { id: 'REL-4.2',  name: 'Release 4.2',                        pay: false, st: 'g6', story: 'Nov 9' }
+  };
+  const I = INIT[Q.get('i')] || INIT[301];
+  document.body.dataset.user = Q.get('u') || 'nadia';
+  document.body.dataset.crumb = `${I.id} <span>› ${I.name}</span>`;
+  document.body.dataset.story = I.story;
+  document.title = `${I.id} · SDLC map`;
+</script>
+<script src="../assets/app.js"></script>
+<script>
+  const G = [
+    { id: 'G0', name: 'Intake', stage: 'Plan', skip: true },
+    { id: 'G1', name: 'Spec & design', stage: 'Spec & design', agent: 'Product + Architect', need: 3, link: 'c1-1-spec.html', open: 'Open spec review',
+      desc: 'Customer and employee stories with acceptance criteria, a light design, and notes for hard-to-undo decisions.',
+      signers: [['Product Owner (owner)', 'Nadia Rahman'], ['Architect (design)', 'Owen Brooks']], paySigners: [['Security (payment scope)', 'Victor Santos']] },
+    { id: 'G2', name: 'Architecture', stage: 'Architecture', skip: true },
+    { id: 'G3', name: 'Change merge (per PR)', stage: 'Implementation', agent: 'Frontend + Backend', need: 3, link: 'c1-2-pr.html', open: 'Open PR review',
+      desc: 'One peer reviewer who did not start the run, CI green. Pre-approved change types auto-merge. Payment paths always need Architect and Security.',
+      signers: [['Peer reviewer (≠ sponsor)', 'Marcus Webb']], paySigners: [['Architect (payment scope)', 'Owen Brooks'], ['Security (payment scope)', 'Victor Santos']] },
+    { id: 'G4', name: 'Verification (QA)', stage: 'Verification', agent: 'Tester Agent', need: 4, link: 'c2-2-verification.html', open: 'Open verification pack',
+      desc: 'Optional gate switched on for this team. QA reviews the results across browsers, accessibility and performance, tied to the commit.',
+      signers: [['QA Lead', 'Chloe Tan']] },
+    { id: 'G5', name: 'Security review', stage: 'Security', skip: true },
+    { id: 'G6', name: 'Release', stage: 'Release', agent: 'DevOps Agent', need: 4, link: 'r-1-release-readiness.html', open: 'Open release readiness',
+      desc: 'One Release Manager. Peak-season checks: change-freeze calendar, load test, kill switches, canary and rollback. The pipeline deploys.',
+      signers: [['Release Manager', 'Dmitri Volkov']] },
+    { id: 'G7', name: 'Retrospective', stage: 'Post-release', skip: true }
+  ];
+  const SN = {
+    s1: ['skip', 'wait', 'skip', 'none', 'none', 'skip', 'none', 'skip'],
+    g3: ['skip', 'done', 'skip', 'wait', 'none', 'skip', 'none', 'skip'],
+    g4: ['skip', 'done', 'skip', 'done', 'wait', 'skip', 'none', 'skip'],
+    g6: ['skip', 'done', 'skip', 'done', 'done', 'skip', 'wait', 'skip']
+  };
+  const LBL = { skip: 'Not required', none: 'Not started', wait: 'Waiting on human', done: 'Done' };
+  const SHORT = { skip: 'Not required', none: 'Not started', wait: 'Waiting', done: 'Done' };
+  let cur = SN[Q.get('s')] ? Q.get('s') : I.st, sel = G[SN[cur].indexOf('wait')].id;
+  document.getElementById('snap').value = cur;
+  document.getElementById('ttl').textContent = `${I.id} · ${I.name}`;
+
+  const signers = g => (g.id === 'G3' && I.peer ? [[g.signers[0][0], I.peer]] : g.signers).concat(I.pay ? (g.paySigners || []) : []);
+  const ev = (g, s) => s === 'done' ? g.need : s === 'wait' ? g.need - 1 : 0;
+  function draw() {
+    const st = SN[cur];
+    document.getElementById('flow').innerHTML = G.map((g, i) => {
+      const s = st[i], have = g.skip ? 0 : ev(g, s);
+      const body = g.skip ? `<div class="small muted">Off for this initiative</div>` :
+        `<div><div class="small muted">Ready ${have}/${g.need}</div><div class="bar ${s === 'wait' ? 'wait' : ''}"><i style="width:${have / g.need * 100}%"></i></div></div><span class="chip agent">${g.agent}</span>`;
+      return `<div class="gnode s-${s} ${sel === g.id ? 'sel' : ''}" data-g="${g.id}">
+        <div class="stage">${g.stage}</div><div class="gid">${g.id}</div><div class="gname">${g.name}</div>
+        <span class="pill ${s}">${SHORT[s]}</span>${body}</div>`;
+    }).join('');
+    const bl = st[1] === 'done' ? 'spec-1' : 'none yet';
+    document.getElementById('chips').innerHTML = `<span class="chip">Default workflow + QA checkpoint</span><span class="chip warn">Autonomy: Balanced</span>${I.pay ? '<span class="chip warn">Payment-scope triggers</span>' : ''}${I.cr ? `<a class="chip err" href="e2-1-change-request.html">${I.cr}</a>` : ''}<span class="chip">Spec tag: ${bl}</span><span class="chip ok">Pre-approved change types: on</span>`;
+    const w = G[st.indexOf('wait')];
+    document.getElementById('you').innerHTML = w ? `Next decision: <b>${w.id} · ${w.name}</b>. Waiting on <b>${signers(w).map(x => x[1]).join(', ')}</b>.` : '';
+    detail();
+  }
+  function detail() {
+    const g = G.find(x => x.id === sel), i = G.indexOf(g), s = SN[cur][i];
+    if (g.skip) {
+      document.getElementById('detail').innerHTML = `<div class="card-h"><h2>${g.id} · ${g.name}</h2><span class="pill skip right">Not required</span></div>
+        <p class="muted">Not required by this setup. CI, dependency and secret scans still run on every change, and payment-scope changes still trigger Security review at change merge.</p>`;
+      return;
+    }
+    const have = ev(g, s), L = (I.lnk || {})[g.id] || [g.link, g.open];
+    const sig = signers(g).map(x => `<tr><td>${x[0]}</td><td><span class="chip human">${x[1]}</span></td><td>${s === 'done' ? '<span class="chip ok">✔ approved</span>' : '<span class="chip warn">⏳ pending</span>'}</td></tr>`).join('');
+    document.getElementById('detail').innerHTML = `
+      <div class="card-h"><h2>${g.id} · ${g.name}</h2><span class="pill ${s} right">${LBL[s]}</span></div>
+      <p class="muted">${g.desc}</p>
+      <div class="grid g3" style="margin:10px 0 12px">
+        <div><div class="small muted">Prepared by</div><span class="chip agent">${g.agent}</span></div>
+        <div><div class="small muted">Prepared items</div><b>${have}/${g.need}</b> items</div>
+        <div><div class="small muted">Independent review</div>${s === 'none' ? '<span class="chip">n/a yet</span>' : '<span class="chip ok">ok</span>'}</div>
+      </div>
+      <table class="t"><thead><tr><th>Required role</th><th>Person</th><th>Status</th></tr></thead><tbody>${sig}</tbody></table>
+      <div class="row" style="margin-top:12px"><a class="btn primary" href="${L[0]}">${L[1]}</a></div>`;
+  }
+  document.getElementById('flow').addEventListener('click', e => { const n = e.target.closest('.gnode'); if (!n) return; sel = n.dataset.g; draw(); });
+  document.getElementById('snap').addEventListener('change', e => { cur = e.target.value; sel = G[SN[cur].indexOf('wait')].id; draw(); });
+  draw();
+</script>
+</body>
+</html>

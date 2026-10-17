@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J5 · Sandbox and promotion</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .sbx-banner{background:repeating-linear-gradient(45deg,#fff4dc,#fff4dc 12px,#ffeccb 12px,#ffeccb 24px);border:1px solid #f0d9a0;color:#7a4b00;border-radius:8px;padding:8px 12px;font-weight:600}
+  .lv{display:inline-block;border-radius:6px;padding:0 7px;font-size:12px;font-weight:600;margin-right:3px}
+  .lv.s{background:var(--wait-bg);color:var(--wait)}.lv.c{background:var(--prog-bg);color:var(--prog)}.lv.r{background:var(--done-bg);color:var(--done)}
+</style>
+</head>
+<body data-user="kevin" data-nav="strict" data-crumb="Admin <span>› INIT-105 · Sandbox and promotion</span>" data-story="Day 5 → Day 8">
+<div id="content">
+  <div class="page-head">
+    <div><h1>INIT-105 · User Profile Management</h1><div class="muted">Prototyping in the sandbox deployment, then promotion to Controlled with valid evidence.</div></div>
+    <div class="actions"><span class="chip warn">Strictness: Sandbox</span></div>
+  </div>
+
+  <div id="banner" class="sbx-banner" style="margin-bottom:14px">SANDBOX · Not compliance evidence · OpenRouter enabled · Agents may commit directly to registered test repositories</div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>INIT-105 requirements (sandbox draft)</h2><span class="chip right">Product Agent · 6 requirements</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div><b>REQ-501</b> Changing an address, email, phone number or bank link requires step-up authentication.</div></li>
+          <li><span class="ok">✔</span><div><b>REQ-502</b> Every sensitive change notifies both the old and the new contact details.</div></li>
+          <li><span class="ok">✔</span><div><b>REQ-503</b> A new or changed bank destination holds withdrawals to it for three business days.</div></li>
+          <li><span class="ok">✔</span><div><b>REQ-504</b> A multi-factor reset requires identity re-verification and a 24-hour notice period.</div></li>
+          <li><span class="ok">✔</span><div><b>REQ-505</b> Beneficiary changes are versioned, and earlier versions are preserved.</div></li>
+          <li><span class="ok">✔</span><div><b>REQ-506</b> Personal data is masked in the interface and in logs.</div></li></ul></div>
+
+      <div class="card flush"><div class="card-h" style="padding:14px 16px 0"><h2>Repository registry</h2></div>
+        <table class="t"><thead><tr><th>Repository</th><th>Data class</th><th>Allowed levels</th><th>Write mode</th><th>Used by</th></tr></thead><tbody>
+          <tr><td class="id">harbor/profile-mgmt-sandbox</td><td><span class="chip">test</span></td><td><span class="lv s">Sandbox</span></td><td><span class="mono">direct</span></td><td class="small">INIT-105 (now)</td></tr>
+          <tr><td class="id">harbor/profile-mgmt</td><td><span class="chip">internal</span></td><td><span class="lv c">Controlled</span><span class="lv r">Regulated</span></td><td><span class="mono">branch_pr</span></td><td class="small">INIT-105 (after promotion)</td></tr>
+        </tbody></table></div>
+
+      <div class="card"><div class="card-h"><h3>Model gateways</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div><b>OpenRouter</b> · dedicated sandbox key <span class="mono">sk-or-…a72</span> <span class="chip warn">test repos only</span><div class="muted">Credit limit $50 · spent $9.80 · provider priority: Anthropic first-party</div></div></li>
+          <li><span class="no">✖</span><div><b>Amazon Bedrock</b> · pinned model MCR-0011 <span class="chip">required after promotion</span></div></li></ul></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Promote to Controlled</h2><span class="pill wait right">2 of 4 steps ready</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div><b>Production repository</b> <span class="mono">harbor/profile-mgmt</span> is registered. Pull requests only.</div></li>
+          <li><span class="ok">✔</span><div><b>Model gateway</b> switches to Bedrock with the pinned, requalified model. OpenRouter turns off.</div></li>
+          <li><span class="wt">●</span><div><b>Re-attest gates</b> for the current artifact hashes. G0 and G1 re-signed. <b>G2</b> waiting on Noah Kim and Tariq Ahmed.</div></li>
+          <li><span class="wt">●</span><div><b>Second authorizer</b> (Compliance) approves the level change. Elena Rossi pending.</div></li></ul>
+        <div class="callout info small" style="margin-top:10px"><span class="ci">ℹ</span><div>Sandbox records stay as history, labelled <b>not compliance evidence</b>. Valid evidence begins at the re-attestation, on the exact same files.</div></div>
+        <div class="row" style="margin-top:12px"><button class="btn primary disabled">Promote to Controlled</button><span class="small muted">Unlocks when all four steps are done</span></div></div>
+
+      <div class="card"><h3>What changes at Controlled</h3>
+        <table class="t" style="font-size:13px"><thead><tr><th></th><th>Sandbox</th><th>Controlled</th></tr></thead><tbody>
+          <tr><td>Model gateway</td><td>OpenRouter</td><td>Company cloud only</td></tr>
+          <tr><td>Agent git writes</td><td>Direct</td><td>Pull requests only</td></tr>
+          <tr><td>Separation of duties</td><td>Warn</td><td>Enforced</td></tr>
+          <tr><td>Evidence</td><td>Unsigned, watermarked</td><td>Signed, chained</td></tr>
+          <tr><td>Production release</td><td>Blocked</td><td>If the profile allows</td></tr></tbody></table></div>
+
+      <div class="card"><h3>Lowering is not allowed</h3><p class="small muted" style="margin:0">Once an initiative has Controlled-or-higher evidence it cannot go back down. To experiment again, fork it into a sandbox with no evidence carried over.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

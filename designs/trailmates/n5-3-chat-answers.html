@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N5 · Answering from Slack</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .slack{border:1px solid var(--border);border-radius:10px;background:#fff;overflow:hidden;box-shadow:var(--shadow)}
+  .slack .hd{background:#3f0e40;color:#fff;padding:10px 14px;font-weight:700;display:flex;gap:10px;align-items:center}
+  .slack .hd small{font-weight:400;opacity:.75}
+  .slack .feed{padding:6px 14px 14px}
+  .msg{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f1f4;align-items:flex-start}
+  .msg:last-child{border-bottom:0}
+  .av{width:34px;height:34px;border-radius:7px;display:grid;place-items:center;font-weight:700;font-size:12px;color:#fff;flex:none}
+  .av.bot{background:#6a3ec1}.av.ben{background:#2b6fe8}.av.sys{background:#98a2b3}
+  .msg .who{font-weight:700;font-size:13px}.msg .when{color:#667085;font-size:11px;margin-left:6px}
+  .msg .body{font-size:13px;margin-top:2px}
+  .attach{border-left:4px solid #6a3ec1;padding:6px 10px;margin-top:6px;background:#faf8ff;border-radius:0 8px 8px 0}
+  .sbtn{border:1px solid #cfd4dc;background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;margin:6px 6px 0 0}
+  .sbtn.rec{border-color:#1a7f4b;color:#1a7f4b}
+  .sbtn.pick{background:#1a7f4b;color:#fff;border-color:#1a7f4b}
+  .sbtn:disabled{opacity:.55;cursor:default}
+</style>
+</head>
+<body data-user="ben" data-nav="queue" data-crumb="Attention queue <span>› Slack view</span>" data-story="Day 14 · 09:41">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Answering from Slack</h1><div class="muted">Simple asks can be answered where you already are. Anything that needs real reading opens the Workspace.</div></div>
+    <div class="actions"><a class="btn" href="n5-1-attention-queue.html">Back to the queue</a></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="slack" id="slack">
+      <div class="hd"># trailmates-agents <small>3 members · agents and people</small></div>
+      <div class="feed">
+        <div class="msg"><div class="av bot">BE</div><div style="flex:1"><div><span class="who">Backend Agent</span><span class="when">09:41</span></div>
+          <div class="body"><b>Decision request</b> · Which weather provider should the forecast use?
+            <div class="attach"><div class="small">Blocks: forecast service (US-3). Everything else continues.<br>Default: <b>A</b>, applied at 15:30 if nobody answers.</div>
+              <button class="sbtn rec" id="sA">A · Free tier, 3-day (recommended)</button><button class="sbtn" id="sB">B · Paid, 7-day $29/mo</button><button class="sbtn" id="sC">C · Self-hosted</button><button class="sbtn" id="sW">Open in Workspace</button></div></div></div></div>
+
+        <div class="msg" id="reply" hidden><div class="av ben">BC</div><div style="flex:1"><div><span class="who">Ben Carter</span><span class="when">09:43</span></div>
+          <div class="body">Chose <b>A · Free tier, 3-day</b></div>
+          <div style="margin-top:8px;display:flex;gap:10px"><div class="av bot">BE</div><div class="body"><b>Backend Agent</b> Thanks Ben. Continuing with the free tier. <br><button class="sbtn" id="sStd">Save as a standing decision</button></div></div></div></div>
+
+        <div class="msg"><div class="av bot">FE</div><div style="flex:1"><div><span class="who">Frontend Agent</span><span class="when">10:12</span></div>
+          <div class="body"><b>Review requested</b> · PR #44 Weather alerts
+            <div class="attach"><div class="small">Trigger: new dependency <span class="mono">@weather/sdk</span>. Reviews open the Workspace, so you see the diff and the preview.</div><button class="sbtn">Open review pack</button></div></div></div></div>
+
+        <div class="msg"><div class="av sys">⏰</div><div style="flex:1"><div><span class="who">Digest</span><span class="when">17:00</span></div>
+          <div class="body">3 low-priority items: 2 assumptions, 1 notice. <a href="n5-1-attention-queue.html">Open the attention queue</a></div></div></div>
+
+        <div class="msg"><div class="av sys">☾</div><div style="flex:1"><div class="body small" style="color:#667085">Quiet hours 20:00 to 08:00. Only hard stops, such as a production deploy waiting on you, can reach you.</div></div></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px 4px"><h3 style="margin:0">What can be answered in chat</h3></div>
+        <table class="t" style="font-size:13px"><tbody>
+          <tr><td>Question</td><td><span class="chip ok">chat</span></td></tr>
+          <tr><td>Decision request</td><td><span class="chip ok">chat</span></td></tr>
+          <tr><td>Review of a low-risk change</td><td><span class="chip ok">chat</span> <span class="small muted">team setting</span></td></tr>
+          <tr><td>Spec and design checkpoint</td><td><span class="chip warn">Workspace</span></td></tr>
+          <tr><td>Triggered review (new dependency, migration)</td><td><span class="chip warn">Workspace</span></td></tr>
+          <tr><td>Release, hard stops</td><td><span class="chip warn">Workspace</span></td></tr></tbody></table></div>
+      <div class="card"><h3>How replies are checked</h3><ul class="checks small">
+        <li><span class="ok">✔</span><div>The Slack user must match the person's linked identity.</div></li>
+        <li><span class="ok">✔</span><div>The answer is applied only if the ask is still open.</div></li>
+        <li><span class="ok">✔</span><div>The reply is written to the activity log with the channel it came from.</div></li></ul></div>
+    </div>
+  </div>
+  <div class="callout ok small" id="done" hidden style="margin-top:14px"><span class="ci">✔</span><div>Answered in Slack. The ask is closed in the Workspace, and the Backend Agent continues.</div></div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  function choose(id) {
+    ['sA', 'sB', 'sC'].forEach(k => { const b = document.getElementById(k); b.disabled = true; });
+    document.getElementById(id).classList.add('pick');
+    document.getElementById('reply').hidden = false;
+    document.getElementById('done').hidden = false;
+  }
+  ['sA', 'sB', 'sC'].forEach(k => document.getElementById(k).addEventListener('click', () => choose(k)));
+  document.getElementById('sStd').addEventListener('click', e => { e.target.textContent = '✔ Saved as SD-07'; e.target.disabled = true; });
+</script>
+</body>
+</html>

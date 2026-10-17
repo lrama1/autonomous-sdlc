@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C2 · Parallel agent runs</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .browser{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
+  .browser .bar-top{background:#f1f3f6;padding:7px 10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border)}
+  .browser .dot{width:9px;height:9px;border-radius:50%;background:#d0d5dd}
+  .browser .url{margin-left:8px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:1px 10px;font-size:11px;color:#667085;flex:1}
+  .app-body{padding:14px 16px}
+  .app-body h4{margin:0 0 8px;font-size:14px}
+  .track{display:flex;align-items:center;gap:0;margin:10px 0 6px}
+  .track .st{flex:1;text-align:center;font-size:11px;color:#667085}
+  .track .st i{display:block;width:14px;height:14px;border-radius:50%;margin:0 auto 4px;background:#d0d5dd}
+  .track .st.on i{background:var(--done)} .track .st.on{color:#1d2939;font-weight:600}
+  .track .st.now i{background:var(--prog);box-shadow:0 0 0 4px rgba(43,111,232,.15)}
+  .li{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid #eef0f3;border-radius:8px;margin-bottom:6px;font-size:13px}
+  .li .free{margin-left:auto;font-size:11px;color:#667085}
+</style>
+</head>
+<body data-user="marcus" data-nav="map" data-crumb="INIT-302 <span>› Agent runs</span>" data-story="Oct 30 · 10:20">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Order tracking and self-service returns</h1><span class="pill prog">2 runs in progress</span></div>
+      <div class="muted">Stories US-201 to US-206 · sponsors: <span class="chip human">Marcus Webb</span> (frontend) and <span class="chip human">Lena Fischer</span> (backend)</div></div>
+    <div class="actions"><button class="btn">⏸ Pause both</button></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card" id="runBE"><div class="card-h"><h3>Backend Engineer Agent · RUN-0561</h3><span class="pill prog right">Verifying</span></div>
+      <ul class="timeline small">
+        <li class="done"><b>Read</b> US-201 to US-206 and the carrier API notes<div class="when">10:02</div></li>
+        <li class="done"><b>Wrote tests first</b> 31 tests: tracking events, return window, refund amount<div class="when">10:08</div></li>
+        <li class="done"><b>Implemented</b> tracking sync and the return authorization service<div class="when">10:17</div></li>
+        <li class="run"><b>Verify in sandbox</b> app started with Postgres and a simulated carrier<div class="when">now</div></li></ul>
+      <div class="small muted">Sandbox: ephemeral · token for <span class="mono">kestrel/storefront</span> only · cost $1.84 of $12 cap</div></div>
+
+    <div class="card" id="runFE"><div class="card-h"><h3>Frontend Engineer Agent · RUN-0562</h3><span class="pill prog right">Verifying</span></div>
+      <ul class="timeline small">
+        <li class="done"><b>Read</b> the stories and the design tokens<div class="when">10:02</div></li>
+        <li class="done"><b>Wrote tests first</b> 18 component tests<div class="when">10:07</div></li>
+        <li class="done"><b>Implemented</b> order timeline and the return flow<div class="when">10:19</div></li>
+        <li class="run"><b>Verify in sandbox</b> driving a headless browser, desktop and a 375 px phone<div class="when">now</div></li></ul>
+      <div class="small muted">Sandbox: ephemeral · token for <span class="mono">kestrel/storefront</span> only · cost $1.52 of $12 cap</div></div>
+  </div>
+
+  <div class="card" id="verify" style="margin-top:16px">
+    <div class="card-h"><h2>Frontend agent: headless browser check</h2><span class="chip warn right">agent-reported · advisory</span></div>
+    <div class="grid g2">
+      <div class="browser">
+        <div class="bar-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">localhost:3000/orders/KM-48213</span></div>
+        <div class="app-body"><h4>Order KM-48213 · 2 items</h4>
+          <div class="track"><div class="st on"><i></i>Placed</div><div class="st on"><i></i>Packed</div><div class="st now"><i></i>Shipped</div><div class="st"><i></i>Out for delivery</div><div class="st"><i></i>Delivered</div></div>
+          <div class="small muted" style="margin-bottom:8px">Carrier event received 10:21 · Estimated delivery Fri</div>
+          <div class="li">🥾 Trail runner shoes, size 10 <span class="free">Return until Dec 2</span></div>
+          <div class="li">🧦 Wool socks, 3 pack <span class="free">Return until Dec 2</span></div></div>
+      </div>
+      <div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Place an order and open its tracking page <span class="muted">1.1 s</span></div></li>
+          <li><span class="ok">✔</span><div>Simulated carrier events move the timeline Shipped → Out for delivery → Delivered</div></li>
+          <li><span class="ok">✔</span><div>Return button appears only inside the 30-day window</div></li>
+          <li><span class="ok">✔</span><div>Start a return, choose a reason, receive a prepaid label</div></li>
+          <li><span class="ok">✔</span><div>Repeat on a 375 px phone viewport</div></li></ul>
+        <div class="callout info small" style="margin-top:10px"><span class="ci">ℹ</span><div>Continuous integration re-runs the same flows after the pull request opens, and that result is the one that counts. A QA Lead then verifies the whole initiative at G4.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

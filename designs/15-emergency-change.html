@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>15 · Emergency change (break-glass)</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="sam" data-nav="audit" data-crumb="INIT-009 <span>› Emergency change EC-004</span>" data-story="any time · incident">
+<div id="content">
+  <div class="callout dev" style="margin-bottom:14px"><span class="ci">🚨</span><div><b>Break-glass change in effect.</b> Deployed under the emergency path. Post-hoc review is <b>due in 21 h 14 m</b>. Deviation <b>DEV-009</b> was opened automatically.</div></div>
+
+  <div class="page-head">
+    <div><div class="row"><h1>EC-004 · Emergency change</h1><span class="pill dev">Post-hoc review due</span></div>
+      <div class="muted">INIT-009 Alarm Limits API · triggered by incident INC-221 · fix for alarm threshold regression</div></div>
+    <div class="actions"><a class="btn primary" href="#">Start post-hoc review</a></div>
+  </div>
+
+  <div class="stepper">
+    <div class="step done"><span class="dot">✓</span>Declared</div><div class="step-line"></div>
+    <div class="step done"><span class="dot">✓</span>Emergency approval</div><div class="step-line"></div>
+    <div class="step done"><span class="dot">✓</span>Deployed</div><div class="step-line"></div>
+    <div class="step active"><span class="dot">4</span>Post-hoc review</div><div class="step-line"></div>
+    <div class="step"><span class="dot">5</span>Closed</div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>What happened</h2></div>
+        <ul class="timeline small">
+          <li class="done"><b>Incident INC-221 raised</b> · alarm limits ignored for 2 device models<div class="when">Day 14 02:11</div></li>
+          <li class="done"><b>Omar Khan declared emergency change</b> with justification and scope (1 file, 1 config flag)<div class="when">02:25</div></li>
+          <li class="done"><b>Rita Haddad approved as named emergency approver</b> (single signature, evidence EV-000601)<div class="when">02:41</div></li>
+          <li class="done"><b>Deployed</b> by Omar Khan. Health checks passed.<div class="when">02:58</div></li>
+          <li class="run"><b>Post-hoc review</b> by QRA and Architect required within 24 h<div class="when">due Day 15 02:58</div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h2>Deviation DEV-009</h2><span class="pill dev right">Open</span></div>
+        <dl class="kv small">
+          <dt>Skipped controls</dt><dd>Full G3 review, G4 re-verification, G5 security review</dd>
+          <dt>Compensating controls</dt><dd>Named emergency approver, scoped change, automated tests run, rollback plan on file</dd>
+          <dt>Required to close</dt><dd>Retro-active review, regression tests added, impact analysis, CR created</dd></dl>
+        <div class="callout warn small" style="margin-top:10px"><span class="ci">⚠</span><div>Releases for INIT-009 are <b>blocked</b> (G6 open-deviation check) until DEV-009 is closed.</div></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Post-hoc review tasks</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Sam Ivanova</b> · QRA<div class="muted">Review justification, scope, compensating controls</div></div></li>
+          <li><span class="wt">●</span><div><b>Marcus Chen</b> · Architect<div class="muted">Review code change and design impact</div></div></li>
+          <li><span class="wt">●</span><div><b>Lee Alvarez</b> · QA<div class="muted">Confirm regression tests were added</div></div></li></ul></div>
+      <div class="card"><h3>Counts toward metrics</h3><p class="small muted" style="margin:0">Emergency changes this quarter: <b>1</b>. A rising count is flagged to the QRA and shown in the audit summary.</p></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

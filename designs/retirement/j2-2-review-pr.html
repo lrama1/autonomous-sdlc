@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J2 · G3 pull request review</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="hannah" data-nav="map" data-crumb="INIT-102 <span>› G3 · PR #77 › Review pack</span>" data-story="Day 6 · 15:20">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G3 · PR #77 · Enforce contribution limits and idempotent funding</h1><span class="pill wait">Waiting on reviewers</span></div>
+      <div class="muted">Implements <span class="chip">REQ-203</span> <span class="chip">REQ-204</span> · prepared by <span class="chip agent">Backend Engineer Agent</span> RUN-0231 · <span class="chip">agent/run-0231 → main</span></div>
+    </div>
+    <div class="actions"><span class="small muted">Prototype:</span>
+      <select id="viewAs" style="width:auto"><option value="hannah">View as Hannah (eligible reviewer)</option><option value="carlos">View as Carlos (sponsor)</option></select></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="diff">Changes <span class="count">4 files</span></button>
+        <button class="tab" data-tab="tests">Tests</button>
+        <button class="tab" data-tab="run">Agent run</button>
+      </div>
+
+      <div data-pane="diff" class="stack">
+        <div class="callout warn"><span class="ci">⚑</span><div><b>Deterministic triggers fired.</b> (1) Money-movement path <span class="mono">domain/contribution/**</span> → Architect and Security co-review required. (2) New dependency <span class="mono">dinero.js</span> → SOUP record <b>SOUP-011</b> needs evaluation.</div></div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/funding/src/domain/contribution/limitPolicy.ts</b><span class="chip warn">money movement</span><span class="chip">new</span></div>
+          <span class="ln ctx">@@ -0,0 +1,16 @@</span>
+          <span class="ln add">+/** REQ-203: reject regular contributions that would exceed the tax-year limit. */</span>
+          <span class="ln add">+export function checkContribution(req: Contribution, ytd: Money, cfg: TaxYearConfig): Decision {</span>
+          <span class="ln add">+  if (req.type !== "regular") return allow();</span>
+          <span class="ln add">+  const limit = cfg.iraLimit(req.taxYear)</span>
+          <span class="ln add">+    .add(req.ageAtYearEnd >= 50 ? cfg.catchUp(req.taxYear) : Money.zero());</span>
+          <span class="ln add">+  return ytd.add(req.amount).greaterThan(limit)</span>
+          <span class="ln add">+    ? reject("EXCEEDS_ANNUAL_LIMIT", { limit, ytd })</span>
+          <span class="ln add">+    : allow();</span>
+          <span class="ln add">+}</span>
+          <div class="flag">⚑ Reviewer attention: confirm the limit is applied per customer across all IRAs, and by contribution tax year, not the date the request arrives (control CTL-06, excess contributions).</div>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/funding/src/application/FundingService.ts</b><span class="chip warn">money movement</span></div>
+          <span class="ln ctx">@@ -12,6 +12,14 @@</span>
+          <span class="ln ctx"> async fund(cmd: FundingCommand): Promise&lt;FundingResult&gt; {</span>
+          <span class="ln add">+  const prior = await this.requests.find(cmd.idempotencyKey);</span>
+          <span class="ln add">+  if (prior) return prior.result;            // REQ-204: never debit twice</span>
+          <span class="ln add">+  const decision = checkContribution(cmd.contribution, await this.ytd(cmd), this.cfg);</span>
+          <span class="ln add">+  if (!decision.allowed) return this.record(cmd, decision);</span>
+          <span class="ln ctx">   return this.rail.debit(cmd.bankAccount, cmd.amount);</span>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">package.json</b><span class="chip err">dependency added</span></div>
+          <span class="ln add">+    "dinero.js": "2.0.0"</span>
+        </div>
+      </div>
+
+      <div data-pane="tests" hidden class="card stack">
+        <div class="grid g2">
+          <div class="card" style="background:#fafbfc"><div class="card-h"><h3>Agent verification report</h3><span class="chip warn right">agent-reported · advisory</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>Build, lint, types</div></li><li><span class="ok">✔</span><div>62 unit tests</div></li><li><span class="ok">✔</span><div>App started with Postgres sidecar and simulated bank · <span class="mono">/health</span> 200</div></li><li><span class="ok">✔</span><div>Smoke 9/9 incl. duplicate request and over-limit deposit</div></li></ul>
+            <div class="small muted">RUN-0231 · commit <span class="hash">8e2d4b1</span></div></div>
+          <div class="card" style="border-color:#bfe6cf"><div class="card-h"><h3>CI re-run (authoritative)</h3><span class="chip ok right">independent</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>Same <span class="mono">verify</span> contract in a fuller environment (Postgres, simulated bank network)</div></li><li><span class="ok">✔</span><div>62 unit · 9 smoke · coverage 93%</div></li></ul>
+            <div class="small muted">Bound to commit <span class="hash">8e2d4b1</span> · used as G3 evidence</div></div>
+        </div>
+        <div class="callout info small"><span class="ci">🤖</span><div><b>Advisory AI review</b> (does not count as approval): add property-based tests around the limit boundary, and a test for a prior-year contribution made before the filing deadline.</div></div>
+      </div>
+
+      <div data-pane="run" hidden class="card"><dl class="kv small">
+        <dt>Run</dt><dd>RUN-0231 · Backend Engineer v1.6.0 · pinned model MCR-0011</dd>
+        <dt>Sponsor</dt><dd>Carlos Diaz</dd><dt>Contributors</dt><dd>Carlos Diaz (guidance at 10:20)</dd>
+        <dt>Duration / cost</dt><dd>31 min · $3.74</dd></dl></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Separation of duties</h3></div>
+        <dl class="kv small" style="grid-template-columns:110px 1fr">
+          <dt>Author-of-record</dt><dd><span class="chip human">Carlos Diaz</span> sponsor</dd>
+          <dt>Contributors</dt><dd><span class="chip human">Carlos Diaz</span></dd>
+          <dt>Required</dt><dd>1 × Backend Engineer, plus Architect and Security (money-movement path)</dd>
+          <dt>Eligible</dt><dd><span class="chip human">Hannah Wright</span> <span class="chip human">Noah Kim</span> <span class="chip human">Tariq Ahmed</span></dd></dl>
+        <div id="sod" class="callout ok small" style="margin-top:10px"><span class="ci">✔</span><div>You are eligible to approve. You are not the sponsor or a contributor.</div></div></div>
+
+      <div class="card"><div class="card-h"><h3>Reviewer attestations</h3></div>
+        <ul class="checks small" id="att">
+          <li><label><input type="checkbox"> I reviewed the limit logic and how the tax year is chosen</label></li>
+          <li><label><input type="checkbox"> Retries and timeouts cannot debit twice</label></li>
+          <li><label><input type="checkbox"> Tests cover the linked requirements</label></li>
+          <li><label><input type="checkbox"> No secrets or customer data in code or logs</label></li></ul>
+        <div class="row" style="margin-top:12px"><a class="btn primary" id="sign" href="#">Approve &amp; sign</a><button class="btn">Request changes</button></div></div>
+
+      <div class="card"><h3>Gate status</h3><ul class="checks small">
+        <li><span class="ok">✔</span><div>CI green · <span class="mono">sdlc/gate</span> stays <b>pending</b> until required signatures exist</div></li>
+        <li><span class="wt">●</span><div>SOUP-011 evaluation (dinero.js) pending</div></li>
+        <li><span class="ok">✔</span><div>Requirement links present</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('viewAs').addEventListener('change', e => {
+    const carlos = e.target.value === 'carlos';
+    const sod = document.getElementById('sod'), sign = document.getElementById('sign');
+    sod.className = 'callout small ' + (carlos ? 'error' : 'ok'); sod.style.marginTop = '10px';
+    sod.innerHTML = carlos
+      ? '<span class="ci">⛔</span><div><b>You cannot approve this change.</b> You are the sponsor of RUN-0231 and a contributor. A different Backend Engineer must review. You can still comment.</div>'
+      : '<span class="ci">✔</span><div>You are eligible to approve. You are not the sponsor or a contributor.</div>';
+    sign.classList.toggle('disabled', carlos);
+    document.querySelectorAll('#att input').forEach(i => i.disabled = carlos);
+  });
+</script>
+</body>
+</html>

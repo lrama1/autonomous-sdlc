@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N3 · Autopilot</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="ben" data-nav="autopilot" data-crumb="Autopilot <span>› Pre-approved change types</span>" data-story="Day 15">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Autopilot</h1><div class="muted">Routine changes merge on their own when the rules say they are safe. Everything else waits for a person.</div></div>
+    <div class="actions"><span class="chip warn">Autonomy: Balanced</span><span class="chip ok">Autopilot: on</span></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Pre-approved change types</h2><div class="small muted">Ben approved these as standing rules. A pull request that matches one, with CI green, is merged by the Gate identity.</div></div>
+        <table class="t"><thead><tr><th>Type</th><th>Matches</th><th>Conditions</th><th>Standing approval</th></tr></thead><tbody>
+          <tr><td><b>Documentation and comments</b></td><td class="small mono">docs/**, **/*.md</td><td class="small">CI green</td><td class="small"><a href="#">ACT-0052</a> · Ben · review by 2027-01-15</td></tr>
+          <tr><td><b>Interface copy and translations</b></td><td class="small mono">apps/web/src/i18n/**</td><td class="small">CI green, no logic files changed</td><td class="small"><a href="#">ACT-0052</a></td></tr>
+          <tr><td><b>Dependency patch and minor updates</b></td><td class="small mono">package.json, lockfile</td><td class="small">CI green, scans clean, no new package, no major version</td><td class="small"><a href="#">ACT-0053</a></td></tr>
+          <tr><td><b>Feature-flag toggles in staging</b></td><td class="small mono">config/flags.staging.json</td><td class="small">CI green</td><td class="small"><a href="#">ACT-0053</a></td></tr>
+        </tbody></table></div>
+
+      <div class="card flush" id="activity"><div style="padding:14px 16px 4px"><h2 style="margin:0">Last 7 days</h2><div class="small muted"><b>14</b> merged automatically · <b>3</b> held for a human</div></div>
+        <table class="t"><thead><tr><th>PR</th><th>Change</th><th>Outcome</th><th>Reason</th></tr></thead><tbody>
+          <tr><td class="id">#51</td><td class="small">Fix typo in README</td><td><span class="chip ok">auto-merged</span></td><td class="small">Documentation · CI green</td></tr>
+          <tr><td class="id">#52</td><td class="small">Bump <span class="mono">date-fns</span> 3.6.0 → 3.6.1</td><td><span class="chip ok">auto-merged</span></td><td class="small">Patch update · scans clean</td></tr>
+          <tr><td class="id">#53</td><td class="small">Reword invite email subject</td><td><span class="chip ok">auto-merged</span></td><td class="small">Interface copy · no logic changed</td></tr>
+          <tr><td class="id">#55</td><td class="small">Bump <span class="mono">jsonwebtoken</span> 8 → 9</td><td><span class="chip warn">held</span></td><td class="small">Major version bump</td></tr>
+          <tr><td class="id">#56</td><td class="small">Change session timeout</td><td><span class="chip warn">held</span></td><td class="small">Touches <span class="mono">auth/**</span></td></tr>
+          <tr><td class="id">#57</td><td class="small">Refactor trip model (+340 lines)</td><td><span class="chip warn">held</span></td><td class="small">Larger than 200 lines</td></tr>
+        </tbody></table></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Always held for a human</h3></div>
+        <ul class="checks small">
+          <li><span class="no">■</span><div>Anything under <span class="mono">auth/**</span> or <span class="mono">infra/**</span></div></li>
+          <li><span class="no">■</span><div>Database migrations</div></li>
+          <li><span class="no">■</span><div>A new dependency, or a major version bump</div></li>
+          <li><span class="no">■</span><div>More than 200 changed lines</div></li>
+          <li><span class="no">■</span><div>Deleted or skipped tests, or lowered coverage thresholds</div></li></ul>
+        <p class="small muted" style="margin:8px 0 0">These are fixed rules, not an AI judgment call. Agents may hold more changes for a human, never fewer.</p></div>
+
+      <div class="card"><div class="card-h"><h3>Why this is safe</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Each standing rule is a human decision with an owner and a review date.</div></li>
+          <li><span class="ok">✔</span><div>Agents never approve. The Gate identity merges only when CI is green and the diff matches the type.</div></li>
+          <li><span class="ok">✔</span><div>Every auto-merge is recorded in the activity log.</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

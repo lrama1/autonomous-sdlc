@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N3 · Bug triage</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="ben" data-nav="autopilot" data-crumb="Autopilot <span>› BUG-31</span>" data-story="Day 16 · 09:12">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>BUG-31 · Packing list items disappear</h1><span class="pill wait" id="statePill">Fix waiting for review</span></div>
+      <div class="muted">Reported 09:12 through the in-app feedback form · picked up automatically by <span class="chip agent">Bug Agent</span> RUN-0455 · no human sponsor (started by a rule)</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>BUG-31 · what the user wrote</h2></div>
+        <div class="callout info"><span class="ci">💬</span><div>"We were both editing our packing list on the trail map page and some of the items I added just vanished. It happened twice."<div class="small muted" style="margin-top:4px">from a user on trip 42 · 3 similar reports this week</div></div></div></div>
+
+      <div class="card"><div class="card-h"><h2>What the Bug Agent did</h2></div>
+        <ul class="timeline small" id="steps">
+          <li class="done"><b>Reproduced it</b> with two browsers editing at once, and added a failing test (<span class="mono">TEST-212</span>)<div class="when">09:14</div></li>
+          <li class="done"><b>Found the cause</b>: the list is saved as one document, so the last save wins and overwrites the other person's items<div class="when">09:17</div></li>
+          <li class="done"><b>Fixed it</b>: save each item on its own, with a version check, so edits merge instead of overwriting<div class="when">09:22</div></li>
+          <li class="done"><b>Verified</b>: ran the app, two browsers editing at once, 0 items lost, and TEST-212 turns green<div class="when">09:26</div></li>
+          <li class="done"><b>Opened PR #58</b> with the report linked and the root cause explained<div class="when">09:27</div></li></ul></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>PR #58 · Fix lost items on concurrent edits</h2></div>
+        <div class="row wrap small"><span class="chip">agent/run-0455 → main</span><span class="chip warn">held: shared data handling</span><span class="chip ok">CI green</span></div>
+        <ul class="checks small" style="margin-top:10px">
+          <li><span class="ok">✔</span><div>TEST-212 failed before the fix and passes after it</div></li>
+          <li><span class="ok">✔</span><div>No schema change, 38 lines changed</div></li>
+          <li><span class="ok">✔</span><div>Reviewer eligible: Ben did not start this run</div></li></ul>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="approve">Approve &amp; merge</button><button class="btn">Request changes</button></div></div>
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Merged.</b> PR #58 is on <span class="mono">main</span>. BUG-31 is linked to the change and closed. The reporter gets a note that it is fixed. Activity entry <b>ACT-0074</b>.</div></div>
+      <div class="card"><h3>Time from report to fix</h3><div class="n" style="font-size:26px;font-weight:700">15 min</div><div class="small muted">agent work. Review time is the human part.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('approve').addEventListener('click', () => {
+    document.getElementById('result').hidden = false;
+    const p = document.getElementById('statePill'); p.className = 'pill done'; p.textContent = 'Fixed and merged';
+  });
+</script>
+</body>
+</html>

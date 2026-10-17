@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J1 · G1 review pack</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="maya" data-nav="map" data-crumb="INIT-101 <span>› G1 · Requirements baseline › Review pack</span>" data-story="Day 1 · 14:35">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G1 · Requirements baseline</h1><span class="pill wait">Waiting on you</span></div>
+      <div class="muted">IRA Account Opening · prepared by <span class="chip agent">Product Agent</span> RUN-0112 · agent definition v2.3.0 · pinned model MCR-0011</div>
+    </div>
+    <div class="actions"><a class="btn" href="map.html?i=101&s=s1">Back to map</a><a class="btn primary disabled" id="signBtn" href="j1-3-sign.html">Review &amp; sign</a></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="req">Requirements <span class="count">12</span></button>
+        <button class="tab" data-tab="map">Compliance map <span class="count">5</span></button>
+        <button class="tab" data-tab="asm">Assumptions <span class="count">4</span></button>
+      </div>
+
+      <div data-pane="req">
+        <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>Requirement</th><th>Acceptance</th><th>Control</th><th>Priority</th></tr></thead><tbody>
+          <tr><td class="id">REQ-101</td><td>An applicant shall be at least 18 and provide name, date of birth, address and taxpayer ID before an application can be submitted.</td><td class="small">3 criteria</td><td><span class="chip warn">CTL-01 CIP</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-102</td><td>Identity shall be verified before the account activates. Failed or ambiguous results route to manual review, and no account activates while a review is open.</td><td class="small">4 criteria</td><td><span class="chip warn">CTL-01</span> <span class="chip warn">CTL-02 OFAC</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-103</td><td>The applicant chooses Traditional, Roth or Rollover IRA. The type cannot change after activation. A new account is required.</td><td class="small">2 criteria</td><td><span class="chip">—</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-104</td><td>For a Roth IRA, eligibility is checked against the tax-year income phase-out limits held in administrator configuration. Limits are never hard-coded.</td><td class="small">4 criteria</td><td><span class="chip warn">CTL-03 Roth eligibility</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-105</td><td>For a Rollover IRA, capture the source plan type and the method (direct or 60-day). An indirect rollover starts a 60-day tracker.<div class="small"><span class="chip err">Changed since draft</span></div></td><td class="small">3 criteria</td><td><span class="chip warn">CTL-04 Rollover rules</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-106</td><td>Primary and contingent beneficiaries shall each total 100% per tier and stay editable after activation.</td><td class="small">3 criteria</td><td><span class="chip">—</span></td><td>Should</td></tr>
+          <tr><td class="id">REQ-107</td><td>Required disclosures are presented and e-signed. Document versions and timestamps are stored.</td><td class="small">3 criteria</td><td><span class="chip warn">CTL-05 Records</span></td><td>Must</td></tr>
+          <tr><td colspan="5" class="small muted" style="text-align:center">+ 5 more requirements (REQ-108 … REQ-112) · <a href="#">show all</a></td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div data-pane="map" hidden>
+        <div class="callout info" style="margin-bottom:12px"><span class="ci">ℹ</span><div>Each control is owned by Compliance. The pack shows <b>which requirement implements it</b> and the rule it supports, so Compliance can review intent, not just wording. References are illustrative, not legal advice.</div></div>
+        <div class="card flush"><table class="t"><thead><tr><th>Control</th><th>Implemented by</th><th>Rule it supports (illustrative)</th><th>Evidence expected</th></tr></thead><tbody>
+          <tr><td class="id">CTL-01</td><td>REQ-101, REQ-102</td><td class="small">Customer identification program (CIP)</td><td class="small">Verification result per applicant, stored with timestamp</td></tr>
+          <tr><td class="id">CTL-02</td><td>REQ-102</td><td class="small">Sanctions screening (OFAC)</td><td class="small">Screening result and reviewer decision</td></tr>
+          <tr><td class="id">CTL-03</td><td>REQ-104</td><td class="small">Roth IRA income eligibility (IRC §408A)</td><td class="small">Tests with limits injected from configuration</td></tr>
+          <tr><td class="id">CTL-04</td><td>REQ-105</td><td class="small">Rollover rules, 60-day window (IRC §408(d)(3))</td><td class="small">Tracker tests, one-rollover-per-12-months check</td></tr>
+          <tr><td class="id">CTL-05</td><td>REQ-107</td><td class="small">Electronic signature and records retention</td><td class="small">Stored document versions and signatures</td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div data-pane="asm" hidden>
+        <div class="callout warn" style="margin-bottom:12px"><span class="ci">⚠</span><div>Every assumption needs your disposition before you can sign. <b>Accept</b> records it, <b>Reject</b> sends it back to the agent, <b>Convert</b> turns it into a requirement.</div></div>
+        <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>Assumption declared by the agent</th><th>Disposition</th></tr></thead><tbody>
+          <tr><td class="id">A-1</td><td>Annual contribution limits come from an admin-managed tax-year configuration, not from code.</td><td><span class="chip ok">Accepted · Maya</span></td></tr>
+          <tr><td class="id">A-2</td><td>Identity verification is provided by a third-party vendor behind a port, so the vendor can change.</td><td><span class="chip ok">Accepted · Maya</span></td></tr>
+          <tr><td class="id">A-3</td><td>Spousal and inherited IRAs are out of scope for version one.</td><td><select id="a3" style="max-width:220px"><option value="">Select disposition…</option><option>Accept</option><option>Reject</option><option>Convert to requirement</option></select></td></tr>
+          <tr><td class="id">A-4</td><td>Applicants are US residents only.</td><td><span class="chip ok">Converted → REQ-112</span></td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Gate checks</h3></div>
+        <ul class="checks small" id="checks">
+          <li><span class="ok">✔</span><div>Every requirement has a unique ID and acceptance criteria</div></li>
+          <li><span class="ok">✔</span><div>Every requirement maps to a control or is marked n/a</div></li>
+          <li><span class="ok">✔</span><div>Regulatory classification confirmed by Compliance at G0</div></li>
+          <li><span class="wt" id="asmIcon">●</span><div id="asmText">1 assumption without disposition (A-3)</div></li>
+        </ul></div>
+      <div class="card"><div class="card-h"><h3>Who must sign</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Maya Patel</b> · Product Owner<div class="muted">Accountable owner. Allowed to approve work she commissioned.</div></div></li>
+          <li><span class="wt">●</span><div><b>Elena Rossi</b> · Compliance &amp; Risk<div class="muted">Independent. Not a sponsor or contributor of RUN-0112. ✔ Eligible.</div></div></li>
+        </ul></div>
+      <div class="card"><h3>What you are about to sign</h3>
+        <dl class="kv small" style="grid-template-columns:100px 1fr">
+          <dt>Commit</dt><dd class="hash">5c91e07</dd>
+          <dt>Content hash</dt><dd class="hash">sha256:b41d…07fa</dd>
+          <dt>Artifacts</dt><dd>docs/requirements/*.md (12)<br>docs/assumptions.md<br>docs/controls.md</dd>
+          <dt>Profile</dt><dd>Financial Services overlay v0.2 (preview)</dd></dl>
+        <p class="small muted" style="margin:8px 0 0">If any file changes before you sign, the hash changes and this pack is invalidated.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.addEventListener('change', e => {
+    if (e.target.id !== 'a3') return;
+    const ok = !!e.target.value;
+    document.getElementById('signBtn').classList.toggle('disabled', !ok);
+    const i = document.getElementById('asmIcon'); i.className = ok ? 'ok' : 'wt'; i.textContent = ok ? '✔' : '●';
+    document.getElementById('asmText').textContent = ok ? 'All 4 assumptions dispositioned' : '1 assumption without disposition (A-3)';
+  });
+</script>
+</body>
+</html>

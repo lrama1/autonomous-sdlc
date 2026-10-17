@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J3 · Traceability</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .node-rect{fill:#fff;stroke:#c7cdd8;stroke-width:1.5}.node-txt{font:12px system-ui;fill:#18212f}.node-sub{font:11px system-ui;fill:#667085}.edge{stroke:#98a2b3;stroke-width:1.5;fill:none;marker-end:url(#arr)}
+  #toast{position:fixed;right:22px;top:76px;z-index:40;background:#0f1729;color:#fff;border-radius:10px;padding:10px 16px;box-shadow:0 8px 30px rgba(0,0,0,.35);display:none}
+</style>
+</head>
+<body data-user="tessa" data-nav="trace" data-crumb="INIT-103 <span>› Portfolio Management › Traceability</span>" data-story="Day 14 · 10:05">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Traceability</h1><div class="muted">Requirement → design → code → test → result → control → release, built from IDs in the repository.</div></div>
+    <div class="actions"><button class="btn">Export CSV</button><button class="btn primary">Export evidence bundle</button></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n" id="tCov">86%</div><div class="l">Requirements with passing verification (<span id="tCnt">6 of 7</span>)</div></div>
+    <div class="card tile"><div class="n" id="tNoTest" style="color:var(--block)">1</div><div class="l">Requirement without test</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">2</div><div class="l">Orphan items (test or PR without requirement)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Open deviations</div></div>
+  </div>
+
+  <div data-tabgroup>
+    <div class="tabs">
+      <button class="tab active" data-tab="matrix">Matrix</button>
+      <button class="tab" data-tab="graph">Graph · REQ-306</button>
+      <button class="tab" data-tab="gaps">Gaps <span class="count" id="gapCount">3</span></button>
+    </div>
+
+    <div data-pane="matrix" class="card flush"><table class="t matrix"><thead><tr><th>Requirement</th><th>Design / ADR</th><th>Code (PR)</th><th>Tests</th><th>Result @ 4c7a10e</th><th>Control</th></tr></thead><tbody>
+      <tr><td><span class="id">REQ-301</span> <span class="small muted">Holdings and balances</span></td><td><span class="cell ok">ADR-011</span></td><td><span class="cell ok">#61</span></td><td><span class="cell ok">5 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTL-10</span></td></tr>
+      <tr><td><span class="id">REQ-302</span> <span class="small muted">Target allocation</span></td><td><span class="cell ok">ADR-011</span></td><td><span class="cell ok">#63</span></td><td><span class="cell ok">4 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTL-11</span></td></tr>
+      <tr><td><span class="id">REQ-303</span> <span class="small muted">Drift detection</span></td><td><span class="cell ok">ADR-012</span></td><td><span class="cell ok">#66</span></td><td><span class="cell ok">6 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell na">n/a</span></td></tr>
+      <tr id="rowReq304"><td><span class="id">REQ-304</span> <span class="small muted">Exclude restricted securities</span></td><td><span class="cell ok">ADR-012</span></td><td><span class="cell ok">#68</span></td><td><span class="cell gap" id="c304t">no test</span></td><td><span class="cell gap" id="c304r">—</span></td><td><span class="cell ok">CTL-12</span></td></tr>
+      <tr><td><span class="id">REQ-305</span> <span class="small muted">Best-interest rationale</span></td><td><span class="cell ok">ADR-013</span></td><td><span class="cell ok">#69</span></td><td><span class="cell ok">3 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTL-13</span></td></tr>
+      <tr><td><span class="id">REQ-306</span> <span class="small muted">Customer approves trades</span></td><td><span class="cell ok">ADR-013</span></td><td><span class="cell ok">#70</span></td><td><span class="cell ok">3 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTL-14</span></td></tr>
+      <tr><td><span class="id">REQ-307</span> <span class="small muted">Idempotent, reconciled orders</span></td><td><span class="cell ok">ADR-013</span></td><td><span class="cell ok">#71</span></td><td><span class="cell ok">4 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTL-15</span></td></tr>
+    </tbody></table></div>
+
+    <div data-pane="graph" hidden class="card">
+      <svg viewBox="0 0 1000 300" width="100%" role="img" aria-label="Trace graph for REQ-306">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#98a2b3"/></marker></defs>
+        <g><rect class="node-rect" x="20" y="110" width="150" height="64" rx="10" style="stroke:#2b59e0"/><text class="node-txt" x="34" y="135" font-weight="700">REQ-306</text><text class="node-sub" x="34" y="153">Customer approves trades</text></g>
+        <g><rect class="node-rect" x="240" y="40" width="140" height="64" rx="10"/><text class="node-txt" x="254" y="65" font-weight="700">ADR-013</text><text class="node-sub" x="254" y="83">Order workflow</text></g>
+        <g><rect class="node-rect" x="240" y="180" width="140" height="64" rx="10" style="stroke:#d98300"/><text class="node-txt" x="254" y="205" font-weight="700">CTL-14</text><text class="node-sub" x="254" y="223">Customer consent</text></g>
+        <g><rect class="node-rect" x="450" y="40" width="140" height="64" rx="10"/><text class="node-txt" x="464" y="65" font-weight="700">PR #70</text><text class="node-sub" x="464" y="83">4c7a10e · merged</text></g>
+        <g><rect class="node-rect" x="450" y="180" width="140" height="64" rx="10"/><text class="node-txt" x="464" y="205" font-weight="700">Consent record</text><text class="node-sub" x="464" y="223">stored with order</text></g>
+        <g><rect class="node-rect" x="660" y="40" width="140" height="64" rx="10"/><text class="node-txt" x="674" y="65" font-weight="700">TEST-061…063</text><text class="node-sub" x="674" y="83">@covers REQ-306</text></g>
+        <g><rect class="node-rect" x="860" y="40" width="120" height="64" rx="10" style="stroke:#12935a"/><text class="node-txt" x="874" y="65" font-weight="700">RES-0877</text><text class="node-sub" x="874" y="83">pass · 4c7a10e</text></g>
+        <g><rect class="node-rect" x="860" y="180" width="120" height="64" rx="10"/><text class="node-txt" x="874" y="205" font-weight="700">rc1</text><text class="node-sub" x="874" y="223">release candidate</text></g>
+        <path class="edge" d="M170 130 C205 130 205 72 240 72"/><path class="edge" d="M170 154 C205 154 205 212 240 212"/>
+        <path class="edge" d="M380 72 L450 72"/><path class="edge" d="M380 212 L450 212"/>
+        <path class="edge" d="M590 72 L660 72"/><path class="edge" d="M800 72 L860 72"/><path class="edge" d="M590 212 L860 212"/>
+      </svg>
+      <div class="small muted">A trade is placed only after the customer's approval is recorded. The graph follows that rule from requirement to evidence. Click a node to open the artifact at the exact commit.</div>
+    </div>
+
+    <div data-pane="gaps" hidden class="stack" id="gaps">
+      <div class="callout error" id="gapA"><span class="ci">⛔</span><div><b>REQ-304</b> (exclude restricted securities) has no verifying test. Gate G4 and G6 will not pass. <a href="#" id="askTester">Ask Tester Agent to propose tests</a></div></div>
+      <div class="callout warn"><span class="ci">⚠</span><div><b>TEST-088</b> (fractional share rounding) does not reference any requirement.</div></div>
+      <div class="callout warn"><span class="ci">⚠</span><div><b>PR #72</b> has no requirement or change-request link. G3 cannot be signed until one is added.</div></div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const toast = t => { const el = document.getElementById('toast'); el.textContent = t; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3200); };
+  document.getElementById('askTester').addEventListener('click', e => {
+    e.preventDefault();
+    toast('✔ Task created for the Tester Agent · 6 min');
+    setTimeout(() => {
+      document.getElementById('c304t').className = 'cell ok'; document.getElementById('c304t').textContent = '2 tests';
+      document.getElementById('c304r').className = 'cell ok'; document.getElementById('c304r').textContent = 'pass';
+      document.getElementById('tCov').textContent = '100%'; document.getElementById('tCnt').textContent = '7 of 7';
+      const n = document.getElementById('tNoTest'); n.textContent = '0'; n.style.color = 'var(--done)';
+      const a = document.getElementById('gapA'); a.className = 'callout ok';
+      a.innerHTML = '<span class="ci">✔</span><div><b>REQ-304</b> now has two tests (TEST-092, TEST-093) that pass on commit 4c7a10e. Resolved by the Tester Agent, ready for QA review.</div>';
+      document.getElementById('gapCount').textContent = '2';
+      toast('✔ REQ-304 covered: 2 tests pass');
+    }, 2200);
+  });
+</script>
+</body>
+</html>

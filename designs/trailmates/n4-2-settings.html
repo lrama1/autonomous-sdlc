@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N4 · Team settings</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .meter{height:10px;background:#eceff3;border-radius:99px;overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--primary)}
+  .seg{display:flex;gap:10px;align-items:center;font-size:13px;margin:6px 0}
+  .seg b{width:90px;font-weight:500}
+  .seg .meter{flex:1}
+  .seg span{width:48px;text-align:right;color:var(--muted)}
+  .opt{border:2px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+  .opt.sel{border-color:var(--primary);background:var(--primary-weak)}
+  .opt h3{margin:0 0 2px}
+</style>
+</head>
+<body data-user="ben" data-nav="settings" data-crumb="Team settings <span>› Autonomy &amp; cost</span>" data-story="Day 21">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Autonomy and cost</h1><div class="muted">Tune how often agents ask, and how much they can spend.</div></div>
+    <div class="actions"><span class="chip">Default workflow</span><span class="chip warn">Autonomy: Balanced</span></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card" id="mode"><div class="card-h"><h2>Autonomy mode</h2><span class="chip right">per initiative, overridable per change type</span></div>
+        <div class="grid g3">
+          <div class="opt"><h3>Guided</h3><div class="small muted">People approve each stage and every pull request.</div></div>
+          <div class="opt sel"><h3>Balanced</h3><div class="small muted">One review per PR. Pre-approved types merge on green CI. Agents assume and declare when a wrong guess is cheap.</div><div style="margin-top:6px"><span class="chip ok">Current</span></div></div>
+          <div class="opt"><h3>Autopilot</h3><div class="small muted">Merge on green CI unless a trigger fires. Mostly assume instead of asking.</div></div>
+        </div>
+        <div class="callout info small" style="margin-top:10px"><span class="ci">⛔</span><div><b>Hard stops in every mode:</b> production deploys, protected paths, new external hosts or credentials, budget overruns, destructive migrations. These never auto-proceed and never use a default.</div></div></div>
+
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">When agents should ask</h2><div class="small muted">Agents may ask for more than this policy, never less. Approvals stay with people.</div></div>
+        <table class="t"><thead><tr><th>Agent</th><th>Situation</th><th>Behavior</th></tr></thead><tbody>
+          <tr><td><span class="chip agent">Product</span></td><td>Changing the scope of an approved story</td><td><label class="chip"><input type="checkbox" checked disabled> Always ask</label></td></tr>
+          <tr><td><span class="chip agent">Architect</span></td><td>Infrastructure cost rising by more than $50 a month</td><td><label class="chip"><input type="checkbox" checked> Ask</label></td></tr>
+          <tr><td><span class="chip agent">Engineers</span></td><td>Adding a new dependency</td><td><label class="chip"><input type="checkbox" checked> Ask</label></td></tr>
+          <tr><td><span class="chip agent">Engineers</span></td><td>A database migration</td><td><label class="chip"><input type="checkbox" checked> Ask</label></td></tr>
+          <tr><td><span class="chip agent">Engineers</span></td><td>Changing interface copy</td><td><label class="chip"><input type="checkbox"> Don't ask</label> <span class="small muted">pre-approved type</span></td></tr>
+          <tr><td><span class="chip agent">DevOps</span></td><td>Deploying to a preview environment</td><td><label class="chip"><input type="checkbox"> Don't ask</label></td></tr>
+          <tr><td><span class="chip agent">DevOps</span></td><td>Deploying to production</td><td><label class="chip"><input type="checkbox" checked disabled> Human approval, always</label></td></tr>
+        </tbody></table></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Budget and limits</h2></div>
+        <div class="grid g2" style="margin-bottom:10px">
+          <div><div class="small muted">Monthly budget</div><b style="font-size:20px">$400</b></div>
+          <div><div class="small muted">Spent this month</div><b style="font-size:20px">$176</b> <span class="muted small">44%</span></div></div>
+        <div class="meter" style="margin-bottom:6px"><i style="width:44%"></i></div>
+        <div class="small muted" style="margin-bottom:12px">Alert at 80%. Runs pause at 100% until you raise the limit.</div>
+        <dl class="kv small" style="grid-template-columns:150px 1fr">
+          <dt>Cap per run</dt><dd>$8</dd>
+          <dt>Concurrent runs</dt><dd>3</dd>
+          <dt>Models</dt><dd>Aliases · OpenRouter</dd></dl></div>
+
+      <div class="card"><div class="card-h"><h3>Spend by agent</h3></div>
+        <div class="seg"><b>Backend</b><div class="meter"><i style="width:35%"></i></div><span>$62</span></div>
+        <div class="seg"><b>Frontend</b><div class="meter"><i style="width:27%"></i></div><span>$48</span></div>
+        <div class="seg"><b>Product</b><div class="meter"><i style="width:12%"></i></div><span>$21</span></div>
+        <div class="seg"><b>Tester</b><div class="meter"><i style="width:10%"></i></div><span>$18</span></div>
+        <div class="seg"><b>Architect</b><div class="meter"><i style="width:9%"></i></div><span>$15</span></div>
+        <div class="seg"><b>DevOps</b><div class="meter"><i style="width:7%"></i></div><span>$12</span></div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

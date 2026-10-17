@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>11 · Evidence record</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="alex" data-nav="audit" data-crumb="Audit <span>› Evidence › EV-000412</span>" data-story="Day 12 · 09:30">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>Evidence record EV-000412</h1><span class="chip ok">● Chain verified</span></div>
+      <div class="muted">G1 · Requirements baseline · INIT-014 · append-only, hash-chained, platform-signed</div>
+    </div>
+    <div class="actions"><button class="btn">Download JSON</button><button class="btn">Download PDF</button></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Decision</h2><span class="pill done right">Approved</span></div>
+        <dl class="kv">
+          <dt>Gate</dt><dd>G1 · Requirements baseline</dd>
+          <dt>Signer</dt><dd><b>Priya Nair</b> · Product Owner · role assignment v3 (effective 2026-10-12)</dd>
+          <dt>Signature meaning</dt><dd>Approved (as accountable owner)</dd>
+          <dt>Re-authentication</dt><dd>SSO step-up · password + push (Okta Verify)</dd>
+          <dt>Trusted time</dt><dd>2026-10-12 14:48:09 UTC</dd>
+          <dt>Rationale</dt><dd>"Requirements match intended use v2. Rounding follows the pump's reported resolution (Pump Interface Spec 4.3). A-3 accepted as recorded assumption."</dd>
+          <dt>Attestations</dt><dd>3 of 3 confirmed</dd>
+          <dt>Policy evaluated</dt><dd>Regulated + IEC 62304 B v0.3.1 · SoD check passed</dd>
+          <dt>Contributing agent runs</dt><dd><span class="chip agent">RUN-0141 Product Agent v2.1.0</span> (sponsor: none, goal by Priya Nair)</dd>
+        </dl></div>
+
+      <div class="card"><div class="card-h"><h2>What was signed</h2></div>
+        <table class="t"><thead><tr><th>Artifact</th><th>SHA-256</th></tr></thead><tbody>
+          <tr><td class="mono">commit 7ab31c2 · tree 4e19a0d</td><td class="mono">git</td></tr>
+          <tr><td class="mono">docs/requirements/REQ-001.md … REQ-012.md</td><td class="mono">9f2c1b4a…e41a</td></tr>
+          <tr><td class="mono">docs/assumptions.md</td><td class="mono">1b77d09c…52ee</td></tr></tbody></table></div>
+
+      <div class="card"><div class="card-h"><h2>Corrections</h2></div><p class="small muted" style="margin:0">None. Corrections are appended as new records that reference this one. The record itself is never edited.</p></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Integrity</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Record hash recomputed and matches</div></li>
+          <li><span class="ok">✔</span><div>KMS signature valid <span class="mono">alias/ledger-sign-2026</span></div></li>
+          <li><span class="ok">✔</span><div>Chain intact: 412 records, no gaps</div></li>
+          <li><span class="ok">✔</span><div>Exported to WORM storage 2026-10-14 (retention locked)</div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h3>Chain</h3></div>
+        <div class="stack small">
+          <div class="card" style="padding:8px 10px;background:#fafbfc"><div class="muted">EV-000411</div><span class="hash">5d3e…a0f2</span></div>
+          <div style="text-align:center;color:var(--muted)">↓ prior hash</div>
+          <div class="card" style="padding:8px 10px;border-color:var(--primary);background:var(--primary-weak)"><div><b>EV-000412</b></div><span class="hash">c07a…91be</span></div>
+          <div style="text-align:center;color:var(--muted)">↓</div>
+          <div class="card" style="padding:8px 10px;background:#fafbfc"><div class="muted">EV-000413</div><span class="hash">a8f1…07c3</span></div></div></div>
+
+      <div class="card"><h3>Verify independently</h3><p class="small muted">An auditor can verify a bundle offline without trusting the platform UI.</p>
+        <pre class="code">sdlc-verify --bundle INIT-014-rc2.zip
+✔ 412 records chained
+✔ signatures valid (3 keys)
+✔ artifacts match git SHAs</pre></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

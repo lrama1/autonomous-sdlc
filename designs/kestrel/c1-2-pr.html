@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C1 · G3 pull request review (payment scope)</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="victor" data-nav="map" data-crumb="INIT-301 <span>› G3 · PR #118 › Review</span>" data-story="Oct 23 · 15:20">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G3 · PR #118 · Card payment and safe order placement</h1><span class="pill wait" id="statePill">Waiting on 3 reviewers</span></div>
+      <div class="muted">Implements <span class="chip">US-104</span> <span class="chip">US-105</span> · <span class="chip agent">Backend Agent</span> RUN-0518 + <span class="chip agent">Frontend Agent</span> RUN-0519 · <span class="chip">agent/run-0518 → main</span></div>
+    </div>
+    <div class="actions"><span class="small muted">Prototype:</span>
+      <select id="viewAs" style="width:auto"><option value="victor">View as Victor (Security, eligible)</option><option value="lena">View as Lena (sponsor)</option></select></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="diff">Changes <span class="count">6 files</span></button>
+        <button class="tab" data-tab="tests">Tests</button>
+        <button class="tab" data-tab="run">Agent runs</button>
+      </div>
+
+      <div data-pane="diff" class="stack">
+        <div class="callout warn"><span class="ci">⚑</span><div><b>Deterministic triggers fired.</b> (1) <b>Payment-scope path</b> <span class="mono">apps/checkout/payments/**</span> → Architect and Security co-review required, <b>auto-merge is off</b>. (2) New dependency <span class="mono">@psp/client</span> → dependency record needs evaluation.</div></div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/checkout/payments/placeOrder.ts</b><span class="chip warn">payment scope</span><span class="chip">new</span></div>
+          <span class="ln ctx">@@ -0,0 +1,12 @@</span>
+          <span class="ln add">+export async function placeOrder(cmd: PlaceOrder, deps: Deps): Promise&lt;OrderResult&gt; {</span>
+          <span class="ln add">+  const prior = await deps.orders.findByKey(cmd.idempotencyKey);</span>
+          <span class="ln add">+  if (prior) return prior;                     // US-105: retries never duplicate</span>
+          <span class="ln add">+  const charge = await deps.payments.charge({</span>
+          <span class="ln add">+    token: cmd.paymentToken,                   // US-104: only a provider token, never card data</span>
+          <span class="ln add">+    amount: cmd.total, key: cmd.idempotencyKey });</span>
+          <span class="ln add">+  return deps.orders.create({ ...cmd, chargeId: charge.id });</span>
+          <span class="ln add">+}</span>
+          <div class="flag">⚑ Reviewer attention: confirm no card data (number or CVV) is logged or stored, and that a provider timeout cannot leave a charge without an order.</div>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/checkout/ui/PaymentFields.tsx</b><span class="chip">new</span></div>
+          <span class="ln ctx">@@ -0,0 +1,6 @@</span>
+          <span class="ln add">+// Card details are typed into the provider's iframe. Our code only receives a token.</span>
+          <span class="ln add">+&lt;HostedFields onToken={setPaymentToken} onError={showDeclined} /&gt;</span>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">package.json</b><span class="chip err">dependency added</span></div>
+          <span class="ln add">+    "@psp/client": "4.1.0"</span>
+        </div>
+      </div>
+
+      <div data-pane="tests" hidden class="card stack">
+        <div class="grid g2">
+          <div class="card" style="background:#fafbfc"><div class="card-h"><h3>Agent verification report</h3><span class="chip warn right">agent-reported · advisory</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>71 unit tests, lint, types</div></li><li><span class="ok">✔</span><div>App started with Postgres sidecar and the provider's sandbox</div></li><li><span class="ok">✔</span><div>Headless browser bought a product with a test card</div></li><li><span class="ok">✔</span><div>Clicked <b>Pay</b> twice: one order, one charge</div></li><li><span class="ok">✔</span><div>No card-number patterns in code, logs or database</div></li></ul>
+            <div class="small muted">RUN-0518, RUN-0519 · commit <span class="hash">c7e90b4</span></div></div>
+          <div class="card" style="border-color:#bfe6cf"><div class="card-h"><h3>CI re-run (authoritative)</h3><span class="chip ok right">independent</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>Same <span class="mono">verify</span> contract in a fresh environment</div></li><li><span class="ok">✔</span><div>71 unit · 12 browser · coverage 91%</div></li><li><span class="ok">✔</span><div>Secret and dependency scans clean</div></li></ul>
+            <div class="small muted">Bound to commit <span class="hash">c7e90b4</span> · used for the G3 merge decision</div></div>
+        </div>
+      </div>
+
+      <div data-pane="run" hidden class="card"><dl class="kv small">
+        <dt>Runs</dt><dd>RUN-0518 Backend v1.6.0 · RUN-0519 Frontend v1.5.2 · pinned model MCR-0009</dd>
+        <dt>Sponsor</dt><dd>Lena Fischer</dd><dt>Contributors</dt><dd>Lena Fischer</dd>
+        <dt>Duration / cost</dt><dd>38 min · $4.62</dd></dl></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Independent review</h3></div>
+        <dl class="kv small" style="grid-template-columns:110px 1fr">
+          <dt>Sponsor</dt><dd><span class="chip human">Lena Fischer</span></dd>
+          <dt>Required</dt><dd>1 peer engineer, plus Architect and Security (payment scope)</dd>
+          <dt>Eligible</dt><dd><span class="chip human">Marcus Webb</span> <span class="chip human">Owen Brooks</span> <span class="chip human">Victor Santos</span></dd></dl>
+        <div id="sod" class="callout ok small" style="margin-top:10px"><span class="ci">✔</span><div>You are eligible to approve as Security. You did not start these runs.</div></div></div>
+
+      <div class="card"><div class="card-h"><h3>Security review checklist</h3></div>
+        <ul class="checks small" id="att">
+          <li><label><input type="checkbox"> Only a provider token is stored. No card data in logs or database.</label></li>
+          <li><label><input type="checkbox"> Retries and provider timeouts cannot double charge or lose an order.</label></li>
+          <li><label><input type="checkbox"> Declines and errors are handled without leaking details.</label></li>
+          <li><label><input type="checkbox"> Tests cover US-104 and US-105.</label></li></ul>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="sign">Approve as Security</button><button class="btn">Request changes</button></div></div>
+
+      <div class="card"><h3>Approvals needed</h3><ul class="checks small">
+        <li><span class="wt" id="iV">●</span><div>Security · <b>Victor Santos</b></div></li>
+        <li><span class="wt">●</span><div>Architect · <b>Owen Brooks</b></div></li>
+        <li><span class="wt">●</span><div>Peer engineer · <b>Marcus Webb</b></div></li></ul></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Security approval recorded</b> (ACT-0134). Still waiting on the Architect and a peer engineer. After the third approval and green CI, the Gate identity merges the change.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('viewAs').addEventListener('change', e => {
+    const lena = e.target.value === 'lena';
+    const sod = document.getElementById('sod'), sign = document.getElementById('sign');
+    sod.className = 'callout small ' + (lena ? 'error' : 'ok'); sod.style.marginTop = '10px';
+    sod.innerHTML = lena
+      ? '<span class="ci">⛔</span><div><b>You cannot approve this change.</b> You started RUN-0518 and RUN-0519. Other reviewers must approve. You can still comment.</div>'
+      : '<span class="ci">✔</span><div>You are eligible to approve as Security. You did not start these runs.</div>';
+    sign.classList.toggle('disabled', lena);
+    document.querySelectorAll('#att input').forEach(i => i.disabled = lena);
+  });
+  document.getElementById('sign').addEventListener('click', e => {
+    if (e.target.classList.contains('disabled')) return;
+    document.getElementById('result').hidden = false;
+    const i = document.getElementById('iV'); i.className = 'ok'; i.textContent = '✔';
+    const p = document.getElementById('statePill'); p.textContent = 'Waiting on 2 reviewers';
+  });
+</script>
+</body>
+</html>

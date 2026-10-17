@@ -1,0 +1,93 @@
+# ------------------------------------------------------------------
+# Generated demo artifacts (rebuild with the commands in demo/README.md)
+# ------------------------------------------------------------------
+# Narrated MP4s: large (about 480 MB in total) and reproducible from the storyboards.
+demo/videos/
+# Build scratch space: recordings, WAVs, title cards, timelines
+demo/_work/
+demo/_frames/
+demo/_shots/
+demo/_build_*.log
+# Optional local TTS voice model, downloaded with piper.download_voices (about 115 MB)
+demo/voices/
+
+# ------------------------------------------------------------------
+# Python
+# ------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------------------------------
+# Node / TypeScript (the platform's backend and UI)
+# ------------------------------------------------------------------
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+.next/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# ------------------------------------------------------------------
+# Terraform (keep .terraform.lock.hcl committed)
+# ------------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# ------------------------------------------------------------------
+# Secrets and local configuration (never commit these)
+# ------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+# Claude Code local settings can hold an OpenRouter or Anthropic token
+.claude/settings.local.json
+# Local Docker Compose overrides and data volumes
+docker-compose.override.yml
+.data/
+minio-data/
+pgdata/
+
+# ------------------------------------------------------------------
+# Logs and temporary files
+# ------------------------------------------------------------------
+*.log
+*.tmp
+*.bak
+
+# ------------------------------------------------------------------
+# Editors and operating systems
+# ------------------------------------------------------------------
+.idea/
+*.swp
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.DS_Store
+Thumbs.db
+desktop.ini

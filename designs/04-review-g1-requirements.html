@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>04 · Review pack · G1 Requirements baseline</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="priya" data-nav="inbox" data-crumb="INIT-014 <span>› G1 · Requirements baseline › Review pack</span>" data-story="Day 1 · 14:35">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G1 · Requirements baseline</h1><span class="pill wait">Waiting on you</span></div>
+      <div class="muted">Prepared by <span class="chip agent">Product Agent</span> run RUN-0141 · agent definition v2.1.0 · pinned model MCR-0007</div>
+    </div>
+    <div class="actions"><a class="btn" href="03-inbox.html">Back to inbox</a><a class="btn primary disabled" id="signBtn" href="05-sign-evidence.html">Review &amp; sign</a></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="req">Requirements <span class="count">12</span></button>
+        <button class="tab" data-tab="asm">Assumptions <span class="count">4</span></button>
+        <button class="tab" data-tab="notes">Agent notes</button>
+        <button class="tab" data-tab="hist">History</button>
+      </div>
+
+      <div data-pane="req">
+        <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>Requirement</th><th>Acceptance criteria</th><th>Risk link</th><th>Priority</th></tr></thead><tbody>
+          <tr><td class="id">REQ-001</td><td>The service shall calculate infusion volume from prescribed dose and concentration.</td><td class="small">3 criteria · formula verified against reference table</td><td><span class="chip warn">HAZ-01</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-002</td><td>The service shall reject non-positive concentration values.</td><td class="small">2 criteria</td><td><span class="chip warn">HAZ-01</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-003</td><td>The service shall expose the calculation through the pump firmware gateway API.</td><td class="small">4 criteria</td><td><span class="chip">—</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-004</td><td>The service shall round volume to the pump's reported resolution using half-even rounding.<div class="small"><span class="chip err">Changed since draft</span> <span class="muted">Priya's answer to the open question is pending</span></div></td><td class="small">3 criteria</td><td><span class="chip warn">HAZ-02</span></td><td>Must</td></tr>
+          <tr><td class="id">REQ-005</td><td>The service shall log every calculation with inputs and result for traceability.</td><td class="small">2 criteria</td><td><span class="chip">—</span></td><td>Should</td></tr>
+          <tr><td class="id">REQ-006</td><td>The service shall respond within 200 ms at p95 under nominal load.</td><td class="small">2 criteria</td><td><span class="chip">—</span></td><td>Should</td></tr>
+          <tr><td colspan="5" class="small muted" style="text-align:center">+ 6 more requirements (REQ-007 … REQ-012) · <a href="#">show all</a></td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div data-pane="asm" hidden>
+        <div class="callout warn" style="margin-bottom:12px"><span class="ci">⚠</span><div>Every assumption needs your disposition before you can sign. <b>Accept</b> keeps it as a recorded assumption, <b>Reject</b> sends it back to the agent, <b>Convert</b> turns it into a requirement.</div></div>
+        <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>Assumption declared by agent</th><th>Disposition</th></tr></thead><tbody>
+          <tr><td class="id">A-1</td><td>Pump firmware gateway is available as a REST API.</td><td><span class="chip ok">Accepted · Priya</span></td></tr>
+          <tr><td class="id">A-2</td><td>Doses are entered by a clinician, not computed by upstream systems.</td><td><span class="chip ok">Accepted · Priya</span></td></tr>
+          <tr><td class="id">A-3</td><td>Rounding applies to the final volume only, not intermediate values.</td><td><select id="a3" style="max-width:220px"><option value="">Select disposition…</option><option>Accept</option><option>Reject</option><option>Convert to requirement</option></select></td></tr>
+          <tr><td class="id">A-4</td><td>Only metric units (mL, mg) are supported in v1.</td><td><span class="chip ok">Converted → REQ-012</span></td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div data-pane="notes" hidden>
+        <div class="card stack">
+          <div><h3>Open question to the Product Owner</h3><p class="small muted">Discretionary escalation, not a policy gate.</p>
+            <div class="callout info"><span class="ci">❓</span><div>"Should REQ-004 round to 0.1 mL or to the pump's reported resolution? Source documents conflict (Intended Use v2 vs Pump Interface Spec 4.3)."</div></div>
+            <textarea style="margin-top:8px">Use the pump's reported resolution. Reference: Pump Interface Spec 4.3.</textarea></div>
+          <div><h3>Advisory AI review <span class="chip agent">advisory only</span></h3><p class="small">Requirement set looks internally consistent. REQ-005 and REQ-006 are marked Should but referenced by hazard HAZ-03. Consider promoting to Must. <span class="muted">This does not count as an approval.</span></p></div>
+        </div>
+      </div>
+
+      <div data-pane="hist" hidden>
+        <div class="card"><ul class="timeline small">
+          <li class="done">Draft v1 produced · RUN-0141<div class="when">11:02</div></li>
+          <li class="done">Product Agent asked 1 question, declared 4 assumptions<div class="when">11:09</div></li>
+          <li class="run">Waiting for Product Owner and QRA signatures<div class="when">now</div></li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Gate checks</h3></div>
+        <ul class="checks small" id="checks">
+          <li><span class="ok">✔</span><div>Every requirement has a unique ID and acceptance criteria</div></li>
+          <li><span class="ok">✔</span><div>Safety-relevant requirements link to a hazard</div></li>
+          <li><span class="ok">✔</span><div>Repository verified, <span class="mono">sdlc/gate</span> registered</div></li>
+          <li><span class="wt" id="asmIcon">●</span><div id="asmText">1 assumption without disposition (A-3)</div></li>
+        </ul></div>
+      <div class="card"><div class="card-h"><h3>Who must sign</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Priya Nair</b> · Product Owner<div class="muted">Accountable owner. Allowed to approve work she commissioned.</div></div></li>
+          <li><span class="wt">●</span><div><b>Sam Ivanova</b> · Quality &amp; Regulatory<div class="muted">Independent reviewer. Must not be sponsor or contributor of RUN-0141. ✔ Eligible.</div></div></li>
+        </ul></div>
+      <div class="card"><h3>What you are about to sign</h3>
+        <dl class="kv small" style="grid-template-columns:100px 1fr">
+          <dt>Commit</dt><dd class="hash">7ab31c2</dd>
+          <dt>Content hash</dt><dd class="hash">sha256:9f2c…e41a</dd>
+          <dt>Artifacts</dt><dd>docs/requirements/*.md (12)<br>docs/assumptions.md</dd>
+          <dt>Profile</dt><dd>Regulated + IEC 62304 B v0.3.1</dd>
+        </dl>
+        <p class="small muted" style="margin-top:8px">If any file changes before you sign, the hash changes and this pack is invalidated.</p></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  document.addEventListener('change', e => {
+    if (e.target.id !== 'a3') return;
+    const ok = !!e.target.value;
+    document.getElementById('signBtn').classList.toggle('disabled', !ok);
+    const i = document.getElementById('asmIcon'); i.className = ok ? 'ok' : 'wt'; i.textContent = ok ? '✔' : '●';
+    document.getElementById('asmText').textContent = ok ? 'All 4 assumptions dispositioned' : '1 assumption without disposition (A-3)';
+  });
+</script>
+</body>
+</html>

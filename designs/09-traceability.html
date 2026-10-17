@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>09 · Traceability</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>.node-rect{fill:#fff;stroke:#c7cdd8;stroke-width:1.5}.node-txt{font:12px system-ui;fill:#18212f}.node-sub{font:11px system-ui;fill:#667085}.edge{stroke:#98a2b3;stroke-width:1.5;fill:none;marker-end:url(#arr)}</style>
+</head>
+<body data-user="lee" data-nav="trace" data-crumb="INIT-014 <span>› Traceability</span>" data-story="Day 6 · 10:05">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Traceability</h1><div class="muted">Requirement → design → code → test → result → risk control → release. Built from IDs in the repository, not from manual entry.</div></div>
+    <div class="actions"><button class="btn">Export CSV</button><button class="btn primary">Export evidence bundle</button></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">83%</div><div class="l">Requirements with passing verification (10 of 12)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--block)">1</div><div class="l">Requirement without test</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">2</div><div class="l">Orphan items (test or PR without requirement)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Releases with open deviations</div></div>
+  </div>
+
+  <div data-tabgroup>
+    <div class="tabs">
+      <button class="tab active" data-tab="matrix">Matrix</button>
+      <button class="tab" data-tab="graph">Graph · REQ-004</button>
+      <button class="tab" data-tab="gaps">Gaps <span class="count">3</span></button>
+    </div>
+
+    <div data-pane="matrix" class="card flush"><table class="t matrix"><thead><tr><th>Requirement</th><th>Design / ADR</th><th>Code (PR)</th><th>Tests</th><th>Result @ 3f9c2aa</th><th>Risk control</th><th>Release</th></tr></thead><tbody>
+      <tr><td><span class="id">REQ-001</span> <span class="small muted">Calculate volume</span></td><td><span class="cell ok">ADR-002</span></td><td><span class="cell ok">#38</span></td><td><span class="cell ok">4 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTRL-01</span></td><td><span class="cell na">rc2</span></td></tr>
+      <tr><td><span class="id">REQ-002</span> <span class="small muted">Reject bad concentration</span></td><td><span class="cell ok">ADR-002</span></td><td><span class="cell ok">#38</span></td><td><span class="cell ok">3 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTRL-02</span></td><td><span class="cell na">rc2</span></td></tr>
+      <tr><td><span class="id">REQ-004</span> <span class="small muted">Round to resolution</span></td><td><span class="cell ok">ADR-003</span></td><td><span class="cell ok">#42</span></td><td><span class="cell ok">3 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell ok">CTRL-05</span></td><td><span class="cell na">rc2</span></td></tr>
+      <tr><td><span class="id">REQ-007</span> <span class="small muted">Gateway timeout handling</span></td><td><span class="cell ok">ADR-003</span></td><td><span class="cell ok">#42</span></td><td><span class="cell ok">1 test</span></td><td><span class="cell ok">pass</span></td><td><span class="cell na">n/a</span></td><td><span class="cell na">rc2</span></td></tr>
+      <tr><td><span class="id">REQ-009</span> <span class="small muted">Audit log retention</span></td><td><span class="cell ok">ADR-004</span></td><td><span class="cell ok">#44</span></td><td><span class="cell gap">no test</span></td><td><span class="cell gap">—</span></td><td><span class="cell na">n/a</span></td><td><span class="cell warn">blocked</span></td></tr>
+      <tr><td><span class="id">REQ-012</span> <span class="small muted">Metric units only</span></td><td><span class="cell ok">ADR-002</span></td><td><span class="cell ok">#40</span></td><td><span class="cell ok">2 tests</span></td><td><span class="cell ok">pass</span></td><td><span class="cell na">n/a</span></td><td><span class="cell na">rc2</span></td></tr>
+      <tr><td colspan="7" class="small muted" style="text-align:center">+ 6 more requirements · <a href="#">show all</a></td></tr>
+    </tbody></table></div>
+
+    <div data-pane="graph" hidden class="card">
+      <svg viewBox="0 0 1000 300" width="100%" role="img" aria-label="Trace graph for REQ-004">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#98a2b3"/></marker></defs>
+        <g><rect class="node-rect" x="20" y="110" width="140" height="64" rx="10" style="stroke:#2b59e0"/><text class="node-txt" x="34" y="135" font-weight="700">REQ-004</text><text class="node-sub" x="34" y="153">Round to resolution</text></g>
+        <g><rect class="node-rect" x="230" y="40" width="140" height="64" rx="10"/><text class="node-txt" x="244" y="65" font-weight="700">ADR-003</text><text class="node-sub" x="244" y="83">Hexagonal layout</text></g>
+        <g><rect class="node-rect" x="230" y="180" width="140" height="64" rx="10" style="stroke:#d98300"/><text class="node-txt" x="244" y="205" font-weight="700">HAZ-02</text><text class="node-sub" x="244" y="223">Dose rounding error</text></g>
+        <g><rect class="node-rect" x="440" y="40" width="140" height="64" rx="10"/><text class="node-txt" x="454" y="65" font-weight="700">PR #42</text><text class="node-sub" x="454" y="83">3f9c2aa · merged</text></g>
+        <g><rect class="node-rect" x="440" y="180" width="140" height="64" rx="10"/><text class="node-txt" x="454" y="205" font-weight="700">CTRL-05</text><text class="node-sub" x="454" y="223">Validate resolution</text></g>
+        <g><rect class="node-rect" x="650" y="40" width="140" height="64" rx="10"/><text class="node-txt" x="664" y="65" font-weight="700">TEST-017…019</text><text class="node-sub" x="664" y="83">@covers REQ-004</text></g>
+        <g><rect class="node-rect" x="860" y="40" width="120" height="64" rx="10" style="stroke:#12935a"/><text class="node-txt" x="874" y="65" font-weight="700">RES-0412</text><text class="node-sub" x="874" y="83">pass · 3f9c2aa</text></g>
+        <g><rect class="node-rect" x="860" y="180" width="120" height="64" rx="10"/><text class="node-txt" x="874" y="205" font-weight="700">rc2</text><text class="node-sub" x="874" y="223">release candidate</text></g>
+        <path class="edge" d="M160 130 C195 130 195 72 230 72"/><path class="edge" d="M160 154 C195 154 195 212 230 212"/>
+        <path class="edge" d="M370 72 L440 72"/><path class="edge" d="M370 212 L440 212"/>
+        <path class="edge" d="M580 72 L650 72"/><path class="edge" d="M790 72 L860 72"/><path class="edge" d="M580 212 L860 212"/>
+      </svg>
+      <div class="small muted">Links come from <span class="mono">@covers</span> tags, PR descriptions, ADR front matter and risk files. Click a node to open the artifact at the exact commit.</div>
+    </div>
+
+    <div data-pane="gaps" hidden class="stack">
+      <div class="callout error"><span class="ci">⛔</span><div><b>REQ-009</b> has no verifying test. Gate G4 and G6 will not pass. <a href="#">Ask Tester Agent to propose tests</a></div></div>
+      <div class="callout warn"><span class="ci">⚠</span><div><b>TEST-031</b> does not reference any requirement (orphan test).</div></div>
+      <div class="callout warn"><span class="ci">⚠</span><div><b>PR #45</b> has no requirement or change-request link. G3 cannot be signed until one is added.</div></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

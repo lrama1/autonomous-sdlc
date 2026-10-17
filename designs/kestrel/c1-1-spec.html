@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C1 · Spec and design review</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="nadia" data-nav="map" data-crumb="INIT-301 <span>› G1 · Spec &amp; design › Review</span>" data-story="Oct 19 · 14:10">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G1 · Spec &amp; design · Browse, cart and checkout</h1><span class="pill wait" id="statePill">Waiting on 3 people</span></div>
+      <div class="muted">Prepared by <span class="chip agent">Product Agent</span> and <span class="chip agent">Architect Agent</span> · 7 stories · 4 design notes · payment scope detected</div>
+    </div>
+    <div class="actions"><a class="btn" href="map.html?i=301&s=s1">Back to map</a></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="stories">Stories <span class="count">7</span></button>
+        <button class="tab" data-tab="design">Design <span class="count">4</span></button>
+        <button class="tab" data-tab="scope">Payment scope</button>
+      </div>
+
+      <div data-pane="stories">
+        <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>Story</th><th>For</th></tr></thead><tbody>
+          <tr><td class="id">US-101</td><td>As a shopper, I can search and filter products and see price, stock and a delivery estimate.</td><td><span class="chip">Customer</span></td></tr>
+          <tr><td class="id">US-102</td><td>I can add items to a cart that follows me across devices when signed in, and persists for guests.</td><td><span class="chip">Customer</span></td></tr>
+          <tr><td class="id">US-103</td><td>I can check out as a guest or signed in, choose shipping, and see tax and the total before I pay.</td><td><span class="chip">Customer</span></td></tr>
+          <tr><td class="id">US-104</td><td>I can pay by card or wallet, and my card number never touches Kestrel's servers.</td><td><span class="chip warn">Customer · payment scope</span></td></tr>
+          <tr><td class="id">US-105</td><td>Placing an order is safe to retry: a double click or a timeout never creates two orders or two charges.</td><td><span class="chip warn">Customer · payment scope</span></td></tr>
+          <tr><td class="id">US-106</td><td>I get an order confirmation on screen and by email, with an order number.</td><td><span class="chip">Customer</span></td></tr>
+          <tr><td class="id">US-107</td><td>As a support agent, I can see an order's payment status without ever seeing card details.</td><td><span class="chip human">Employee</span></td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div data-pane="design" hidden>
+        <div class="card flush"><table class="t"><thead><tr><th>Note</th><th>Decision</th><th>Why it is written down</th></tr></thead><tbody>
+          <tr><td class="id">ADR-021</td><td>Card data is entered in the payment provider's hosted fields. Kestrel stores only a token.</td><td class="small">Keeps card data out of our systems and limits payment-security scope</td></tr>
+          <tr><td class="id">ADR-022</td><td>The payment provider sits behind a port, so it can be swapped</td><td class="small">Hard to undo: avoids lock-in</td></tr>
+          <tr><td class="id">ADR-023</td><td>Orders are created with idempotency keys</td><td class="small">Prevents double charges on retries</td></tr>
+          <tr><td class="id">ADR-024</td><td>Tax and shipping quotes come from third-party services behind ports, with short caching</td><td class="small">Availability and cost impact</td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div data-pane="scope" hidden>
+        <div class="callout warn" style="margin-bottom:12px"><span class="ci">⚑</span><div>The design touches <b>payment scope</b>. The platform marks the paths below. Changes there always need the Architect and Security, and are never auto-merged. Everything else in checkout follows the lighter rules.</div></div>
+        <div class="card flush"><table class="t"><thead><tr><th>Path</th><th>Scope</th><th>Rule</th></tr></thead><tbody>
+          <tr><td class="mono">apps/checkout/payments/**</td><td><span class="chip warn">payment scope</span></td><td class="small">Architect + Security co-review. No auto-merge.</td></tr>
+          <tr><td class="mono">packages/payment-port/**</td><td><span class="chip warn">payment scope</span></td><td class="small">Architect + Security co-review. No auto-merge.</td></tr>
+          <tr><td class="mono">apps/checkout/ui/**</td><td><span class="chip">normal</span></td><td class="small">One peer reviewer. Copy changes can be pre-approved.</td></tr>
+          <tr><td class="mono">apps/catalog/**</td><td><span class="chip">normal</span></td><td class="small">One peer reviewer.</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Checks</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Every story has acceptance criteria</div></li>
+          <li><span class="ok">✔</span><div>Hard-to-undo decisions have a written note</div></li>
+          <li><span class="ok">✔</span><div>Card data stays with the provider (token only)</div></li>
+          <li><span class="ok">✔</span><div>Payment-scope paths are mapped and protected</div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h3>Approvals</h3></div>
+        <ul class="checks small">
+          <li><span id="sN" class="wt">●</span><div style="flex:1"><b>Nadia Rahman</b> · Product Owner<div class="muted">Approves the spec as owner.</div></div><button class="btn primary sm" id="apN">Approve</button></li>
+          <li><span id="sO" class="wt">●</span><div style="flex:1"><b>Owen Brooks</b> · Architect<div class="muted">Approves the design.</div></div><button class="btn primary sm" id="apO">Approve</button></li>
+          <li><span id="sV" class="wt">●</span><div style="flex:1"><b>Victor Santos</b> · Security<div class="muted">Required because the design touches payment scope.</div></div><button class="btn primary sm" id="apV">Approve</button></li></ul>
+        <div class="small muted" style="margin-top:8px">One click each, recorded in the activity log.</div></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Spec and design approved.</b> Activity entry <b>ACT-0121</b>, <b>122</b> and <b>123</b> recorded. Payment-scope triggers are now active on the repository. Agents can start building.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const signed = new Set();
+  function sign(who, btn, icon, ev) {
+    const b = document.getElementById(btn); b.className = 'chip ok'; b.textContent = '✔ approved ' + ev;
+    const i = document.getElementById(icon); i.className = 'ok'; i.textContent = '✔';
+    signed.add(who);
+    if (signed.size === 3) { document.getElementById('result').hidden = false; const p = document.getElementById('statePill'); p.className = 'pill done'; p.textContent = 'Approved'; }
+  }
+  document.getElementById('apN').addEventListener('click', () => sign('n', 'apN', 'sN', 'ACT-0121'));
+  document.getElementById('apO').addEventListener('click', () => sign('o', 'apO', 'sO', 'ACT-0122'));
+  document.getElementById('apV').addEventListener('click', () => sign('v', 'apV', 'sV', 'ACT-0123'));
+</script>
+</body>
+</html>

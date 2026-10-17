@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E1 · Promotions scheduler run</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .browser{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
+  .browser .bar-top{background:#f1f3f6;padding:7px 10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border)}
+  .browser .dot{width:9px;height:9px;border-radius:50%;background:#d0d5dd}
+  .browser .url{margin-left:8px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:1px 10px;font-size:11px;color:#667085;flex:1}
+  .app-body{padding:14px 16px}
+  .app-body h4{margin:0 0 10px;font-size:14px}
+  .f{display:grid;grid-template-columns:120px 1fr;gap:6px 10px;font-size:13px;align-items:center}
+  .f label{color:#667085}
+  .f .v{border:1px solid #dfe3e8;border-radius:6px;padding:4px 8px;background:#fff}
+  .stage{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;font-size:13px}
+  .stage.now{border-color:#b7cdf7;background:#eef4ff}
+  .stage .n{width:22px;height:22px;border-radius:50%;background:#e8ebf0;display:grid;place-items:center;font-weight:700;font-size:12px}
+  .stage.now .n{background:var(--prog);color:#fff}
+</style>
+</head>
+<body data-user="lena" data-nav="map" data-crumb="INIT-303 <span>› Promotions scheduler</span>" data-story="Oct 28 · 11:05">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Promotions scheduler</h1><span class="pill prog">2 runs in progress</span></div>
+      <div class="muted">For the merchandising team · stories US-301 to US-305 · rules BC-01 to BC-05 · sponsor of both runs: <span class="chip human">Lena Fischer</span></div></div>
+    <div class="actions"><a class="btn" href="controls.html?i=303">Product controls</a><button class="btn">⏸ Pause both</button></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card" id="runBE"><div class="card-h"><h3>Backend Engineer Agent · RUN-0574</h3><span class="pill prog right">Verifying</span></div>
+      <ul class="timeline small">
+        <li class="done"><b>Read</b> the five rules BC-01 to BC-05 and their stories<div class="when">11:00</div></li>
+        <li class="done"><b>Wrote tests first</b> 38 tests, each tagged with the rule it protects<div class="when">11:06</div></li>
+        <li class="done"><b>Implemented</b> promotion rules, scheduler and price history<div class="when">11:19</div></li>
+        <li class="run"><b>Verify in sandbox</b> time-travel tests with a fake clock<div class="when">now</div></li></ul>
+      <div class="small muted">Sandbox: ephemeral · token for <span class="mono">kestrel/merch-tools</span> only · cost $2.10 of $12 cap</div></div>
+
+    <div class="card" id="runFE"><div class="card-h"><h3>Frontend Engineer Agent · RUN-0575</h3><span class="pill prog right">Verifying</span></div>
+      <ul class="timeline small">
+        <li class="done"><b>Read</b> the stories and the internal design system<div class="when">11:00</div></li>
+        <li class="done"><b>Wrote tests first</b> 17 component tests<div class="when">11:07</div></li>
+        <li class="done"><b>Implemented</b> promotion form, calendar and preview<div class="when">11:21</div></li>
+        <li class="run"><b>Verify in sandbox</b> headless browser drives the merchandiser's screens<div class="when">now</div></li></ul>
+      <div class="small muted">Sandbox: ephemeral · token for <span class="mono">kestrel/merch-tools</span> only · cost $1.66 of $12 cap</div></div>
+  </div>
+
+  <div class="card" id="verify" style="margin-top:16px">
+    <div class="card-h"><h2>Backend agent: time-travel check</h2><span class="chip warn right">agent-reported · advisory</span></div>
+    <div class="grid g2">
+      <div>
+        <p class="small muted" style="margin-top:0">A promotion can start next Friday at midnight. The agent cannot wait, so it moves a <b>fake clock</b> through the moments that matter.</p>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>At Thu 23:59:59 the scheduled sale price is <b>not</b> active</div></li>
+          <li><span class="ok">✔</span><div>At Fri 00:00:00 the sale price goes live</div></li>
+          <li><span class="ok">✔</span><div>At Sun 23:59:59 it ends and the regular price returns</div></li>
+          <li><span class="ok">✔</span><div>A daylight-saving change does not shift the start time</div></li>
+          <li><span class="ok">✔</span><div>BC-03: a second promotion on the same product is rejected</div></li>
+          <li><span class="ok">✔</span><div>BC-01: a 45% discount waits for a second approver</div></li></ul>
+      </div>
+      <div class="browser" id="ui">
+        <div class="bar-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">localhost:3001/promotions/new</span></div>
+        <div class="app-body"><h4>New promotion</h4>
+          <div class="f"><label>Product</label><div class="v">Alpine Trail Runner</div>
+            <label>Discount</label><div class="v">45%</div>
+            <label>Starts</label><div class="v">Fri 00:00 (store time)</div>
+            <label>Ends</label><div class="v">Sun 23:59 (store time)</div></div>
+          <div class="callout warn small" style="margin-top:10px"><span class="ci">⚑</span><div>Discounts above 40% need a second approver. This promotion will wait for approval before it can go live.</div></div>
+          <div class="row" style="margin-top:10px"><button class="btn primary sm">Preview shoppers' view</button><button class="btn sm">Submit for approval</button></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="rollout" style="margin-top:16px">
+    <div class="card-h"><h2>Rollout plan</h2><span class="chip right">release 4.2 · feature flag <span class="mono">promo-scheduler</span></span></div>
+    <div class="grid g-main">
+      <div>
+        <div class="stage now"><span class="n">1</span><div><b>Pilot: 3 merchandisers</b><div class="muted small">Real promotions, with the old manual process still available for one week</div></div><span class="chip warn right">next</span></div>
+        <div class="stage"><span class="n">2</span><div><b>All 12 merchandisers</b><div class="muted small">After a week with no incorrect prices and no rule violations</div></div></div>
+        <div class="stage"><span class="n">3</span><div><b>Retire the spreadsheet</b><div class="muted small">A change request, since the old process is part of the approved requirements</div></div></div>
+      </div>
+      <div class="stack">
+        <div class="callout info small"><span class="ci">⛔</span><div><b>Kill switch.</b> One click turns the scheduler off and reverts to the current manual prices. No deploy needed.</div></div>
+        <div class="small muted">Watch during the pilot: prices that differ from the plan, approvals waiting more than 4 hours, failed price pushes to the storefront.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

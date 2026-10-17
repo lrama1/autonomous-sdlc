@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N1 · New initiative</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .opt{border:2px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+  .opt.sel{border-color:var(--primary);background:var(--primary-weak)}
+  .opt.off{opacity:.5}
+  .opt h3{margin:0 0 2px}
+</style>
+</head>
+<body data-user="sofia" data-nav="map" data-crumb="New initiative <span>› Trip planning</span>" data-story="Day 1 · 10:05">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Create initiative</h1><div class="muted">An idea, a workflow, a repository, and who is on the team. That is all the setup this project needs.</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card stack">
+        <div class="card-h" style="margin:0"><h2>Goal</h2></div>
+        <div class="grid g2">
+          <div><label class="small muted">Initiative name</label><input type="text" value="Trip planning"></div>
+          <div><label class="small muted">Product</label><input type="text" value="Trailmates · plan group hikes with friends"></div>
+        </div>
+        <div><label class="small muted">Goal (in plain words)</label>
+          <textarea style="min-height:90px">Let friends plan a group hike together: create a trip, invite people with a link, see who is coming, check the weather for the trailhead, and get reminders when something changes.</textarea></div>
+        <div class="callout info"><span class="ci">ℹ</span><div><b>Low-risk data.</b> Trailmates stores names, emails and trip details, so the default workflow fits. If the product later handles payments, add payment-path triggers so those changes always get a closer look.</div></div>
+      </div>
+
+      <div class="card"><div class="card-h"><h2>Workflow</h2></div>
+        <div class="grid g2">
+          <div class="opt sel"><h3>Default workflow</h3><div class="small muted">3 checkpoints: spec and design, change merge, release. Roles can overlap. Routine changes can be pre-approved.</div><div style="margin-top:6px"><span class="chip ok">Recommended</span></div></div>
+          <div class="opt off"><h3>Add optional checkpoints</h3><div class="small muted">QA verification, security review, retrospective. Switch them on per initiative whenever you want.</div><div style="margin-top:6px"><span class="chip">Not needed yet</span></div></div>
+        </div>
+        <div class="row" style="margin-top:12px"><span class="muted small">Standards pack:</span><select style="max-width:420px"><option>Default pack v1.0 (light): React + TypeScript, Node, PostgreSQL, ADRs only for hard-to-undo decisions</option><option>Customer pack…</option></select></div>
+      </div>
+
+      <div class="card"><div class="card-h"><h2>Autonomy</h2><span class="chip right">Hard stops apply in every mode</span></div>
+        <div class="grid g3">
+          <div class="opt off"><h3>Guided</h3><div class="small muted">People approve each stage and every pull request. Agents ask whenever they are unsure.</div></div>
+          <div class="opt sel"><h3>Balanced</h3><div class="small muted">People approve spec and design, release, and any pull request a trigger flags. Routine changes merge on green CI. Agents assume and declare when a wrong guess is cheap.</div><div style="margin-top:6px"><span class="chip ok">Chosen</span></div></div>
+          <div class="opt off"><h3>Autopilot</h3><div class="small muted">Agents merge on green CI unless a trigger fires, and mostly assume instead of asking. Production still needs a person.</div></div>
+        </div></div>
+
+      <div class="card"><div class="card-h"><h2>Repository</h2><span class="chip right ok">● Verified</span></div>
+        <select><option>trailmates/app · branch_pr · integration branch main · model policy: any</option></select>
+        <ul class="checks small" style="margin-top:10px">
+          <li><span class="ok">✔</span><div>Agents push only to <span class="mono">agent/&lt;run-id&gt;/**</span> and open pull requests into <span class="mono">main</span>. A preview environment is created for each one.</div></li>
+          <li><span class="ok">✔</span><div>Agents cannot change <span class="mono">.github/workflows/**</span>, <span class="mono">CODEOWNERS</span> or <span class="mono">.claude/**</span></div></li></ul></div>
+    </div>
+
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px"><h2 style="margin:0">Roles and hats</h2><div class="small muted">Three people cover every role.</div></div>
+        <table class="t"><thead><tr><th>Person</th><th>Hats</th></tr></thead><tbody>
+          <tr><td><span class="chip human">Sofia Alvarez</span></td><td class="small">Product Owner, Release Approver</td></tr>
+          <tr><td><span class="chip human">Ben Carter</span></td><td class="small">Tech Lead, Architect, Backend Engineer</td></tr>
+          <tr><td><span class="chip human">Mina Park</span></td><td class="small">Frontend Engineer, QA</td></tr>
+        </tbody></table></div>
+
+      <div class="card"><div class="card-h"><h3>Preflight</h3><span class="chip ok right">Passed</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>3 people. The independent-review rule needs at least 2 per change.</div></li>
+          <li><span class="ok">✔</span><div>Nobody approves a change they started with an agent.</div></li>
+          <li><span class="ok">✔</span><div>Deploys run from the pipeline, not from a person.</div></li>
+          <li><span class="ok">✔</span><div>Spend is capped per run. Model aliases are set in Settings.</div></li></ul></div>
+
+      <a class="btn primary" style="justify-content:center;padding:10px" href="map.html?i=201&s=s1">Create initiative</a>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

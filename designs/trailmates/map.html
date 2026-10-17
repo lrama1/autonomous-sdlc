@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trailmates · SDLC map</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .gnode.s-skip{opacity:.5;border-style:dashed;border-top:5px dashed #cbd2dc;cursor:pointer;box-shadow:none;background:#fafbfc}
+  .pill.skip{background:#f2f4f7;color:#98a2b3}
+</style>
+</head>
+<body data-nav="map">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1 id="ttl"></h1></div><div class="row wrap small" style="margin-top:4px" id="chips"></div></div>
+    <div class="actions"><span class="small muted">Prototype state:</span>
+      <select id="snap" style="width:auto"><option value="s1">Spec &amp; design pending</option><option value="g3">Change merge in review</option><option value="g6">Release candidate</option></select></div>
+  </div>
+
+  <div class="card">
+    <div class="flow" id="flow"></div>
+    <div class="crloop"><span>Scope change: new findings or changed scope re-enter at the affected checkpoint</span></div>
+    <div class="row wrap small" style="margin-top:22px">
+      <span class="pill skip">Not required</span><span class="pill none">Not started</span><span class="pill wait">Waiting on human</span><span class="pill done">Done</span>
+      <span class="muted right">Three checkpoints are on by default. The others can be switched on per initiative.</span>
+    </div>
+  </div>
+
+  <div class="grid g-main" style="margin-top:16px">
+    <div class="card" id="detail"></div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Where is my interaction?</h3></div><div id="you" class="small"></div></div>
+      <div class="card"><h3>What is off by default</h3><p class="small muted" style="margin:0">A separate architecture checkpoint, verification and security checkpoints, and post-release review. CI, the dependency and secret scans still run on every change, and every decision is still recorded.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script>
+  const Q = new URLSearchParams(location.search);
+  const INIT = {
+    201: { id: 'INIT-201', name: 'Trip planning',        repo: 'trailmates/app', st: 's1', story: 'Day 1' },
+    202: { id: 'INIT-202', name: 'Shared packing list',  repo: 'trailmates/app', st: 'g3', story: 'Day 12' }
+  };
+  const I = INIT[Q.get('i')] || INIT[201];
+  document.body.dataset.user = Q.get('u') || 'sofia';
+  document.body.dataset.crumb = `${I.id} <span>› ${I.name}</span>`;
+  document.body.dataset.story = I.story;
+  document.title = `${I.id} · SDLC map`;
+</script>
+<script src="../assets/app.js"></script>
+<script>
+  const G = [
+    { id: 'G0', name: 'Intake', stage: 'Plan', skip: true },
+    { id: 'G1', name: 'Spec & design', stage: 'Spec & design', agent: 'Product + Architect', need: 3, link: 'n1-2-spec-review.html', open: 'Open spec review',
+      desc: 'User stories with acceptance criteria, and a light design with notes only for hard-to-undo decisions. One approval from the owner, one from the tech lead.',
+      signers: [['Product Owner (owner)', 'Sofia Alvarez'], ['Tech Lead (design)', 'Ben Carter']] },
+    { id: 'G2', name: 'Architecture', stage: 'Architecture', skip: true },
+    { id: 'G3', name: 'Change merge (per PR)', stage: 'Implementation', agent: 'Frontend + Backend', need: 2, link: 'n2-2-review-pr.html', open: 'Open PR review',
+      desc: 'One reviewer who did not start the agent run, with CI green. Pre-approved change types merge without a human gate.',
+      signers: [['Peer reviewer (≠ sponsor)', 'Ben Carter']] },
+    { id: 'G4', name: 'Verification', stage: 'Verification', skip: true },
+    { id: 'G5', name: 'Security review', stage: 'Security', skip: true },
+    { id: 'G6', name: 'Release', stage: 'Release', agent: 'DevOps Agent', need: 3, link: 'n4-1-release.html', open: 'Open release',
+      desc: 'One Release Approver. The pipeline runs the deploy, so approver and deployer are separate.',
+      signers: [['Release Approver', 'Sofia Alvarez']] },
+    { id: 'G7', name: 'Retrospective', stage: 'Post-release', skip: true }
+  ];
+  const SN = {
+    s1: ['skip', 'wait', 'skip', 'none', 'skip', 'skip', 'none', 'skip'],
+    g3: ['skip', 'done', 'skip', 'wait', 'skip', 'skip', 'none', 'skip'],
+    g6: ['skip', 'done', 'skip', 'done', 'skip', 'skip', 'wait', 'skip']
+  };
+  const LBL = { skip: 'Not required', none: 'Not started', wait: 'Waiting on human', done: 'Done' };
+  const SHORT = { skip: 'Not required', none: 'Not started', wait: 'Waiting', done: 'Done' };
+  let cur = SN[Q.get('s')] ? Q.get('s') : I.st, sel = G[SN[cur].indexOf('wait')].id;
+  document.getElementById('snap').value = cur;
+  document.getElementById('ttl').textContent = `${I.id} · ${I.name}`;
+
+  const ev = (g, s) => s === 'done' ? g.need : s === 'wait' ? g.need - 1 : 0;
+  function draw() {
+    const st = SN[cur];
+    document.getElementById('flow').innerHTML = G.map((g, i) => {
+      const s = st[i], have = g.skip ? 0 : ev(g, s);
+      const body = g.skip ? `<div class="small muted">Off by default</div>` :
+        `<div><div class="small muted">Ready ${have}/${g.need}</div><div class="bar ${s === 'wait' ? 'wait' : ''}"><i style="width:${have / g.need * 100}%"></i></div></div><span class="chip agent">${g.agent}</span>`;
+      return `<div class="gnode s-${s} ${sel === g.id ? 'sel' : ''}" data-g="${g.id}">
+        <div class="stage">${g.stage}</div><div class="gid">${g.id}</div><div class="gname">${g.name}</div>
+        <span class="pill ${s}">${SHORT[s]}</span>${body}</div>`;
+    }).join('');
+    const bl = st[1] === 'done' ? 'spec-1' : 'none yet';
+    document.getElementById('chips').innerHTML = `<span class="chip">Default workflow</span><span class="chip">${I.repo}</span><span class="chip warn">Autonomy: Balanced</span><span class="chip">Spec tag: ${bl}</span><span class="chip ok">Pre-approved change types: on</span>`;
+    const w = G[st.indexOf('wait')];
+    document.getElementById('you').innerHTML = w ? `Next decision: <b>${w.id} · ${w.name}</b>. Waiting on <b>${w.signers.map(x => x[1]).join(' and ')}</b>.` : '';
+    detail();
+  }
+  function detail() {
+    const g = G.find(x => x.id === sel), i = G.indexOf(g), s = SN[cur][i];
+    if (g.skip) {
+      document.getElementById('detail').innerHTML = `<div class="card-h"><h2>${g.id} · ${g.name}</h2><span class="pill skip right">Not required</span></div>
+        <p class="muted">This checkpoint is off by default. Checks that matter still happen: CI runs on every change, and dependency and secret scans run automatically.</p>
+        <div class="callout info small"><span class="ci">ℹ</span><div>You can switch this checkpoint on for an initiative whenever you want it.</div></div>`;
+      return;
+    }
+    const have = ev(g, s);
+    const sig = g.signers.map(x => `<tr><td>${x[0]}</td><td><span class="chip human">${x[1]}</span></td><td>${s === 'done' ? '<span class="chip ok">✔ approved</span>' : '<span class="chip warn">⏳ pending</span>'}</td></tr>`).join('');
+    document.getElementById('detail').innerHTML = `
+      <div class="card-h"><h2>${g.id} · ${g.name}</h2><span class="pill ${s} right">${LBL[s]}</span></div>
+      <p class="muted">${g.desc}</p>
+      <div class="grid g3" style="margin:10px 0 12px">
+        <div><div class="small muted">Prepared by</div><span class="chip agent">${g.agent}</span></div>
+        <div><div class="small muted">Prepared items</div><b>${have}/${g.need}</b> items</div>
+        <div><div class="small muted">Independent review</div>${s === 'none' ? '<span class="chip">n/a yet</span>' : '<span class="chip ok">ok</span>'}</div>
+      </div>
+      <table class="t"><thead><tr><th>Required role</th><th>Person</th><th>Status</th></tr></thead><tbody>${sig}</tbody></table>
+      <div class="row" style="margin-top:12px"><a class="btn primary" href="${g.link}">${g.open}</a></div>`;
+  }
+  document.getElementById('flow').addEventListener('click', e => { const n = e.target.closest('.gnode'); if (!n) return; sel = n.dataset.g; draw(); });
+  document.getElementById('snap').addEventListener('change', e => { cur = e.target.value; sel = G[SN[cur].indexOf('wait')].id; draw(); });
+  draw();
+</script>
+</body>
+</html>

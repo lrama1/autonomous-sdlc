@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J1 · New initiative (G0)</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .opt{border:2px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+  .opt.sel{border-color:var(--primary);background:var(--primary-weak)}
+  .opt.off{opacity:.5}
+  .opt h3{margin:0 0 2px}
+</style>
+</head>
+<body data-user="maya" data-nav="map" data-crumb="New initiative <span>› G0 · Plan &amp; risk intake</span>" data-story="Day 1 · 09:12">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Create initiative</h1><div class="muted">One compliance profile governs each initiative. Work does not start until the repository is verified and roles are assigned.</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card stack">
+        <div class="card-h" style="margin:0"><h2>Goal and scope</h2></div>
+        <div class="grid g2">
+          <div><label class="small muted">Initiative name</label><input type="text" value="IRA Account Opening"></div>
+          <div><label class="small muted">Scope</label><input type="text" value="Digital self-service · US residents · Traditional, Roth, Rollover"></div>
+        </div>
+        <div><label class="small muted">Goal (stated by the Product Owner)</label>
+          <textarea style="min-height:96px">Let a new customer open a Traditional IRA, a Roth IRA or a Rollover IRA online in one sitting: verify identity, confirm eligibility, collect beneficiaries and disclosures, and activate the account. Every decision must be explainable to Compliance.</textarea></div>
+        <div class="callout warn"><span class="ci">⚠</span><div><b>Regulatory classification is advisory until Compliance confirms it.</b> The Product Agent flags three areas: customer identification and anti-money-laundering checks, tax rules that differ by account type, and electronic delivery of disclosures. Elena Rossi (Compliance &amp; Risk) confirms at G0.</div></div>
+      </div>
+
+      <div class="card"><div class="card-h"><h2>Compliance profile</h2></div>
+        <div class="grid g2">
+          <div class="opt sel"><h3>Financial Services overlay (SOX ITGC · SOC 2 CC8.1)</h3><div class="small muted">Change authorization, independent approval, separation of duties, signed evidence, retention.</div><div style="margin-top:6px"><span class="chip warn">Preview profile</span></div></div>
+          <div class="opt off"><h3>Regulated Baseline only</h3><div class="small muted">Common control set without the financial-services overlay.</div></div>
+        </div>
+        <div class="row" style="margin-top:12px"><span class="muted small">Standards pack:</span><select style="max-width:430px"><option>Retirement controls v0.4 (CIP/AML, tax-year limits as configuration, best-interest records, retention)</option><option>Default pack v1.0</option></select></div>
+      </div>
+
+      <div class="card"><div class="card-h"><h2>Strictness level</h2><span class="chip right">Deployment floor: Controlled</span></div>
+        <div class="grid g3">
+          <div class="opt off"><h3>Sandbox</h3><div class="small muted">Test data only. Not compliance evidence.</div><div style="margin-top:6px"><span class="chip">Below this deployment's floor</span></div></div>
+          <div class="opt"><h3>Controlled</h3><div class="small muted">Controls enforced, signed evidence, customer-account models.</div></div>
+          <div class="opt sel"><h3>Regulated</h3><div class="small muted">Audit-grade: step-up signing, WORM export, requalified models.</div><div style="margin-top:6px"><span class="chip ok">Chosen: identity and money</span></div></div>
+        </div></div>
+
+      <div class="card"><div class="card-h"><h2>Repository</h2><span class="chip right ok">● Verified</span></div>
+        <label class="small muted">Select from the repository registry (agents can only use registered repositories)</label>
+        <select><option>harbor/ira-account-opening · regulated · branch_pr · levels: Controlled, Regulated</option><option disabled>harbor/profile-mgmt-sandbox · test · direct · Sandbox only (not allowed at this level)</option></select>
+        <ul class="checks small" style="margin-top:10px">
+          <li><span class="ok">✔</span><div>Write mode <span class="mono">branch_pr</span>: agents push only to <span class="mono">agent/&lt;run-id&gt;/**</span> and open PRs into <span class="mono">main</span>. The Gate identity merges after approvals.</div></li>
+          <li><span class="ok">✔</span><div>Required status check <span class="mono">sdlc/gate</span> registered. Protected paths: <span class="mono">.github/workflows/**</span>, <span class="mono">CODEOWNERS</span>, <span class="mono">.claude/**</span></div></li></ul></div>
+    </div>
+
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px"><h2 style="margin:0">Roles</h2><div class="small muted">Effective-dated. In a financial firm the quality-and-regulatory role is played by Compliance &amp; Risk.</div></div>
+        <table class="t"><thead><tr><th>Role</th><th>Person</th></tr></thead><tbody>
+          <tr><td>Product Owner</td><td><span class="chip human">Maya Patel</span></td></tr>
+          <tr><td>Architect</td><td><span class="chip human">Noah Kim</span></td></tr>
+          <tr><td>Backend Engineer</td><td><span class="chip human">Carlos Diaz</span> <span class="chip human">Hannah Wright</span></td></tr>
+          <tr><td>QA / Tester</td><td><span class="chip human">Tessa Moore</span></td></tr>
+          <tr><td>Compliance &amp; Risk</td><td><span class="chip human">Elena Rossi</span></td></tr>
+          <tr><td>Security</td><td><span class="chip human">Tariq Ahmed</span></td></tr>
+          <tr><td>Release Approver</td><td><span class="chip human">Grace Lin</span></td></tr>
+          <tr><td>DevOps (deployer)</td><td><span class="chip human">Luis Ortega</span></td></tr>
+        </tbody></table></div>
+
+      <div class="card"><div class="card-h"><h3>SoD preflight</h3><span class="chip ok right">Passed</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>9 distinct people assigned. Profile minimum is 4.</div></li>
+          <li><span class="ok">✔</span><div>Compliance is independent from engineering and product.</div></li>
+          <li><span class="ok">✔</span><div>The deployer (Luis) cannot be a release or code approver.</div></li>
+          <li><span class="ok">✔</span><div>Platform Admin holds no approval role.</div></li></ul></div>
+
+      <a class="btn primary" style="justify-content:center;padding:10px" href="map.html?i=101&s=s1">Create initiative &amp; request G0 sign-off</a>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N1 · Spec and design review</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="sofia" data-nav="map" data-crumb="INIT-201 <span>› G1 · Spec &amp; design › Review</span>" data-story="Day 1 · 14:10">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G1 · Spec &amp; design</h1><span class="pill wait" id="statePill">Waiting on you and Ben</span></div>
+      <div class="muted">Trip planning · prepared by <span class="chip agent">Product Agent</span> and <span class="chip agent">Architect Agent</span> · 6 stories, 4 design notes, 2 questions</div>
+    </div>
+    <div class="actions"><a class="btn" href="map.html?i=201&s=s1">Back to map</a></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="stories">Stories <span class="count">6</span></button>
+        <button class="tab" data-tab="design">Design <span class="count">4</span></button>
+        <button class="tab" data-tab="questions">Questions <span class="count">2</span></button>
+      </div>
+
+      <div data-pane="stories">
+        <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>User story</th><th>Acceptance</th></tr></thead><tbody>
+          <tr><td class="id">US-1</td><td>As an organizer, I can create a trip with a name, date, trailhead and difficulty, and invite friends with a link.</td><td class="small">4 criteria</td></tr>
+          <tr><td class="id">US-2</td><td>As a member, I can RSVP going, maybe or can't, and see who else is coming.</td><td class="small">3 criteria</td></tr>
+          <tr><td class="id">US-3</td><td>As a member, I can see the weather forecast for the trailhead on the trip date, and get an alert when conditions change.</td><td class="small">4 criteria</td></tr>
+          <tr><td class="id">US-4</td><td>As a member, I get email or push reminders for invites, changes and weather alerts, and I can mute a trip.</td><td class="small">3 criteria</td></tr>
+          <tr><td class="id">US-5</td><td>As an invitee, I can join with a magic link, without creating a password.</td><td class="small">3 criteria</td></tr>
+          <tr><td class="id">US-6</td><td>As an organizer, I can reschedule or cancel a trip, and members are notified.</td><td class="small">3 criteria</td></tr>
+        </tbody></table></div>
+        <p class="small muted" style="margin-top:8px">Out of scope for this version: payments, turn-by-turn navigation, photo sharing.</p>
+      </div>
+
+      <div data-pane="design" hidden>
+        <div class="card flush"><table class="t"><thead><tr><th>Note</th><th>Decision</th><th>Why it is written down</th></tr></thead><tbody>
+          <tr><td class="id">ADR-001</td><td>A modular monolith in Node.js and TypeScript, with ports for weather and email so providers can change</td><td class="small">Hard to undo: shapes the whole codebase</td></tr>
+          <tr><td class="id">ADR-002</td><td>Managed PostgreSQL</td><td class="small">Hard to undo: data model and hosting</td></tr>
+          <tr><td class="id">ADR-003</td><td>Magic-link sign-in, no passwords</td><td class="small">Affects every user flow</td></tr>
+          <tr><td class="id">ADR-004</td><td>Containers on AWS, defined in Terraform, with a preview environment for every pull request</td><td class="small">Cost and workflow impact</td></tr>
+        </tbody></table></div>
+        <p class="small muted" style="margin-top:8px">Smaller choices are documented in code and pull request descriptions, not in separate records.</p>
+      </div>
+
+      <div data-pane="questions" hidden>
+        <div class="callout info" style="margin-bottom:12px"><span class="ci">❓</span><div>The agents could not answer these two themselves. Pick an answer and the agents continue.</div></div>
+        <div class="card stack">
+          <div><b>Q1 · How long should invite links last?</b>
+            <select id="q1" style="margin-top:6px"><option value="">Choose…</option><option>Never expire</option><option>7 days</option><option>Until the trip date</option></select></div>
+          <div><b>Q2 · Which weather provider should we start with?</b>
+            <select id="q2" style="margin-top:6px"><option value="">Choose…</option><option>Free tier, 3-day forecast</option><option>Paid plan, 10-day forecast and alerts</option></select></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Checks</h3></div>
+        <ul class="checks small" id="checks">
+          <li><span class="ok">✔</span><div>Every story has acceptance criteria</div></li>
+          <li><span class="ok">✔</span><div>Hard-to-undo decisions have a written note</div></li>
+          <li><span class="ok">✔</span><div>No sensitive data (payments, health) in scope</div></li>
+          <li><span class="wt" id="qIcon">●</span><div id="qText">2 questions open</div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h3>Approvals</h3></div>
+        <ul class="checks small">
+          <li><span id="sSofia" class="wt">●</span><div style="flex:1"><b>Sofia Alvarez</b> · Product Owner<div class="muted">Approves the spec as owner.</div></div>
+            <button class="btn primary sm disabled" id="apSofia">Approve</button></li>
+          <li><span id="sBen" class="wt">●</span><div style="flex:1"><b>Ben Carter</b> · Tech Lead<div class="muted">Approves the design. A different person from the owner.</div></div>
+            <button class="btn primary sm disabled" id="apBen">Approve</button></li></ul>
+        <div class="small muted" style="margin-top:8px">One click, recorded in the activity log.</div></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Spec and design approved.</b> Activity entries <b>ACT-0041</b> and <b>ACT-0042</b> were recorded. The agents can start building. Changing the spec later is a scope change that re-opens this checkpoint.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const done = { sofia: false, ben: false };
+  function refresh() {
+    const ok = document.getElementById('q1').value && document.getElementById('q2').value;
+    document.getElementById('qIcon').className = ok ? 'ok' : 'wt'; document.getElementById('qIcon').textContent = ok ? '✔' : '●';
+    document.getElementById('qText').textContent = ok ? 'All questions answered' : '2 questions open';
+    ['apSofia', 'apBen'].forEach(id => { const b = document.getElementById(id); if (!b.dataset.signed) b.classList.toggle('disabled', !ok); });
+  }
+  document.addEventListener('change', e => { if (e.target.id === 'q1' || e.target.id === 'q2') refresh(); });
+  function sign(who, btnId, iconId, ev) {
+    const b = document.getElementById(btnId); b.dataset.signed = '1'; b.className = 'chip ok'; b.textContent = '✔ approved ' + ev;
+    const i = document.getElementById(iconId); i.className = 'ok'; i.textContent = '✔';
+    done[who] = true;
+    if (done.sofia && done.ben) { document.getElementById('result').hidden = false; document.getElementById('statePill').className = 'pill done'; document.getElementById('statePill').textContent = 'Approved'; }
+  }
+  document.getElementById('apSofia').addEventListener('click', e => { if (!e.target.classList.contains('disabled')) sign('sofia', 'apSofia', 'sSofia', 'ACT-0041'); });
+  document.getElementById('apBen').addEventListener('click', e => { if (!e.target.classList.contains('disabled')) sign('ben', 'apBen', 'sBen', 'ACT-0042'); });
+</script>
+</body>
+</html>

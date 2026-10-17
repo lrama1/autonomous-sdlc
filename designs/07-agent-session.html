@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>07 · Live agent session</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .stream{background:#0f1729;color:#cfd9f6;border-radius:10px;padding:12px 14px;font:12px/1.6 var(--mono);max-height:300px;overflow:auto;white-space:pre-wrap}
+  .stream .t{color:#6f7da3}.stream .ok{color:#6ee7a8}.stream .tool{color:#9db8ff}.stream .warn{color:#ffd37a}
+  @keyframes blink{50%{opacity:0}} .cursor{animation:blink 1s infinite}
+</style>
+</head>
+<body data-user="dana" data-nav="map" data-crumb="INIT-014 <span>› Agent run RUN-0188</span>" data-story="Day 3 · 11:20">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>Backend Engineer Agent · RUN-0188</h1><span class="pill prog">Running</span></div>
+      <div class="muted">Task: implement REQ-004 and REQ-007 on branch <span class="mono">agent/req-004-007</span> · Sponsor: <span class="chip human">Dana Okafor</span> (you)</div>
+    </div>
+    <div class="actions"><button class="btn">⏸ Pause</button><button class="btn danger">Stop run</button></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Progress</h3></div>
+        <ul class="timeline small">
+          <li class="done"><b>Read requirements</b> REQ-004, REQ-007 and ADR-003 (hexagonal layout)<div class="when">11:02</div></li>
+          <li class="done"><b>Declared assumption A-5</b> "half-even rounding applies at the application layer boundary" → added to Assumptions Register<div class="when">11:04</div></li>
+          <li class="done"><b>Wrote tests first</b> 18 unit tests for domain/dose<div class="when">11:09</div></li>
+          <li class="run"><b>Implementing</b> domain/dose/roundDose.ts and application port <span class="mono">DoseCalculator</span><div class="when">now</div></li>
+          <li><b>Verify in sandbox</b> unit tests, lint, <b>start the app</b> with the change, health check, smoke tests for REQ-004 and REQ-007<div class="when">uses the repo's shared <span class="mono">verify</span> entry point</div></li>
+          <li><b>Open pull request</b> into <span class="mono">main</span> only if verification passes, with requirement links, the verification report, and a SOUP record for the new dependency</li>
+        </ul></div>
+
+      <div class="card"><div class="card-h"><h3>Live stream</h3><span class="chip right">read-only</span></div>
+<div class="stream"><span class="t">11:12:04</span> <span class="tool">Read</span> docs/requirements/REQ-004.md
+<span class="t">11:12:05</span> <span class="tool">Read</span> adrs/ADR-003-hexagonal-layout.md
+<span class="t">11:12:19</span> <span class="tool">Edit</span> apps/dose-service/src/domain/dose/roundDose.ts
+<span class="t">11:12:31</span> <span class="tool">Bash</span> npm test -- domain/dose  <span class="ok">18 passed</span>
+<span class="t">11:12:44</span> <span class="warn">Policy</span> new dependency "decimal.js" → SOUP record required (deterministic trigger)
+<span class="t">11:12:52</span> <span class="tool">Edit</span> apps/dose-service/src/application/ports/DoseCalculator.ts
+<span class="t">11:13:07</span> <span class="tool">Write</span> docs/trace/REQ-004.links.md  <span class="t">(@covers REQ-004)</span>
+<span class="cursor">▍</span></div></div>
+
+      <div class="card"><div class="card-h"><h3>Assumption declared by the agent</h3><span class="chip warn right">needs human disposition before next baseline</span></div>
+        <div class="callout info"><span class="ci">ℹ</span><div><b>A-5</b> · Half-even rounding applies at the application layer boundary, not inside the domain.</div></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Steer this run</h3></div>
+        <textarea placeholder="Add guidance for the agent…">Keep the rounding strategy injectable so QA can swap resolutions in tests.</textarea>
+        <div class="callout warn small" style="margin-top:8px"><span class="ci">⚖</span><div><b>You are the sponsor of this run.</b> Guidance is recorded as an input. People who inject guidance become <b>contributors</b> and cannot approve this change at G3.</div></div>
+        <div class="row" style="margin-top:8px"><button class="btn primary">Send guidance</button></div></div>
+
+      <div class="card"><div class="card-h"><h3>Run record</h3><span class="chip right">captured automatically</span></div>
+        <dl class="kv small" style="grid-template-columns:110px 1fr">
+          <dt>Agent definition</dt><dd>Backend Engineer v1.4.2 <span class="chip ok">approved</span></dd>
+          <dt>Model</dt><dd>Pinned · MCR-0007 · Bedrock</dd>
+          <dt>Sponsor</dt><dd>Dana Okafor</dd>
+          <dt>Contributors</dt><dd>none yet</dd>
+          <dt>Sandbox</dt><dd>Ephemeral container · egress allow-listed (git host, Bedrock, package mirror)</dd>
+          <dt>Credentials</dt><dd>Short-lived GitHub App token · cannot merge</dd>
+          <dt>Cost</dt><dd>$1.84 of $10 cap</dd></dl></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

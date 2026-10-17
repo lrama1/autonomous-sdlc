@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N6 · GitHub connection</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .perm{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:0 7px;font-size:12px;margin:0 4px 4px 0;background:#fff}
+  .perm b{font-weight:600}
+  .chip{white-space:nowrap}
+</style>
+</head>
+<body data-user="ben" data-nav="connect" data-crumb="Connections <span>› GitHub</span>" data-story="Day 1 · setup">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Connections</h1><div class="muted">How the platform reaches your repositories, outside services, and models. People sign in with SSO, never with GitHub.</div></div>
+    <div class="actions"><span class="small muted">Account type:</span>
+      <select id="acct" style="width:auto"><option value="personal">Personal account (Free plan)</option><option value="org">Organization (Team plan)</option></select></div>
+  </div>
+  <div class="row small" style="margin-bottom:14px"><b>GitHub</b> <span class="muted">·</span> <a href="n6-2-integrations.html">Integrations</a> <span class="muted">·</span> <a href="n6-3-repos-and-gateway.html">Repositories, models and engines</a></div>
+
+  <div id="planNote"></div>
+
+  <div class="grid g-main" style="margin-top:14px">
+    <div class="stack">
+      <div class="card" id="apps"><div class="card-h"><h2>Step 1 · Two GitHub Apps</h2><span class="chip ok right">registered with the manifest flow</span></div>
+        <p class="small muted" style="margin-top:0">You go to GitHub once to approve each registration. GitHub sends the App ID, private key and webhook secret straight back to the platform, which stores them in the secrets manager. Nobody copies keys by hand.</p>
+        <table class="t"><thead><tr><th>App</th><th>Permissions</th><th>Used by</th><th>Status</th></tr></thead><tbody>
+          <tr><td><b>trailmates-agent</b><div class="small muted">Agents</div></td>
+            <td><span class="perm"><b>Contents</b> write</span><span class="perm"><b>Pull requests</b> write</span><span class="perm"><b>Metadata</b> read</span></td>
+            <td class="small">Agent sandboxes, through a token minted per run: one repository, 1 hour at most</td>
+            <td><span class="chip ok">✔ active</span></td></tr>
+          <tr><td><b>trailmates-gate</b><div class="small muted">Merges</div></td>
+            <td><span class="perm"><b>Checks</b> write</span><span class="perm"><b>Pull requests</b> write</span><span class="perm"><b>Contents</b> write</span></td>
+            <td class="small">Only the platform's Git service. Its private key never enters a sandbox, so agents cannot merge or change branch protection.</td>
+            <td><span class="chip ok">✔ active</span></td></tr></tbody></table></div>
+
+      <div class="card flush" id="inst"><div class="card-h" style="padding:14px 16px 0"><h2>Step 2 · Installed on your repositories only</h2><span class="chip right" id="drift"></span></div>
+        <table class="t"><thead><tr><th>Repository</th><th>In registry</th><th>Agent App</th><th>Gate App</th><th>Result</th></tr></thead><tbody id="rows"></tbody></table>
+        <div class="small muted" style="padding:10px 16px">Both Apps are installed with <b>Only select repositories</b>. The platform compares each installation with the Repository Registry whenever GitHub reports a change, and <b>blocks runs</b> on any repository that differs.</div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card" id="links"><div class="card-h"><h3>People: GitHub links</h3><span class="chip right">identity only</span></div>
+        <table class="t" style="font-size:13px"><thead><tr><th>Person</th><th>GitHub</th><th>Link</th></tr></thead><tbody>
+          <tr><td>Sofia Alvarez</td><td class="mono small">id 4821907</td><td><span class="chip ok">✔ linked</span></td></tr>
+          <tr><td>Ben Carter</td><td class="mono small">id 3392281</td><td><span class="chip ok">✔ linked</span></td></tr>
+          <tr><td>Mina Park</td><td class="small muted">none</td><td><span class="chip warn">⏳ not linked</span></td></tr></tbody></table>
+        <p class="small muted" style="margin:8px 0 0">The independent-review rule is on, so the platform needs to know who wrote or reviewed each commit. A pull request with a commit from an unlinked person is held until you map the identity. The link stores only the numeric GitHub ID.</p></div>
+
+      <div class="card"><div class="card-h"><h3>Webhooks</h3></div>
+        <dl class="kv small" style="grid-template-columns:90px 1fr">
+          <dt>Endpoint</dt><dd class="mono" id="hook"></dd>
+          <dt>Last event</dt><dd>pull_request · 2 min ago · <span class="chip ok">200</span></dd>
+          <dt>Fallback</dt><dd>Polling every 60 s if deliveries stop</dd></dl></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const A = {
+    org: {
+      note: '<div class="callout ok small"><span class="ci">✔</span><div><b>Organization on a Team plan.</b> Protected branches work in private repositories, and the Gate App can be the only required-check source. You can try the full pull-request flow with branch protection here.</div></div>',
+      hook: 'https://sdlc.trailmates.example/github/webhook',
+      rows: [['trailmates/app', 1, 1, 1, 'ok', 'In sync'], ['trailmates/scratch', 1, 1, 0, 'ok', 'In sync · direct mode, no Gate needed'], ['trailmates/old-prototype', 0, 1, 0, 'err', 'Installed but not registered. Runs blocked.']]
+    },
+    personal: {
+      note: '<div class="callout warn small"><span class="ci">⚠</span><div><b>Personal account on the Free plan.</b> <span class="mono">direct</span> mode works in private repositories. Protected branches in private repositories need GitHub Pro, and a personal account cannot put the Gate App on a bypass list. The Gate App merges only when its own required check passes, so it does not need one. To try protected branches, use GitHub Pro, or a free organization with public test repositories.</div></div>',
+      hook: 'https://abc123.smee.io (local development proxy)',
+      rows: [['you/trailmates-app', 1, 1, 1, 'warn', 'In sync · branch protection unavailable on this plan'], ['you/trailmates-scratch', 1, 1, 0, 'ok', 'In sync · direct mode'], ['you/old-prototype', 0, 1, 0, 'err', 'Installed but not registered. Runs blocked.']]
+    }
+  };
+  const yn = v => v ? '<span class="ok">✔</span>' : '<span class="no">✖</span>';
+  const chip = { ok: 'chip ok', warn: 'chip warn', err: 'chip err' };
+  function draw(k) {
+    const a = A[k];
+    document.getElementById('planNote').innerHTML = a.note;
+    document.getElementById('hook').textContent = a.hook;
+    document.getElementById('rows').innerHTML = a.rows.map(r => `<tr><td class="id">${r[0]}</td><td>${yn(r[1])}</td><td>${yn(r[2])}</td><td>${yn(r[3])}</td><td><span class="${chip[r[4]]}">${r[5]}</span></td></tr>`).join('');
+    const d = a.rows.filter(r => r[4] === 'err').length;
+    const el = document.getElementById('drift'); el.className = 'chip right ' + (d ? 'err' : 'ok'); el.textContent = d ? d + ' drift' : 'in sync';
+  }
+  document.getElementById('acct').addEventListener('change', e => draw(e.target.value));
+  draw('personal');
+</script>
+</body>
+</html>

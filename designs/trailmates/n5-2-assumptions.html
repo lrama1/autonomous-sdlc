@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N5 · Assumptions and standing decisions</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="sofia" data-nav="assump" data-crumb="INIT-202 <span>› Assumptions &amp; decisions</span>" data-story="Day 14 · 14:00">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Assumptions and decisions</h1><span class="pill wait">5 assumptions to review</span></div>
+      <div class="muted">Agents make small calls and say so. You can accept or reject them any time, and agents stop asking about things you have already settled.</div></div>
+  </div>
+
+  <div data-tabgroup>
+    <div class="tabs">
+      <button class="tab active" data-tab="assumptions">Assumptions <span class="count">5</span></button>
+      <button class="tab" data-tab="standing">Standing decisions <span class="count">4</span></button>
+    </div>
+
+    <div data-pane="assumptions">
+      <div class="card flush" id="assumptions"><table class="t"><thead><tr><th>ID</th><th>Assumption</th><th>Declared by</th><th>Risk</th><th>Used in</th><th>Your call</th></tr></thead><tbody>
+        <tr data-a="A-12"><td class="id">A-12</td><td>Invite links expire after 7 days</td><td class="small"><span class="chip agent">Backend</span></td><td><span class="chip ok">low</span></td><td class="small">US-5</td><td><button class="btn sm acc">Accept</button> <button class="btn sm rej">Reject</button></td></tr>
+        <tr data-a="A-14"><td class="id">A-14</td><td>Show temperatures in °C only</td><td class="small"><span class="chip agent">Frontend</span></td><td><span class="chip warn">medium</span></td><td class="small">US-3</td><td><button class="btn sm acc">Accept</button> <button class="btn sm rej">Reject</button></td></tr>
+        <tr data-a="A-15"><td class="id">A-15</td><td>Trips are public to anyone with the invite link</td><td class="small"><span class="chip agent">Backend</span></td><td><span class="chip warn">medium</span></td><td class="small">US-1, US-5</td><td><button class="btn sm acc">Accept</button> <button class="btn sm rej">Reject</button></td></tr>
+        <tr data-a="A-16"><td class="id">A-16</td><td>Difficulty labels are Easy / Moderate / Hard</td><td class="small"><span class="chip agent">Frontend</span></td><td><span class="chip ok">low</span></td><td class="small">US-1</td><td><button class="btn sm acc">Accept</button> <button class="btn sm rej">Reject</button></td></tr>
+        <tr data-a="A-17"><td class="id">A-17</td><td>Reminder emails are sent at 08:00 local time</td><td class="small"><span class="chip agent">Backend</span></td><td><span class="chip ok">low</span></td><td class="small">US-4</td><td><button class="btn sm acc">Accept</button> <button class="btn sm rej">Reject</button></td></tr>
+      </tbody></table></div>
+      <div class="callout ok small" id="result" hidden style="margin-top:12px"><span class="ci">✔</span><div id="resultText"></div></div>
+      <p class="small muted" style="margin-top:8px">Accepting turns an assumption into a requirement on the story. Rejecting re-opens the affected work for the agent that made it, and creates a task so nothing is forgotten.</p>
+    </div>
+
+    <div data-pane="standing" hidden>
+      <div class="card flush"><table class="t"><thead><tr><th>ID</th><th>Decision</th><th>Set by</th><th>Agents asked before</th><th>Answered by this since</th><th></th></tr></thead><tbody>
+        <tr><td class="id">SD-03</td><td>Use <span class="mono">date-fns</span> for dates and times</td><td class="small"><span class="chip human">Ben</span></td><td>3</td><td>9</td><td><button class="btn sm">Edit</button> <button class="btn sm">Retire</button></td></tr>
+        <tr><td class="id">SD-05</td><td>Copy is friendly and short. Sentences under 15 words</td><td class="small"><span class="chip human">Sofia</span></td><td>5</td><td>14</td><td><button class="btn sm">Edit</button> <button class="btn sm">Retire</button></td></tr>
+        <tr><td class="id">SD-06</td><td>Validate on the server first, and mirror the rule in the form</td><td class="small"><span class="chip human">Ben</span></td><td>2</td><td>6</td><td><button class="btn sm">Edit</button> <button class="btn sm">Retire</button></td></tr>
+        <tr><td class="id">SD-07</td><td>Weather: free tier with a 3-day forecast, until we pass 1,000 users <span class="chip ok">new today</span></td><td class="small"><span class="chip human">Ben</span></td><td>1</td><td>0</td><td><button class="btn sm">Edit</button> <button class="btn sm">Retire</button></td></tr>
+      </tbody></table></div>
+      <p class="small muted" style="margin-top:8px">Agents search standing decisions before they ask, and cite the one they used. A decision can have an end date or a condition, so it does not become stale.</p>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('assumptions').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const tr = b.closest('tr'), id = tr.dataset.a, text = tr.children[1].textContent;
+    const rej = b.classList.contains('rej');
+    tr.children[5].innerHTML = rej ? '<span class="chip err">✖ rejected</span>' : '<span class="chip ok">✔ accepted</span>';
+    document.getElementById('resultText').innerHTML = rej
+      ? `<b>${id} rejected.</b> “${text}” re-opened for the agent that made it, with a task for the affected story.`
+      : `<b>${id} accepted.</b> “${text}” is now a requirement on the story.`;
+    document.getElementById('result').hidden = false;
+  });
+</script>
+</body>
+</html>

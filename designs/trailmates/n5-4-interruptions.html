@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N5 · Interruption metrics</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .meter{height:10px;background:#eceff3;border-radius:99px;overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--primary)}
+  .seg{display:flex;gap:10px;align-items:center;font-size:13px;margin:6px 0}
+  .seg b{width:70px;font-weight:500}
+  .seg .meter{flex:1}
+  .seg span{width:44px;text-align:right;color:var(--muted)}
+</style>
+</head>
+<body data-user="ben" data-nav="metrics" data-crumb="Interruptions <span>› Last 30 days</span>" data-story="Day 30">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Interruptions</h1><div class="muted">How often agents ask, how useful the asks were, and what to tune. You change the rules by hand. Nothing changes on its own.</div></div>
+    <div class="actions"><span class="chip">Last 30 days</span><span class="chip">INIT-201, INIT-202</span></div>
+  </div>
+
+  <div class="grid g4" id="tiles" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">0.8</div><div class="l">Questions per merged PR <span class="chip ok">falling</span></div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">74%</div><div class="l">Answered with the recommendation unchanged</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">11%</div><div class="l">Marked "didn't need to ask"</div></div>
+    <div class="card tile"><div class="n">38 min</div><div class="l">Median time to answer · agent time blocked 6%</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush" id="suggestions"><div class="card-h" style="padding:14px 16px 0"><h2>Where asks come from</h2><span class="chip right">suggestions, never automatic</span></div>
+        <table class="t"><thead><tr><th>Situation</th><th>Asked</th><th>Unchanged</th><th>Didn't need to ask</th><th>Suggestion</th></tr></thead><tbody>
+          <tr data-s="UI copy changes"><td>Changing interface copy</td><td>9</td><td>8</td><td>3</td><td><span class="small">Make it a pre-approved change type</span> <button class="btn sm primary apply">Apply</button></td></tr>
+          <tr data-s="Test-only changes"><td>Test-only changes</td><td>6</td><td>6</td><td>2</td><td><span class="small">Make it a pre-approved change type</span> <button class="btn sm primary apply">Apply</button></td></tr>
+          <tr><td>Weather provider choices</td><td>3</td><td>3</td><td>0</td><td><span class="chip ok">Covered by standing decision SD-07</span></td></tr>
+          <tr><td>Adding a dependency</td><td>7</td><td>5</td><td>0</td><td><span class="chip">Keep asking</span> <span class="small muted">2 answers changed the plan</span></td></tr>
+          <tr><td>Database migrations</td><td>2</td><td>0</td><td>0</td><td><span class="chip">Keep asking</span></td></tr>
+        </tbody></table></div>
+      <div class="callout ok small" id="applied" hidden><span class="ci">✔</span><div id="appliedText"></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Questions per merged PR</h3></div>
+        <div class="seg"><b>Week 1</b><div class="meter"><i style="width:80%"></i></div><span>1.6</span></div>
+        <div class="seg"><b>Week 2</b><div class="meter"><i style="width:65%"></i></div><span>1.3</span></div>
+        <div class="seg"><b>Week 3</b><div class="meter"><i style="width:50%"></i></div><span>1.0</span></div>
+        <div class="seg"><b>Week 4</b><div class="meter"><i style="width:40%"></i></div><span>0.8</span></div>
+        <p class="small muted" style="margin:8px 0 0">Falling as standing decisions and pre-approved types pile up. If this line stops falling, the rules need work.</p></div>
+      <div class="card"><div class="card-h"><h3>By agent</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div><b>Backend</b>: 0.5 per PR, 82% unchanged</div></li>
+          <li><span class="ok">✔</span><div><b>Frontend</b>: 1.1 per PR, 60% unchanged</div></li>
+          <li><span class="wt">●</span><div><b>Product</b>: 3 scope questions, all useful</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('suggestions').addEventListener('click', e => {
+    const b = e.target.closest('.apply'); if (!b) return;
+    const tr = b.closest('tr'); b.classList.add('disabled'); b.textContent = '✔ applied';
+    document.getElementById('appliedText').innerHTML = `<b>“${tr.dataset.s}” is now a pre-approved change type.</b> Owner: Ben. Review date: 2027-01-15. It merges on green CI without a review, unless a trigger fires. You can undo this in <a href="n3-1-autopilot.html">Autopilot</a>.`;
+    document.getElementById('applied').hidden = false;
+  });
+</script>
+</body>
+</html>

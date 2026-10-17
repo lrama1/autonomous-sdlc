@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>08 · Review pack · G3 Pull request</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="ethan" data-nav="inbox" data-crumb="INIT-014 <span>› G3 · PR #42 › Review pack</span>" data-story="Day 3 · 15:20">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G3 · PR #42 · Implement dose rounding</h1><span class="pill wait">Waiting on a reviewer</span></div>
+      <div class="muted">Implements <span class="chip">REQ-004</span> <span class="chip">REQ-007</span> · prepared by <span class="chip agent">Backend Engineer Agent</span> RUN-0188 · <span class="chip">agent/run-0188 → main</span></div>
+    </div>
+    <div class="actions"><span class="small muted">Prototype:</span>
+      <select id="viewAs" style="width:auto"><option value="ethan">View as Ethan (eligible reviewer)</option><option value="dana">View as Dana (sponsor)</option></select></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="diff">Changes <span class="count">4 files</span></button>
+        <button class="tab" data-tab="tests">Tests</button>
+        <button class="tab" data-tab="trace">Trace</button>
+        <button class="tab" data-tab="run">Agent run</button>
+      </div>
+
+      <div data-pane="diff" class="stack">
+        <div class="callout warn"><span class="ci">⚑</span><div><b>Deterministic triggers fired.</b> (1) Safety-relevant path <span class="mono">domain/dose/**</span> → Architect co-review required. (2) New dependency <span class="mono">decimal.js 10.4.3</span> → SOUP record <b>SOUP-007</b> needs evaluation.</div></div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/dose-service/src/domain/dose/roundDose.ts</b><span class="chip warn">safety-relevant</span><span class="chip">new</span></div>
+          <span class="ln ctx">@@ -0,0 +1,14 @@</span>
+          <span class="ln add">+import Decimal from "decimal.js";</span>
+          <span class="ln add">+import { InvalidResolutionError } from "./errors";</span>
+          <span class="ln add">+</span>
+          <span class="ln add">+/** REQ-004: round to pump resolution, half-even. */</span>
+          <span class="ln add">+export function roundDose(volumeMl: Decimal, resolutionMl: Decimal): Decimal {</span>
+          <span class="ln add">+  if (resolutionMl.lte(0)) throw new InvalidResolutionError(resolutionMl);</span>
+          <span class="ln add">+  return volumeMl</span>
+          <span class="ln add">+    .div(resolutionMl)</span>
+          <span class="ln add">+    .toDecimalPlaces(0, Decimal.ROUND_HALF_EVEN)</span>
+          <span class="ln add">+    .mul(resolutionMl);</span>
+          <span class="ln add">+}</span>
+          <div class="flag">⚑ Reviewer attention: validate zero and very small resolutions (see HAZ-02 control CTRL-05).</div>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/dose-service/src/application/ports/DoseCalculator.ts</b><span class="chip">port</span></div>
+          <span class="ln ctx">@@ -1,4 +1,9 @@</span>
+          <span class="ln ctx"> export interface DoseCalculator {</span>
+          <span class="ln del">-  calculate(dose: number, conc: number): number;</span>
+          <span class="ln add">+  calculate(dose: Decimal, conc: Decimal, resolution: Decimal): Decimal;</span>
+          <span class="ln ctx"> }</span>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">package.json</b><span class="chip err">dependency added</span></div>
+          <span class="ln add">+    "decimal.js": "10.4.3"</span>
+        </div>
+      </div>
+
+      <div data-pane="tests" hidden class="card stack">
+        <div class="grid g2">
+          <div class="card" style="background:#fafbfc"><div class="card-h"><h3>Agent verification report</h3><span class="chip warn right">agent-reported · advisory</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>Build, lint, types</div></li><li><span class="ok">✔</span><div>48 unit tests</div></li><li><span class="ok">✔</span><div>App started in sandbox · <span class="mono">/health</span> 200</div></li><li><span class="ok">✔</span><div>Smoke 6/6 for REQ-004, REQ-007</div></li></ul>
+            <div class="small muted">RUN-0188 · commit <span class="hash">3f9c2aa</span></div></div>
+          <div class="card" style="border-color:#bfe6cf"><div class="card-h"><h3>CI re-run (authoritative)</h3><span class="chip ok right">independent</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>Same <span class="mono">verify</span> contract on the PR head</div></li><li><span class="ok">✔</span><div>48 unit · 6 smoke · coverage 91%</div></li></ul>
+            <div class="small muted">Bound to commit <span class="hash">3f9c2aa</span> · used as G3 evidence</div></div>
+        </div>
+        <div class="grid g3"><div><div class="small muted">Unit tests</div><b>48 passed</b>, 0 failed</div><div><div class="small muted">Domain coverage</div><b>91%</b> (min 85%)</div><div><div class="small muted">Lint / types</div><b>clean</b></div></div>
+        <div class="callout ok small"><span class="ci">✔</span><div>Both requirements are covered: REQ-004 by TEST-017/018/019, REQ-007 by TEST-021.</div></div>
+        <div class="callout info small"><span class="ci">🤖</span><div><b>Advisory AI review</b> (does not count as approval): 2 suggestions. Consider property-based tests for rounding. Add boundary test for resolution = 0.001.</div></div>
+      </div>
+
+      <div data-pane="trace" hidden class="card flush"><table class="t"><thead><tr><th>Requirement</th><th>ADR</th><th>Tests</th><th>Risk control</th></tr></thead><tbody>
+        <tr><td class="id">REQ-004</td><td>ADR-003</td><td>TEST-017, 018, 019</td><td>CTRL-05</td></tr>
+        <tr><td class="id">REQ-007</td><td>ADR-003</td><td>TEST-021</td><td>—</td></tr></tbody></table></div>
+
+      <div data-pane="run" hidden class="card"><dl class="kv small">
+        <dt>Run</dt><dd>RUN-0188 · Backend Engineer v1.4.2 · pinned model MCR-0007</dd>
+        <dt>Sponsor</dt><dd>Dana Okafor</dd><dt>Contributors</dt><dd>Dana Okafor (guidance at 11:20)</dd>
+        <dt>Duration / cost</dt><dd>26 min · $3.12</dd></dl></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Separation of duties</h3></div>
+        <dl class="kv small" style="grid-template-columns:110px 1fr">
+          <dt>Author-of-record</dt><dd><span class="chip human">Dana Okafor</span> sponsor</dd>
+          <dt>Contributors</dt><dd><span class="chip human">Dana Okafor</span></dd>
+          <dt>Required</dt><dd>1 × Backend Engineer + 1 × Architect (path trigger)</dd>
+          <dt>Eligible</dt><dd><span class="chip human">Ethan Brooks</span> <span class="chip human">Marcus Chen</span></dd></dl>
+        <div id="sod" class="callout ok small" style="margin-top:10px"><span class="ci">✔</span><div>You are eligible to approve. You are not the sponsor or a contributor.</div></div></div>
+
+      <div class="card"><div class="card-h"><h3>Reviewer attestations</h3></div>
+        <ul class="checks small" id="att">
+          <li><label><input type="checkbox"> I reviewed the domain logic in <span class="mono">domain/dose/**</span></label></li>
+          <li><label><input type="checkbox"> Tests cover the linked requirements</label></li>
+          <li><label><input type="checkbox"> Hexagonal boundaries respected (no framework imports in domain)</label></li>
+          <li><label><input type="checkbox"> No secrets or PII in the change</label></li></ul>
+        <div class="row" style="margin-top:12px"><a class="btn primary" id="sign" href="05-sign-evidence.html">Approve &amp; sign</a><button class="btn">Request changes</button></div></div>
+
+      <div class="card"><h3>Gate status</h3><ul class="checks small">
+        <li><span class="ok">✔</span><div>CI green · <span class="mono">sdlc/gate</span> publishes <b>pending</b> until required signatures exist</div></li>
+        <li><span class="wt">●</span><div>SOUP-007 evaluation (decimal.js) pending</div></li>
+        <li><span class="ok">✔</span><div>Requirement links present</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  document.getElementById('viewAs').addEventListener('change', e => {
+    const dana = e.target.value === 'dana';
+    const sod = document.getElementById('sod'), sign = document.getElementById('sign');
+    sod.className = 'callout small ' + (dana ? 'error' : 'ok'); sod.style.marginTop = '10px';
+    sod.innerHTML = dana
+      ? '<span class="ci">⛔</span><div><b>You cannot approve this change.</b> You are the sponsor of RUN-0188 and a contributor. A different Backend Engineer must review. You can still comment.</div>'
+      : '<span class="ci">✔</span><div>You are eligible to approve. You are not the sponsor or a contributor.</div>';
+    sign.classList.toggle('disabled', dana);
+    document.querySelectorAll('#att input').forEach(i => i.disabled = dana);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C2 · G4 verification</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .matrix td,.matrix th{text-align:center}
+  .matrix td:first-child,.matrix th:first-child{text-align:left}
+  .browser{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:var(--shadow);max-width:560px}
+  .browser .bar-top{background:#f1f3f6;padding:7px 10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border)}
+  .browser .dot{width:9px;height:9px;border-radius:50%;background:#d0d5dd}
+  .browser .url{margin-left:8px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:1px 10px;font-size:11px;color:#667085;flex:1}
+</style>
+</head>
+<body data-user="chloe" data-nav="map" data-crumb="INIT-302 <span>› G4 · Verification</span>" data-story="Nov 4 · 09:40">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G4 · Verification · Order tracking and returns</h1><span class="pill wait" id="statePill">Waiting on you</span></div>
+      <div class="muted">Prepared by <span class="chip agent">QA Agent</span> against a preview environment built from commit <span class="hash">5d2a17e</span> · one approval needed from the QA Lead</div>
+    </div>
+    <div class="actions"><a class="btn" href="map.html?i=302&s=g4&u=chloe">Back to map</a></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">6/6</div><div class="l">Stories verified</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">142</div><div class="l">Browser checks passed</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">1</div><div class="l">Defect found and fixed</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Open defects</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card" id="browsers"><div class="card-h"><h2>Browser and device matrix</h2><span class="chip right">preview environment</span></div>
+        <table class="t matrix"><thead><tr><th>Browser</th><th>Order tracking</th><th>Start a return</th><th>Guest lookup</th></tr></thead><tbody>
+          <tr><td>Chrome · desktop</td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td></tr>
+          <tr><td>Firefox · desktop</td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td></tr>
+          <tr><td>Safari · desktop</td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td></tr>
+          <tr><td>Safari · iPhone 375 px</td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td></tr>
+          <tr><td>Chrome · Android 360 px</td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td><td><span class="ok">✔</span></td></tr></tbody></table></div>
+
+      <div class="card" id="found"><div class="card-h"><h2>Found by the QA Agent, then fixed</h2><span class="pill done right">Resolved</span></div>
+        <div class="grid g2">
+          <div><dl class="kv small" style="grid-template-columns:90px 1fr">
+            <dt>Defect</dt><dd>DEF-044</dd>
+            <dt>Where</dt><dd>Order page at 320 px (small phones)</dd>
+            <dt>Problem</dt><dd>The <b>Start a return</b> button was pushed off screen by a long product name and could not be reached.</dd>
+            <dt>Fix</dt><dd>Frontend Agent wrapped the row. Re-tested on all five browsers and at 320 px.</dd>
+            <dt>Screenshots</dt><dd><span class="hash">ACT-0188</span> (before and after)</dd></dl></div>
+          <div class="browser"><div class="bar-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">preview-pr-141 · 320 px</span></div>
+            <div style="padding:12px 14px;font-size:13px"><b>Alpine Trail Runner Waterproof Gore-Tex Shoes, Men's</b><div class="muted small">Delivered Nov 1</div>
+              <div class="row" style="margin-top:8px"><button class="btn primary sm">Start a return</button><span class="chip ok">now visible</span></div></div></div>
+        </div></div>
+
+      <div class="grid g2">
+        <div class="card"><div class="card-h"><h3>Accessibility</h3></div>
+          <ul class="checks small"><li><span class="ok">✔</span><div>No serious or critical issues in the scan</div></li><li><span class="ok">✔</span><div>Return flow works with the keyboard only</div></li><li><span class="ok">✔</span><div>Status changes are announced to screen readers</div></li></ul></div>
+        <div class="card"><div class="card-h"><h3>Performance</h3></div>
+          <ul class="checks small"><li><span class="ok">✔</span><div>Order page loads in 1.4 s on a mid-range phone (budget 2.5 s)</div></li><li><span class="ok">✔</span><div>No layout shift while tracking updates</div></li></ul></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Your approval</h3></div>
+        <div class="row"><button class="btn primary" id="approve">Verify and pass G4</button><button class="btn">Send back</button></div>
+        <div class="small muted" style="margin-top:8px">QA approves for the initiative. Recorded in the activity log.</div></div>
+
+      <div class="card"><div class="card-h"><h3>Checks</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Every story has a passing, traced test</div></li>
+          <li><span class="ok">✔</span><div>You did not author or start any change here</div></li>
+          <li><span class="ok">✔</span><div>No open defects above minor</div></li>
+          <li><span class="ok">✔</span><div>Results bound to commit <span class="hash">5d2a17e</span></div></li>
+          <li><span class="ok">✔</span><div>Preview environment is destroyed after sign-off</div></li></ul></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>G4 passed.</b> Activity entry <b>ACT-0191</b>. The release manager can now include these changes in Release 4.2. The preview environment was destroyed.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('approve').addEventListener('click', () => {
+    document.getElementById('result').hidden = false;
+    const p = document.getElementById('statePill'); p.className = 'pill done'; p.textContent = 'Passed';
+  });
+</script>
+</body>
+</html>

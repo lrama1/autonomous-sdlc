@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>03 · Inbox</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .pips{display:flex;gap:3px}
+  .pips i{width:18px;height:6px;border-radius:3px;background:#e4e7ec}
+  .pips i.d{background:var(--done)}.pips i.w{background:var(--wait)}
+</style>
+</head>
+<body data-user="priya" data-nav="inbox" data-crumb="Inbox" data-story="Day 1 · 14:30">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Inbox</h1><div class="muted">Everything that needs <b>your role's</b> judgment. Agents have prepared the work. You decide.</div></div>
+    <div class="actions"><a class="btn primary" href="02-new-initiative.html">+ New initiative</a></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">2</div><div class="l">Approvals waiting on you</div></div>
+    <div class="card tile"><div class="n">1</div><div class="l">Agent questions</div></div>
+    <div class="card tile"><div class="n">1</div><div class="l">Assumptions to disposition</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Past SLA</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush">
+        <div style="padding:14px 16px 6px"><h2 style="margin:0">Needs your decision</h2></div>
+        <table class="t"><thead><tr><th>Item</th><th>Prepared by</th><th>Your authority</th><th>Waiting</th><th></th></tr></thead><tbody>
+          <tr><td><div><span class="pill wait">Approval</span> <b>G1 · Requirements baseline</b></div><div class="small muted">INIT-014 Dose Calculation Service · 12 requirements, 4 assumptions</div></td>
+              <td><span class="chip agent">Product Agent</span></td><td>Product Owner (accountable owner)</td><td>3 h <span class="small muted">SLA 1 d</span></td><td><a class="btn primary sm" href="04-review-g1-requirements.html">Open review pack</a></td></tr>
+          <tr><td><div><span class="pill wait">Approval</span> <b>CR-003 · Impact analysis</b></div><div class="small muted">INIT-009 Alarm Limits API · change to REQ-021</div></td>
+              <td><span class="chip agent">Product Agent</span></td><td>Product Owner</td><td>1 d 2 h <span class="small muted">SLA 2 d</span></td><td><a class="btn sm" href="#">Open</a></td></tr>
+          <tr><td><div><span class="pill prog">Question</span> <b>Rounding resolution for volume results?</b></div><div class="small muted">Discretionary escalation · "Round to 0.1 mL or to the pump's reported resolution?"</div></td>
+              <td><span class="chip agent">Product Agent</span></td><td>Product Owner</td><td>3 h</td><td><a class="btn sm" href="04-review-g1-requirements.html">Answer</a></td></tr>
+        </tbody></table>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>My initiatives</h2></div>
+        <table class="t"><thead><tr><th>Initiative</th><th>Profile</th><th>Progress G0 → G7</th><th>State</th></tr></thead><tbody>
+          <tr><td><a href="06-sdlc-map.html"><b>INIT-014</b> Dose Calculation Service</a></td><td class="small">Regulated + IEC 62304 B</td>
+              <td><div class="pips"><i class="d"></i><i class="w"></i><i></i><i></i><i></i><i></i><i></i><i></i></div></td><td><span class="pill wait">Waiting on you</span></td></tr>
+          <tr><td><a href="06-sdlc-map.html"><b>INIT-009</b> Alarm Limits API</a></td><td class="small">Regulated + IEC 62304 B</td>
+              <td><div class="pips"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="w"></i></div></td><td><span class="pill dev">Change request open</span></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="callout info"><span class="ci">🔗</span><div class="small"><b>Notifications link here.</b> Slack/Teams/email tell you something is waiting. Approvals are signed only in this app, on the exact content hash you reviewed.</div></div>
+      <div class="card">
+        <div class="card-h"><h3>Recent activity</h3></div>
+        <ul class="timeline small">
+          <li class="done"><b>Product Agent</b> drafted 12 requirements<div class="when">today 11:02 · run RUN-0141</div></li>
+          <li class="done"><b>Sam Ivanova</b> confirmed Class B and signed G0<div class="when">today 09:40</div></li>
+          <li class="done"><b>Priya Nair</b> signed G0 (evidence EV-000398)<div class="when">today 09:34</div></li>
+          <li class="done"><b>Platform</b> verified repo and applied <span class="mono">sdlc/gate</span><div class="when">today 09:20</div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

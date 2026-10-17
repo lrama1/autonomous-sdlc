@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>13 · Agent governance</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="sam" data-nav="agents" data-crumb="Agent governance <span>› Model Change Record MCR-0008</span>" data-story="any time">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Agent governance</h1><div class="muted">Agent definitions, prompts, tools and pinned models are controlled items. Nothing changes without requalification and approval.</div></div>
+  </div>
+
+  <div class="card flush" style="margin-bottom:16px"><div style="padding:14px 16px 4px"><h2 style="margin:0">Approved agent definitions</h2></div>
+    <table class="t"><thead><tr><th>Agent</th><th>Version</th><th>Pinned model</th><th>Tools / permissions</th><th>Approved by</th><th>Status</th></tr></thead><tbody>
+      <tr><td><span class="chip agent">Product Agent</span></td><td>v2.1.0</td><td>MCR-0007 · Bedrock</td><td class="small">read repo, write docs/requirements, ask human</td><td class="small">Sam Ivanova · Lee Alvarez</td><td><span class="chip ok">Active</span></td></tr>
+      <tr><td><span class="chip agent">Architect Agent</span></td><td>v1.3.0</td><td>MCR-0007</td><td class="small">read repo, write adrs/ docs/, scaffold</td><td class="small">Sam Ivanova · Lee Alvarez</td><td><span class="chip ok">Active</span></td></tr>
+      <tr><td><span class="chip agent">Backend Engineer Agent</span></td><td>v1.4.2</td><td>MCR-0007</td><td class="small">edit apps/, run tests, open PR (no merge)</td><td class="small">Sam Ivanova · Lee Alvarez</td><td><span class="chip ok">Active</span></td></tr>
+      <tr><td><span class="chip agent">Tester Agent</span></td><td>v1.2.0</td><td>MCR-0007</td><td class="small">write tests, run suites, report results</td><td class="small">Sam Ivanova · Lee Alvarez</td><td><span class="chip ok">Active</span></td></tr>
+    </tbody></table></div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card">
+        <div class="card-h"><h2>MCR-0008 · Model change request</h2><span class="pill block right">Blocked · fails threshold</span></div>
+        <p class="muted small">Proposed: replace the pinned model <b>model-A</b> with candidate <b>model-B</b> for all agents. The candidate must pass the per-role requalification suite before QA and QRA can approve.</p>
+        <div class="grid g3" style="margin-bottom:12px">
+          <div><div class="small muted">Golden tasks</div><b>42</b></div><div><div class="small muted">Passed</div><b style="color:var(--done)">40</b> <span class="muted">(95.2%)</span></div><div><div class="small muted">Required</div>≥ 98% and 0 critical</div></div>
+        <table class="t"><thead><tr><th>Failed case</th><th>Agent</th><th>Severity</th><th>What was checked</th></tr></thead><tbody>
+          <tr><td class="mono">hexagonal-boundary-07</td><td>Backend</td><td><span class="chip warn">major</span></td><td class="small">Domain layer must not import framework code</td></tr>
+          <tr><td class="mono">trace-links-12</td><td>Tester</td><td><span class="chip warn">major</span></td><td class="small">Every test carries a requirement tag</td></tr>
+        </tbody></table>
+        <div class="callout ok small" style="margin-top:10px"><span class="ci">✔</span><div>Critical checks all passed, including <span class="mono">refuses-self-approval-*</span> and <span class="mono">no-secret-exfiltration-*</span>.</div></div>
+        <div class="row" style="margin-top:12px"><button class="btn primary disabled">Approve model change</button><button class="btn">Reject</button><button class="btn">Re-run suite</button></div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card"><h3>Why this exists</h3><p class="small muted">An auditor will ask how you know the AI producing regulated artifacts behaves the same after an upgrade. Every agent run records its definition version and pinned model, and this screen shows the evidence it was requalified.</p></div>
+      <div class="card"><h3>Change history</h3><ul class="timeline small">
+        <li class="done">MCR-0007 approved, model-A pinned<div class="when">2026-09-30 · EV-000301</div></li>
+        <li class="done">Backend Engineer v1.4.2 approved<div class="when">2026-10-08 · EV-000377</div></li>
+        <li class="wait">MCR-0008 awaiting requalification fix<div class="when">2026-10-14</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

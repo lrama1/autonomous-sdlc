@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N4 · G6 release</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="sofia" data-nav="release" data-crumb="G6 · Release <span>› 0.3.0</span>" data-story="Day 20 · 11:00">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G6 · Release 0.3.0</h1><span class="pill wait" id="statePill">Waiting on you</span></div>
+      <div class="muted">Prepared by <span class="chip agent">DevOps Agent</span> · commit <span class="hash">a93f0c2</span> · one approval needed from the Release Approver</div>
+    </div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">46</div><div class="l">Changes in this release (14 pre-approved)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">12</div><div class="l">Stories done</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Failing checks</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">2</div><div class="l">Known minor issues</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>Release notes</h2><span class="chip agent right">drafted by the DevOps Agent</span></div>
+        <ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px">
+          <li><b>New:</b> shared packing list. Claim an item so nobody brings three tents.</li>
+          <li><b>New:</b> weather alerts when the forecast for your trailhead changes.</li>
+          <li><b>Fixed:</b> items no longer disappear when two people edit the list at once.</li>
+          <li><b>Improved:</b> invite emails load faster and have clearer wording.</li>
+          <li><b>Known:</b> push reminders can be delayed by a few minutes on some Android devices.</li></ul></div>
+
+      <div class="card"><div class="card-h"><h3>Canary plan</h3></div>
+        <pre class="code">10% of users for 20 min, then 50%, then 100%
+roll back automatically if error rate &gt; 2% or p95 latency &gt; 800 ms
+feature flag lets you turn off the packing list without a deploy</pre></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Your approval</h3></div>
+        <div class="row"><button class="btn primary" id="approve">Approve release 0.3.0</button><button class="btn">Not yet</button></div>
+        <div class="small muted" style="margin-top:8px">One click. Recorded in the activity log.</div></div>
+
+      <div class="card"><div class="card-h"><h3>Checks</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>CI green on the release commit</div></li>
+          <li><span class="ok">✔</span><div>Dependency and secret scans clean</div></li>
+          <li><span class="ok">✔</span><div>You did not author or start any change in this release</div></li>
+          <li><span class="ok">✔</span><div>The pipeline runs the deploy, not a person. Approver and deployer are separate.</div></li>
+          <li><span class="ok">✔</span><div>Rollback rule and feature flag in place</div></li></ul></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Release 0.3.0 authorized.</b> The pipeline started the canary at 10%. Activity entry <b>ACT-0081</b>.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('approve').addEventListener('click', () => {
+    document.getElementById('result').hidden = false;
+    const p = document.getElementById('statePill'); p.className = 'pill done'; p.textContent = 'Authorized';
+  });
+</script>
+</body>
+</html>

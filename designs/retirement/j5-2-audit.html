@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J5 · Audit mode</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>.ev{transition:opacity .2s}.ev.future{opacity:.25;filter:grayscale(1)}.ev.sbx td{background:#fffaf0}</style>
+</head>
+<body data-user="rachel" data-nav="audit" data-crumb="Audit <span>› INIT-105 › User Profile Management</span>" data-story="Day 16 · 09:00">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Audit mode</h1><span class="chip">🔒 Read-only</span></div><div class="muted">Internal Audit can see everything and change nothing. Replay the initiative as of any day.</div></div>
+    <div class="actions"><button class="btn primary" id="exportBtn">Export evidence bundle</button></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card">
+        <div class="grid g3">
+          <div><label class="small muted">Initiative</label><select><option>INIT-105 · User Profile Management</option></select></div>
+          <div><label class="small muted">Strictness history</label><select><option>Sandbox (day 1–7) → Controlled (day 8 →)</option></select></div>
+          <div><label class="small muted">Show state as of: <b id="asof">Day 16</b></label><input type="range" id="slider" min="1" max="16" value="16" style="padding:0"></div>
+        </div>
+        <div class="row wrap small" style="margin-top:10px"><span class="muted">Quick questions:</span>
+          <a class="chip" href="#">Who approved the address-change protections?</a><a class="chip" href="#">Which records are sandbox only?</a><a class="chip" href="#">Which model produced each PR?</a></div>
+      </div>
+
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Decision timeline</h2></div>
+        <table class="t"><thead><tr><th>Day</th><th>Event</th><th>Decision</th><th>Signer · role</th><th>Evidence</th></tr></thead><tbody id="rows">
+          <tr class="ev sbx" data-day="1"><td>1</td><td>G0 · intake (sandbox)</td><td><span class="chip warn">Draft</span></td><td>Maya Patel · PO</td><td class="small">SBX-001 <span class="chip warn">not compliance evidence</span></td></tr>
+          <tr class="ev sbx" data-day="2"><td>2–7</td><td>Prototype: 14 agent runs on OpenRouter, direct commits to the test repo</td><td><span class="chip warn">Watermarked</span></td><td>Carlos Diaz · sponsor</td><td class="small">SBX-002 … 016 <span class="chip warn">excluded from bundle</span></td></tr>
+          <tr class="ev" data-day="8"><td>8</td><td><b>Promotion to Controlled</b></td><td><span class="chip ok">Approved</span></td><td>Kevin Park · Admin (proposer)<br>Elena Rossi · second authorizer</td><td><a href="#">EV-000451</a></td></tr>
+          <tr class="ev" data-day="8"><td>8</td><td>G0 · re-attested</td><td><span class="chip ok">Approved</span></td><td>Maya Patel · PO<br>Elena Rossi · Compliance</td><td><a href="#">EV-000452, 453</a></td></tr>
+          <tr class="ev" data-day="8"><td>8</td><td>G1 · requirements re-attested (same hashes)</td><td><span class="chip ok">Approved</span></td><td>Maya Patel · PO (owner)<br>Elena Rossi · Compliance</td><td><a href="#">EV-000454, 455</a></td></tr>
+          <tr class="ev" data-day="8"><td>8</td><td>G2 · architecture re-attested</td><td><span class="chip ok">Approved</span></td><td>Noah Kim · Architect<br>Tariq Ahmed · Security</td><td><a href="#">EV-000456, 457</a></td></tr>
+          <tr class="ev" data-day="9"><td>9–12</td><td>G3 · 6 pull requests on pinned Bedrock model</td><td><span class="chip ok">6 approved</span></td><td>Hannah Wright, Noah Kim (never the sponsor)</td><td><a href="#">6 records</a></td></tr>
+          <tr class="ev" data-day="13"><td>13</td><td>G4 · verification</td><td><span class="chip ok">Approved</span></td><td>Tessa Moore · QA</td><td><a href="#">EV-000471</a></td></tr>
+          <tr class="ev" data-day="14"><td>14</td><td>G5 · security review</td><td><span class="chip ok">Approved</span></td><td>Tariq Ahmed · Security</td><td><a href="#">EV-000474</a></td></tr>
+        </tbody></table></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Control summary</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Sensitive-change protections (REQ-501…504) verified by passing tests</div></li>
+          <li><span class="ok">✔</span><div>0 separation-of-duties violations. 0 exceptions.</div></li>
+          <li><span class="ok">✔</span><div><b>0</b> sandbox records in the audit bundle (16 excluded)</div></li>
+          <li><span class="ok">✔</span><div>All agent runs after day 8 used the pinned Bedrock model</div></li>
+          <li><span class="ok">✔</span><div>Valid evidence begins at the day-8 re-attestation</div></li></ul></div>
+
+      <div class="card" id="exp" hidden><div class="card-h"><h3>Export</h3></div>
+        <div class="bar" style="margin-bottom:8px"><i id="expBar" style="width:0;background:var(--primary)"></i></div>
+        <div class="small" id="expTxt">Preparing…</div></div>
+
+      <div class="card"><h3>Bundle contents</h3><ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px">
+        <li>Evidence records and chain proof (JSON)</li><li>Traceability matrix (CSV, PDF)</li><li>Artifacts at signed commits</li><li>SBOM and SOUP records</li><li>Agent definitions and run records</li><li>Verifier tool and instructions</li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const s = document.getElementById('slider');
+  s.addEventListener('input', () => {
+    document.getElementById('asof').textContent = 'Day ' + s.value;
+    document.querySelectorAll('#rows .ev').forEach(r => r.classList.toggle('future', +r.dataset.day > +s.value));
+  });
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    document.getElementById('exp').hidden = false;
+    let p = 0; const bar = document.getElementById('expBar'), t = document.getElementById('expTxt');
+    const id = setInterval(() => { p += 12; bar.style.width = Math.min(p, 100) + '%'; t.textContent = p < 100 ? 'Building bundle… ' + p + '%' : '✔ INIT-105-evidence.zip ready (verified, sandbox records excluded)'; if (p >= 100) clearInterval(id); }, 250);
+  });
+</script>
+</body>
+</html>

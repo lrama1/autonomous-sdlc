@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>14 · Roles &amp; SoD</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="jordan" data-nav="admin" data-crumb="Admin <span>› Roles &amp; separation of duties</span>" data-story="any time">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Roles &amp; separation of duties</h1><div class="muted">Role assignments are controlled changes. Admins configure them but hold no approval authority.</div></div>
+    <div class="actions"><button class="btn primary">+ Assign role</button></div>
+  </div>
+
+  <div class="callout info" style="margin-bottom:14px"><span class="ci">⚖</span><div><b>Admin boundary.</b> You can manage assignments and delegations. You cannot approve gates, edit evidence, or change who is eligible for a change that is already in review. Every change here creates an evidence record signed by a second authorizer.</div></div>
+
+  <div class="card" style="border-color:#dccaf6;margin-bottom:16px">
+    <div class="card-h"><h2>Pending change</h2><span class="pill block right">Blocked by SoD</span></div>
+    <p class="small">Request: assign <b>Omar Khan</b> as <b>Release Approver</b> on INIT-014.</p>
+    <div class="callout error small"><span class="ci">⛔</span><div><b>Conflict:</b> Omar Khan is the deployer (DevOps) for INIT-014. The profile requires Release Approver ≠ deployer. <br>Options: choose a different approver, or request a documented <b>exception</b> that needs a second authorizer (QRA) and appears in the audit summary.</div></div>
+    <div class="row" style="margin-top:10px"><button class="btn">Pick another person</button><button class="btn">Request exception…</button></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Assignments · INIT-014</h2></div>
+      <table class="t matrix"><thead><tr><th>Person</th><th>PO</th><th>Architect</th><th>Engineer</th><th>QA</th><th>QRA</th><th>Security</th><th>Release Appr.</th><th>Deployer</th></tr></thead><tbody>
+        <tr><td>Priya Nair</td><td>●</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Marcus Chen</td><td></td><td>●</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Dana Okafor</td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Ethan Brooks</td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Lee Alvarez</td><td></td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Sam Ivanova</td><td></td><td></td><td></td><td></td><td>●</td><td></td><td></td><td></td></tr>
+        <tr><td>Tom Reyes</td><td></td><td></td><td></td><td></td><td></td><td>●</td><td></td><td></td></tr>
+        <tr><td>Rita Haddad</td><td></td><td></td><td></td><td></td><td></td><td></td><td>●</td><td></td></tr>
+        <tr><td>Omar Khan</td><td></td><td></td><td></td><td></td><td></td><td></td><td style="background:var(--block-bg);color:var(--block)">✖ requested</td><td>●</td></tr>
+      </tbody></table></div>
+
+    <div class="stack">
+      <div class="card"><h3>Profile SoD rules</h3><ul class="checks small">
+        <li><span class="ok">✔</span><div>Approver ≠ sponsor ≠ contributors (strict)</div></li>
+        <li><span class="ok">✔</span><div>Release approver ≠ deployer</div></li>
+        <li><span class="ok">✔</span><div>Minimum 4 distinct humans per initiative (8 assigned)</div></li>
+        <li><span class="ok">✔</span><div>Ownership gates (G0, G1, G7): PO may approve with an independent QRA co-sign</div></li>
+        <li><span class="ok">✔</span><div>Admins have no approval authority</div></li></ul></div>
+      <div class="card"><h3>Delegations</h3><div class="small">Rita Haddad → deputy <b>Nina Park</b> · 2026-10-20 to 10-24 <span class="chip ok">effective-dated</span><br><span class="muted">Deputy must hold the same role and pass SoD for each change.</span></div></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

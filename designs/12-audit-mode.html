@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>12 · Audit mode</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>.ev{transition:opacity .2s}.ev.future{opacity:.25;filter:grayscale(1)}</style>
+</head>
+<body data-user="alex" data-nav="audit" data-crumb="Audit <span>› INIT-014 › Release rc2</span>" data-story="Day 12 · 09:00">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Audit mode</h1><span class="chip">🔒 Read-only</span></div><div class="muted">Auditors can see everything and change nothing. Start from a release, then trace back to who decided what.</div></div>
+    <div class="actions"><button class="btn primary" id="exportBtn">Export evidence bundle</button></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card">
+        <div class="grid g3">
+          <div><label class="small muted">Initiative</label><select><option>INIT-014 · Dose Calculation Service</option></select></div>
+          <div><label class="small muted">Release</label><select><option>v1.0.0-rc2 · commit 3f9c2aa</option><option>v1.0.0-rc1</option></select></div>
+          <div><label class="small muted">Show state as of: <b id="asof">Day 12</b></label><input type="range" id="slider" min="1" max="12" value="12" style="padding:0"></div>
+        </div>
+        <div class="row wrap small" style="margin-top:10px"><span class="muted">Quick questions:</span>
+          <a class="chip" href="#">Who approved REQ-004 and when?</a><a class="chip" href="#">Show all emergency changes</a><a class="chip" href="#">Which model produced PR #42?</a><a class="chip" href="#">Any SoD exceptions?</a></div>
+      </div>
+
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Decision timeline</h2></div>
+        <table class="t"><thead><tr><th>Day</th><th>Gate</th><th>Decision</th><th>Signer · role</th><th>Evidence</th></tr></thead><tbody id="rows">
+          <tr class="ev" data-day="1"><td>1</td><td>G0 · Plan &amp; risk</td><td><span class="chip ok">Approved</span></td><td>Priya Nair · PO<br>Sam Ivanova · QRA</td><td><a href="11-evidence-record.html">EV-000398, 399</a></td></tr>
+          <tr class="ev" data-day="1"><td>1</td><td>G1 · Requirements</td><td><span class="chip ok">Approved</span></td><td>Priya Nair · PO (owner)<br>Sam Ivanova · QRA</td><td><a href="11-evidence-record.html">EV-000412, 415</a></td></tr>
+          <tr class="ev" data-day="2"><td>2</td><td>G2 · Architecture &amp; risk</td><td><span class="chip ok">Approved</span></td><td>Marcus Chen · Architect<br>Tom Reyes · Security</td><td><a href="#">EV-000431, 433</a></td></tr>
+          <tr class="ev" data-day="3"><td>3–8</td><td>G3 · 7 pull requests</td><td><span class="chip ok">7 approved</span></td><td>Ethan Brooks, Marcus Chen (never the sponsor)</td><td><a href="#">7 records</a></td></tr>
+          <tr class="ev" data-day="7"><td>7</td><td>G4 · Verification</td><td><span class="chip ok">Approved</span></td><td>Lee Alvarez · QA</td><td><a href="#">EV-000502</a></td></tr>
+          <tr class="ev" data-day="8"><td>8</td><td>G5 · Security</td><td><span class="chip ok">Approved</span> <span class="chip warn">risk accepted RA-003</span></td><td>Tom Reyes · Security</td><td><a href="#">EV-000511</a></td></tr>
+          <tr class="ev" data-day="9"><td>9</td><td>G6 · Release rc2</td><td><span class="chip ok">Authorized</span></td><td>Rita Haddad · Release Approver<br>Sam Ivanova · QRA</td><td><a href="#">EV-000540, 541</a></td></tr>
+          <tr class="ev" data-day="9"><td>9</td><td>Deployment</td><td><span class="chip">Executed</span></td><td>Omar Khan · DevOps (deployer, not approver)</td><td><a href="#">EV-000542</a></td></tr>
+        </tbody></table></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Control summary</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Every gate has complete signed evidence</div></li>
+          <li><span class="ok">✔</span><div>0 SoD violations. 0 SoD exceptions.</div></li>
+          <li><span class="ok">✔</span><div>0 bypasses of the required <span class="mono">sdlc/gate</span> check</div></li>
+          <li><span class="ok">✔</span><div>All agent runs used approved, pinned configurations</div></li>
+          <li><span class="ok">✔</span><div>Requirement → release trace: 100%</div></li></ul></div>
+
+      <div class="card" id="exp" hidden><div class="card-h"><h3>Export</h3></div>
+        <div class="bar" style="margin-bottom:8px"><i id="expBar" style="width:0;background:var(--primary)"></i></div>
+        <div class="small" id="expTxt">Preparing…</div></div>
+
+      <div class="card"><h3>Bundle contents</h3><ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px">
+        <li>Evidence records and chain proof (JSON)</li><li>Traceability matrix (CSV, PDF)</li><li>Artifacts at signed commits (git bundle)</li><li>SBOM and SOUP records</li><li>Agent definitions, model change records, run records</li><li>Verifier tool and instructions</li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  const s = document.getElementById('slider');
+  s.addEventListener('input', () => {
+    document.getElementById('asof').textContent = 'Day ' + s.value;
+    document.querySelectorAll('#rows .ev').forEach(r => r.classList.toggle('future', +r.dataset.day > +s.value));
+  });
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    document.getElementById('exp').hidden = false;
+    let p = 0; const bar = document.getElementById('expBar'), t = document.getElementById('expTxt');
+    const id = setInterval(() => { p += 12; bar.style.width = Math.min(p, 100) + '%'; t.textContent = p < 100 ? 'Building bundle… ' + p + '%' : '✔ INIT-014-rc2-evidence.zip ready (verified)'; if (p >= 100) clearInterval(id); }, 250);
+  });
+</script>
+</body>
+</html>

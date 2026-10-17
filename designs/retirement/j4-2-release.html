@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J4 · G6 release authorization</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="grace" data-nav="release" data-crumb="INIT-104 <span>› G6 · Release authorization › 1.0.0-rc2</span>" data-story="Day 24 · 13:05">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G6 · Move Money v1.0.0-rc2</h1><span class="pill wait">Waiting on you and Compliance</span></div>
+      <div class="muted">Release package prepared by <span class="chip agent">DevOps Agent</span> · commit <span class="hash">8b1f6d2</span> · baselines BL-1, BL-2</div>
+    </div>
+    <div class="actions"><button class="btn">Request changes</button><button class="btn primary">Review &amp; authorize release</button></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n" style="color:var(--done)">9 / 9</div><div class="l">Requirements verified</div></div>
+    <div class="card tile"><div class="n" style="color:var(--done)">0</div><div class="l">Open deviations / CRs</div></div>
+    <div class="card tile"><div class="n">188</div><div class="l">Components in SBOM (3 new SOUP)</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">1</div><div class="l">Accepted risk (RA-009, low)</div></div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush"><div style="padding:14px 16px 4px"><h2 style="margin:0">Release package</h2></div>
+        <table class="t"><thead><tr><th>Evidence item</th><th>Source</th><th>Status</th></tr></thead><tbody>
+          <tr><td>Requirements baseline BL-1 (9 requirements, mapped to controls)</td><td>G1 · EV-000201, 203</td><td><span class="chip ok">signed</span></td></tr>
+          <tr><td>Architecture and risk baseline BL-2</td><td>G2 · EV-000214, 215</td><td><span class="chip ok">signed</span></td></tr>
+          <tr><td>All merged changes (11 PRs) independently approved, money-movement paths co-reviewed</td><td>G3 · 11 records</td><td><span class="chip ok">signed</span></td></tr>
+          <tr><td>Verification results bound to commit 8b1f6d2</td><td>G4 · EV-000290</td><td><span class="chip ok">signed by Tessa Moore</span></td></tr>
+          <tr><td>Security review and risk acceptance RA-009</td><td>G5 · EV-000301, 302</td><td><span class="chip ok">signed by Tariq Ahmed</span></td></tr>
+          <tr><td>SBOM and SOUP evaluations</td><td>DevOps Agent · generated</td><td><span class="chip ok">complete</span></td></tr>
+          <tr><td>Traceability matrix (requirement → release)</td><td>Generated</td><td><span class="chip ok">100%</span></td></tr>
+          <tr><td>Calendar check: release outside the tax-deadline <b>change freeze</b></td><td>Platform calendar</td><td><span class="chip ok">clear</span></td></tr>
+        </tbody></table></div>
+
+      <div class="card"><div class="card-h"><h3>Deployment plan prepared by the agent</h3></div>
+        <pre class="code">canary 5% of traffic for 30 min, then 25%, then 100%
+rollback automatically if error rate &gt; 1% or the ledger reconciliation shows a mismatch
+kill switch: pause outgoing transfers per rail without a deploy</pre>
+        <div class="small muted" style="margin-top:6px">Deployer <b>Luis Ortega</b> executes this plan only after both signatures exist.</div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Release signatures</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Grace Lin</b> · Release Approver<div class="muted">You. Eligible: not a deployer, sponsor or contributor of any change in this release.</div></div></li>
+          <li><span class="wt">●</span><div><b>Elena Rossi</b> · Compliance &amp; Risk<div class="muted">Independent sign-off required.</div></div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h3>SoD &amp; policy checks</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Release approver ≠ deployer (Luis Ortega)</div></li>
+          <li><span class="ok">✔</span><div>Approvers authored no change in this release</div></li>
+          <li><span class="ok">✔</span><div>No open deviations or change requests</div></li>
+          <li><span class="ok">✔</span><div>Agent definitions and models used were approved and pinned</div></li>
+          <li><span class="ok">✔</span><div>Strictness level Regulated meets the profile minimum</div></li></ul></div>
+
+      <div class="callout info small"><span class="ci">🔓</span><div><b>What unlocks next.</b> After both signatures, the required <span class="mono">sdlc/gate</span> check turns green and the deploy action becomes available to <b>Luis Ortega</b> only.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

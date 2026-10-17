@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel · Portfolio</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .pips{display:flex;gap:3px;align-items:center}
+  .pips i{width:24px;height:7px;border-radius:3px;background:#e4e7ec}
+  .pips i.d{background:var(--done)}.pips i.w{background:var(--wait)}.pips i.s{background:transparent;border:1px dashed #cbd2dc}
+  .cal{position:relative;height:150px;margin:8px 0 4px}
+  .cal .axis{position:absolute;left:0;right:0;top:64px;height:2px;background:#d0d5dd}
+  .cal .tick{position:absolute;top:56px;font-size:11px;color:#667085;transform:translateX(-50%)}
+  .cal .tick:before{content:"";position:absolute;left:50%;top:-6px;width:1px;height:10px;background:#98a2b3}
+  .cal .tick span{display:block;margin-top:10px;white-space:nowrap}
+  .cal .freeze{position:absolute;top:44px;height:42px;background:repeating-linear-gradient(45deg,#fee8e6,#fee8e6 8px,#fdd8d4 8px,#fdd8d4 16px);border:1px solid #f4c3be;border-radius:6px;color:#b42318;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+  .cal .ms{position:absolute;top:8px;transform:translateX(-50%);font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;white-space:nowrap}
+  .cal .ms.rel{background:var(--primary-weak);color:var(--primary)}
+  .cal .ms.bf{background:#101828;color:#fff;top:104px}
+</style>
+</head>
+<body data-user="nadia" data-nav="portfolio" data-crumb="Portfolio <span>› Kestrel Market</span>" data-story="Oct 19">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Kestrel Market · Portfolio</h1><div class="muted">Customer and employee initiatives, and the release that ships them, in one view.</div></div>
+    <div class="actions"><span class="chip">Setup: Balanced autonomy + QA checkpoint + payment-scope triggers</span></div>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card tile"><div class="n">2</div><div class="l">Waiting on you</div></div>
+    <div class="card tile"><div class="n">5</div><div class="l">Initiatives and releases in flight</div></div>
+    <div class="card tile"><div class="n" style="color:var(--wait)">3</div><div class="l">Changes held for human review</div></div>
+    <div class="card tile"><div class="n">$612</div><div class="l">Agent spend this month (budget $1,500)</div></div>
+  </div>
+
+  <div class="card flush" id="initiatives"><div style="padding:14px 16px 6px"><h2 style="margin:0">Initiatives</h2></div>
+    <table class="t"><thead><tr><th>Initiative</th><th>For</th><th>Autonomy</th><th title="Spec and design · Change merge · Verification · Release">Progress</th><th>Waiting on</th></tr></thead><tbody>
+      <tr><td><a href="map.html?i=301&s=s1"><b>INIT-301</b> Browse, cart and checkout</a></td><td><span class="chip">Customer</span></td><td class="small">Balanced · <span class="chip warn">payment scope</span></td><td><div class="pips"><i class="w"></i><i></i><i></i><i></i></div></td><td class="small">Nadia, Owen, Victor</td></tr>
+      <tr><td><a href="map.html?i=302&s=g4&u=chloe"><b>INIT-302</b> Orders, tracking and returns</a></td><td><span class="chip">Customer</span></td><td class="small">Balanced</td><td><div class="pips"><i class="d"></i><i class="d"></i><i class="w"></i><i></i></div></td><td class="small">Chloe (verification)</td></tr>
+      <tr><td><a href="map.html?i=303&s=g3"><b>INIT-303</b> Merchandising: catalog and promotions</a></td><td><span class="chip">Employee</span></td><td class="small">Balanced</td><td><div class="pips"><i class="d"></i><i class="w"></i><i></i><i></i></div></td><td class="small">Owen (peer review)</td></tr>
+      <tr><td><a href="map.html?i=304&s=g3"><b>INIT-304</b> Fulfillment and support tools</a></td><td><span class="chip">Employee</span></td><td class="small">Balanced · <span class="chip err">CR-004 open</span></td><td><div class="pips"><i class="d"></i><i class="w"></i><i></i><i></i></div></td><td class="small">Nadia, Owen (change request)</td></tr>
+      <tr><td><a href="map.html?i=R42&s=g6&u=dmitri"><b>REL-4.2</b> Release 4.2</a></td><td><span class="chip">Customers + employees</span></td><td class="small">Balanced</td><td><div class="pips"><i class="d"></i><i class="d"></i><i class="d"></i><i class="w"></i></div></td><td class="small">Dmitri (release)</td></tr>
+    </tbody></table></div>
+
+  <div class="card" id="calendar" style="margin-top:16px"><div class="card-h"><h2>Release calendar</h2><span class="chip right">Oct 19 → Dec 7</span></div>
+    <div class="cal">
+      <div class="axis"></div>
+      <div class="freeze" style="left:61%;width:29%">Change freeze · Nov 18 – Dec 2</div>
+      <div class="ms rel" style="left:45%">Release 4.2 · Nov 10</div>
+      <div class="ms bf" style="left:80%">Black Friday · Nov 27</div>
+      <div class="tick" style="left:0%"><span>Oct 19</span></div>
+      <div class="tick" style="left:20%"><span>Oct 29</span></div>
+      <div class="tick" style="left:45%"><span>Nov 10</span></div>
+      <div class="tick" style="left:61%"><span>Nov 18</span></div>
+      <div class="tick" style="left:90%"><span>Dec 2</span></div>
+    </div>
+    <div class="small muted">The platform holds normal releases inside the freeze. Urgent fixes use the hotfix path and open a follow-up review.</div></div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

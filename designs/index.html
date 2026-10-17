@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SDLC Platform · Screen designs</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  body{background:var(--bg)}
+  .wrap{max-width:1280px;margin:0 auto;padding:32px 24px 80px}
+  .hero{background:linear-gradient(135deg,#0f1729,#26357a);color:#fff;border-radius:16px;padding:28px 32px;margin-bottom:24px}
+  .hero h1{font-size:28px;margin-bottom:6px}
+  .hero p{color:#c9d3f2;max-width:860px;margin:0}
+  .hero a{color:#9db8ff}
+  h2.sec{font-size:18px;margin:30px 0 4px}
+  .sub{color:var(--muted);margin:0 0 14px}
+  .path{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .path a{background:#fff;border:1px solid var(--border);border-radius:99px;padding:3px 12px;font-weight:600;font-size:13px;color:#344054}
+  .path a:hover{border-color:var(--primary);text-decoration:none}
+  .path i{color:#98a2b3;font-style:normal}
+  .shot{width:100%;height:auto;aspect-ratio:1280/840}
+  .shot iframe{position:absolute;left:0;top:0;transform-origin:0 0}
+  .grid>*{min-width:0}
+  .parked{border:2px dashed #cbd2dc;border-radius:14px;padding:6px 20px 20px;margin-top:40px;background:#fafbfc}
+</style>
+</head>
+<body data-shell="none" data-tag="none">
+<div class="wrap" id="content">
+  <div class="hero">
+    <h1>SDLC Platform · Screen designs</h1>
+    <p>A semi-autonomous SDLC where AI agents and people build software together, and people are brought in at the moments their judgment matters. These are clickable mockups with sample data. Use the persona switcher in the top bar, and click through.</p>
+    <p style="margin-top:12px"><b>Two core examples:</b> <a href="trailmates/index.html">Trailmates</a> (a small team's hiking app: the full loop, plus the human-injection screens) · <a href="kestrel/index.html">Kestrel Market</a> (an online store with customer and employee work, a QA checkpoint, and a release calendar).</p>
+    <p style="margin-top:12px"><b>Prefer to watch?</b> <a href="../demo/videos/trailmates/00-end-to-end-demo.mp4">Trailmates end-to-end</a> · <a href="../demo/videos/kestrel/00-end-to-end-demo.mp4">Kestrel end-to-end</a> · <a href="../demo/README.md">all videos</a></p>
+  </div>
+
+  <h2 class="sec">Core · Humans in the loop <span class="small muted">(Trailmates: Ben, Sofia, Mina)</span></h2>
+  <p class="sub">The heart of the product: a ranked attention queue where every ask carries its context, options and a recommendation, answers from Slack, assumptions and standing decisions, and the numbers for tuning how often agents interrupt.</p>
+  <div class="path"><a href="trailmates/n5-1-attention-queue.html">Attention queue</a><i>→</i><a href="trailmates/n5-3-chat-answers.html">Answer from Slack</a><i>→</i><a href="trailmates/n5-2-assumptions.html">Assumptions and decisions</a><i>→</i><a href="trailmates/n5-4-interruptions.html">Interruption metrics</a></div>
+  <div class="grid g4" id="gH"></div>
+
+  <h2 class="sec">Core · The loop from idea to release <span class="small muted">(Trailmates)</span></h2>
+  <p class="sub">Setup with autonomy modes, the SDLC map, parallel agent runs that verify before opening a pull request, review, pre-approved change types, release, and the connections to GitHub, outside services, models and engines.</p>
+  <div class="path"><a href="trailmates/n1-1-new-initiative.html">New initiative</a><i>→</i><a href="trailmates/map.html?i=201&s=s1">Map</a><i>→</i><a href="trailmates/n2-1-agent-runs.html">Agent runs</a><i>→</i><a href="trailmates/n2-2-review-pr.html">PR review</a><i>→</i><a href="trailmates/n4-1-release.html">Release</a><i>·</i><a href="trailmates/n6-1-github-connection.html">Connections</a></div>
+  <div class="grid g4" id="gL"></div>
+
+  <div class="parked">
+    <h2 class="sec">Parked · Compliance pack <span class="small muted">(medical-device story)</span></h2>
+    <p class="sub">Not part of the product direction. These screens come from the earlier regulated version (signed evidence, separation of duties by role, audit mode, strictness levels). They are kept for reference and a possible optional pack later (spec Appendix A). Harbor Retirement is a second parked example: <a href="retirement/index.html">open it</a>. The videos are in <a href="../demo/videos/_parked-compliance-pack">demo/videos/_parked-compliance-pack</a>.</p>
+    <div class="grid g4" id="gP"></div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  const S = {
+    gH:[['trailmates/n5-1-attention-queue.html','N5','Attention queue','Ranked asks with context, options and a recommendation.'],['trailmates/n5-3-chat-answers.html','N5','Answer from Slack','Simple asks answered in chat. Reviews open the Workspace.'],['trailmates/n5-2-assumptions.html','N5','Assumptions and decisions','Accept or reject agent assumptions. Standing decisions.'],['trailmates/n5-4-interruptions.html','N5','Interruption metrics','Questions per PR, unnecessary asks, tuning suggestions.']],
+    gL:[['trailmates/n1-1-new-initiative.html','N1','New initiative','Workflow, autonomy mode, repository, hats.'],['trailmates/map.html?i=201&s=s1','N1','SDLC map','Checkpoints, who is waiting on whom, your position.'],['trailmates/n2-1-agent-runs.html','N2','Parallel agent runs','Run the app and verify before opening a PR.'],['trailmates/n2-2-review-pr.html','N2','PR review','Preview, independent review, CI re-run is what counts.'],['trailmates/n3-1-autopilot.html','N3','Autopilot','Pre-approved change types and what stays held.'],['trailmates/n4-1-release.html','N4','Release','One approval, canary, automatic rollback.'],['trailmates/n4-2-settings.html','N4','Autonomy and cost','Autonomy modes, triggers, budgets.'],['trailmates/n6-1-github-connection.html','N6','GitHub connection','Two Apps, installation vs registry, people links.'],['trailmates/n6-2-integrations.html','N6','Integrations','Outside APIs, docs snapshots, agent allowlist.'],['trailmates/n6-3-repos-and-gateway.html','N6','Repositories, models, engines','Registry, model gateway, aliases, engine per role.']],
+    gP:[['01-sign-in.html','01','Sign in','SSO entry.'],['02-new-initiative.html','02','New initiative (G0)','Profile, strictness, repo, SoD preflight.'],['03-inbox.html','03','Inbox','Role-scoped approvals.'],['04-review-g1-requirements.html','04','G1 review pack','Requirements and checks.'],['05-sign-evidence.html','05','Sign & evidence','Step-up re-auth, signed record.'],['06-sdlc-map.html','06','SDLC map','Eight gates and evidence completeness.'],['07-agent-session.html','07','Live agent run','Stream and assumptions.'],['08-review-g3-pull-request.html','08','G3 PR review','Sponsor blocked from approving.'],['09-traceability.html','09','Traceability','Matrix and gap detection.'],['10-release-authorization.html','10','Release authorization','Two signatures.'],['11-evidence-record.html','11','Evidence record','Hash chain and KMS signature.'],['12-audit-mode.html','12','Audit mode','Read-only, as-of replay.'],['13-agent-governance.html','13','Agent governance','Pinned models and requalification.'],['14-roles-and-sod.html','14','Roles & SoD','Conflict detection.'],['15-emergency-change.html','15','Emergency change','Break-glass and deviation.'],['16-strictness-and-repos.html','16','Strictness & repositories','Levels, floor, gateway.']]
+  };
+  Object.entries(S).forEach(([id, items]) => {
+    document.getElementById(id).innerHTML = items.map(i => `
+      <a class="card screen-card" href="${i[0]}"><div class="shot"><iframe src="${i[0]}" loading="lazy" tabindex="-1" title="${i[2]}"></iframe></div>
+      <div class="row"><span class="num">${i[1]}</span><b>${i[2]}</b></div><div class="small muted">${i[3]}</div></a>`).join('');
+  });
+  function fit(){ document.querySelectorAll('.shot').forEach(s => { s.firstElementChild.style.transform = 'scale(' + (s.clientWidth / 1280) + ')'; }); }
+  window.addEventListener('resize', fit); window.addEventListener('load', fit); fit();
+</script>
+</body>
+</html>

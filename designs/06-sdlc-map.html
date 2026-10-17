@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>06 · SDLC map</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-user="priya" data-nav="map" data-crumb="INIT-014 <span>› Dose Calculation Service</span>" data-story="Day 1 → Day 9">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>INIT-014 · Dose Calculation Service</h1></div>
+      <div class="row wrap small" style="margin-top:4px">
+        <span class="chip">Regulated + IEC 62304 B v0.3.1</span><span class="chip">acme-med/dose-calc</span>
+        <span class="chip" id="bl">Baselines: —</span><span class="chip ok">Open deviations: 0</span><span class="chip">Open CRs: 0</span>
+      </div>
+    </div>
+    <div class="actions"><span class="small muted">Prototype state:</span>
+      <select id="snap" style="width:auto"><option value="s1">Day 1 · G1 pending</option><option value="s2" selected>Day 3 · PR #42 in review</option><option value="s3">Day 9 · Release candidate</option></select></div>
+  </div>
+
+  <div class="card">
+    <div class="flow" id="flow"></div>
+    <div class="crloop"><span>Change Request: post-release findings and baseline changes re-enter at the affected gate</span></div>
+    <div class="row wrap small" style="margin-top:22px">
+      <span class="pill none">Not started</span><span class="pill prog">In progress</span><span class="pill wait">Waiting on human</span><span class="pill block">Blocked</span><span class="pill done">Done</span><span class="pill dev">Deviation open</span>
+      <span class="muted right">In the product this view is React + xyflow (pan, zoom, drill-down). Click a gate.</span>
+    </div>
+  </div>
+
+  <div class="grid g-main" style="margin-top:16px">
+    <div class="card" id="detail"></div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Where is my interaction?</h3></div>
+        <div id="you" class="small"></div></div>
+      <div class="card"><h3>Key artifacts</h3><ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">
+        <li><a href="04-review-g1-requirements.html">Requirements (docs/requirements)</a></li>
+        <li><a href="09-traceability.html">Traceability matrix</a></li>
+        <li><a href="11-evidence-record.html">Latest evidence record</a></li>
+        <li><a href="10-release-authorization.html">Release package (rc2)</a></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  const G = [
+    {id:'G0',name:'Plan & risk intake',stage:'Plan',agent:'Product Agent',need:3,link:'02-new-initiative.html',open:'Open intake',desc:'Repository verified, profile selected, roles assigned, SoD preflight passed, safety class confirmed.',
+      signers:[['Product Owner','Priya Nair','Day 1 09:34'],['Quality & Regulatory','Sam Ivanova','Day 1 09:40']]},
+    {id:'G1',name:'Requirements baseline',stage:'Requirements',agent:'Product Agent',need:5,link:'04-review-g1-requirements.html',open:'Open review pack',desc:'12 requirements with IDs and acceptance criteria. Assumptions dispositioned. Freezes baseline BL-1.',
+      signers:[['Product Owner (owner)','Priya Nair','Day 1 14:48'],['QRA (independent)','Sam Ivanova','Day 2 09:10']]},
+    {id:'G2',name:'Architecture & risk baseline',stage:'Architecture',agent:'Architect Agent',need:5,link:'#',open:'Open review pack',desc:'ADRs, hexagonal scaffolding, risk-control links. Freezes baseline BL-2.',
+      signers:[['Architect','Marcus Chen','Day 2 16:20'],['Security','Tom Reyes','Day 2 17:05']]},
+    {id:'G3',name:'Change merge (per PR)',stage:'Implementation',agent:'Backend Engineer Agent',need:4,link:'08-review-g3-pull-request.html',open:'Open PR review pack',desc:'PR #42 · REQ-004, REQ-007. Safety-relevant path triggers an Architect co-review. Dependency add creates a SOUP record.',
+      signers:[['Backend Engineer (≠ sponsor)','Ethan Brooks','Day 3 15:40'],['Architect (path trigger)','Marcus Chen','Day 3 16:10']]},
+    {id:'G4',name:'Verification complete',stage:'Verification',agent:'Tester Agent',need:4,link:'09-traceability.html',open:'Open traceability',desc:'All requirements covered by passing tests bound to the commit SHA.',
+      signers:[['QA / Tester','Lee Alvarez','Day 7 11:15']]},
+    {id:'G5',name:'Security review',stage:'Security',agent:'Security Agent',need:3,link:'#',open:'Open review pack',desc:'Scan results ingested, threat-model notes, risk acceptance RA-003.',
+      signers:[['Security','Tom Reyes','Day 8 10:00']]},
+    {id:'G6',name:'Release authorization',stage:'Release',agent:'DevOps Agent',need:6,link:'10-release-authorization.html',open:'Open release package',desc:'Release package, SBOM, trace matrix, open-deviation check. Deployer ≠ approver.',
+      signers:[['Release Approver','Rita Haddad','Day 9 13:20'],['QRA','Sam Ivanova','Day 9 13:41']]},
+    {id:'G7',name:'Post-release review',stage:'Post-release',agent:'Product Agent',need:3,link:'#',open:'Open',desc:'Feedback and incidents become CRs or problem reports.',
+      signers:[['Product Owner','Priya Nair',''],['QRA','Sam Ivanova','']]}
+  ];
+  const SN = {
+    s1:{st:['done','wait','none','none','none','none','none','none'],sel:'G1',who:'Waiting on <b>you</b> at <b>G1</b>. Open the review pack, disposition the assumption, then sign.'},
+    s2:{st:['done','done','done','wait','none','none','none','none'],sel:'G3',who:'Engineers are reviewing <b>PR #42</b> at G3. You are not required here. You can watch the agent run or the trace.'},
+    s3:{st:['done','done','done','done','done','done','wait','none'],sel:'G6',who:'Release candidate rc2 waits for <b>Rita Haddad</b> and <b>Sam Ivanova</b> at G6. Omar Khan (DevOps) deploys only after both sign.'}
+  };
+  const LBL = {none:'Not started',prog:'In progress',wait:'Waiting on human',block:'Blocked',done:'Done',dev:'Deviation open'};
+  const SHORT = {none:'Not started',prog:'In progress',wait:'Waiting',block:'Blocked',done:'Done',dev:'Deviation'};
+  let cur = 's2', sel = 'G3';
+
+  function ev(g, s){ return s==='done' ? g.need : s==='wait' ? g.need-1 : 0; }
+  function draw(){
+    const S = SN[cur], flow = document.getElementById('flow');
+    flow.innerHTML = G.map((g,i)=>{
+      const s = S.st[i], have = ev(g,s);
+      const flag = (g.id==='G1'&&s==='done')?'<span class="flag-tag">BL-1 frozen</span>':(g.id==='G2'&&s==='done')?'<span class="flag-tag">BL-2 frozen</span>':'';
+      return `<div class="gnode s-${s} ${sel===g.id?'sel':''}" data-g="${g.id}">
+        <div class="stage">${g.stage}</div><div class="gid">${g.id}</div><div class="gname">${g.name}</div>
+        <span class="pill ${s}">${SHORT[s]}</span>
+        <div><div class="small muted">Evidence ${have}/${g.need}</div><div class="bar ${s==='wait'?'wait':''}"><i style="width:${have/g.need*100}%"></i></div></div>
+        <span class="chip agent">${g.agent.replace(' Engineer','')}</span>${flag}</div>`;
+    }).join('');
+    const done = S.st.map((s,i)=>s==='done'&&(G[i].id==='G1'||G[i].id==='G2')?'BL-'+(G[i].id==='G1'?1:2):null).filter(Boolean);
+    document.getElementById('bl').textContent = 'Baselines: ' + (done.length ? done.join(', ') : 'none yet');
+    document.getElementById('you').innerHTML = S.who;
+    detail();
+  }
+  function detail(){
+    const g = G.find(x=>x.id===sel), i = G.indexOf(g), s = SN[cur].st[i], have = ev(g,s);
+    const sig = g.signers.map((x,k)=>{
+      const signed = s==='done' || (s==='wait' && k < g.signers.length-1 && g.id==='G3');
+      return `<tr><td>${x[0]}</td><td><span class="chip human">${x[1]}</span></td><td>${signed?'<span class="chip ok">✔ signed '+x[2]+'</span>':'<span class="chip warn">⏳ pending</span>'}</td></tr>`;
+    }).join('');
+    document.getElementById('detail').innerHTML = `
+      <div class="card-h"><h2>${g.id} · ${g.name}</h2><span class="pill ${s} right">${LBL[s]}</span></div>
+      <p class="muted">${g.desc}</p>
+      <div class="grid g3" style="margin:10px 0 12px">
+        <div><div class="small muted">Prepared by</div><span class="chip agent">${g.agent}</span></div>
+        <div><div class="small muted">Evidence completeness</div><b>${have}/${g.need}</b> items</div>
+        <div><div class="small muted">SoD check</div>${s==='none'?'<span class="chip">n/a yet</span>':'<span class="chip ok">satisfied</span>'}</div>
+      </div>
+      <table class="t"><thead><tr><th>Required role</th><th>Person</th><th>Status</th></tr></thead><tbody>${sig}</tbody></table>
+      <div class="row" style="margin-top:12px">${g.link==='#'?'':`<a class="btn primary" href="${g.link}">${g.open}</a>`}<a class="btn" href="11-evidence-record.html">Evidence records</a></div>`;
+  }
+  document.getElementById('flow').addEventListener('click', e => { const n = e.target.closest('.gnode'); if (!n) return; sel = n.dataset.g; draw(); });
+  document.getElementById('snap').addEventListener('change', e => { cur = e.target.value; sel = SN[cur].sel; draw(); });
+  draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J4 · Emergency change</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="elena" data-nav="audit" data-crumb="INIT-104 <span>› Emergency change EC-007</span>" data-story="Day 31 · incident">
+<div id="content">
+  <div class="callout dev" style="margin-bottom:14px"><span class="ci">🚨</span><div><b>Break-glass change in effect.</b> Deployed under the emergency path. Post-hoc review is <b>due in 19 h 02 m</b>. Deviation <b>DEV-014</b> was opened automatically. Releases for INIT-104 are blocked until it is closed.</div></div>
+
+  <div class="page-head">
+    <div><div class="row"><h1>EC-007 · Duplicate withdrawals</h1><span class="pill dev">Post-hoc review due</span></div>
+      <div class="muted">INIT-104 Move Money · incident INC-413 · a retry after a bank timeout debited 12 customers twice</div></div>
+    <div class="actions"><button class="btn primary">Start post-hoc review</button></div>
+  </div>
+
+  <div class="stepper">
+    <div class="step done"><span class="dot">✓</span>Declared</div><div class="step-line"></div>
+    <div class="step done"><span class="dot">✓</span>Emergency approval</div><div class="step-line"></div>
+    <div class="step done"><span class="dot">✓</span>Deployed</div><div class="step-line"></div>
+    <div class="step active"><span class="dot">4</span>Post-hoc review</div><div class="step-line"></div>
+    <div class="step"><span class="dot">5</span>Closed</div>
+  </div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card"><div class="card-h"><h2>What happened</h2></div>
+        <ul class="timeline small">
+          <li class="done"><b>Reconciliation alert</b>: 12 outgoing transfers appear twice at the bank<div class="when">02:11</div></li>
+          <li class="done"><b>Luis Ortega declared an emergency change</b>: add the idempotency key to the bank adapter retry path, and turn on the kill switch for outgoing ACH<div class="when">02:25</div></li>
+          <li class="done"><b>Grace Lin approved as named emergency approver</b> (single signature, evidence EV-000388)<div class="when">02:41</div></li>
+          <li class="done"><b>Deployed</b> by Luis Ortega. Kill switch lifted after reconciliation matched.<div class="when">03:02</div></li>
+          <li class="run"><b>Post-hoc review</b> by Compliance, the Architect and QA required within 24 h<div class="when">due Day 32 03:02</div></li></ul></div>
+
+      <div class="card"><div class="card-h"><h2>Deviation DEV-014</h2><span class="pill dev right">Open</span></div>
+        <dl class="kv small">
+          <dt>Skipped controls</dt><dd>Full G3 review, G4 re-verification, G5 security review</dd>
+          <dt>Compensating controls</dt><dd>Named emergency approver, one-file scoped change, kill switch, same-day reconciliation, automated tests run</dd>
+          <dt>Required to close</dt><dd>Retro-active review, regression test for the retry path, impact analysis, customer remediation complete, a Change Request for the permanent fix</dd></dl>
+        <div class="callout warn small" style="margin-top:10px"><span class="ci">⚠</span><div>The G6 open-deviation check <b>blocks every release</b> of INIT-104 until DEV-014 is closed.</div></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Post-hoc review tasks</h3></div>
+        <ul class="checks small">
+          <li><span class="wt">●</span><div><b>Elena Rossi</b> · Compliance &amp; Risk<div class="muted">Review justification, scope, and customer impact</div></div></li>
+          <li><span class="wt">●</span><div><b>Noah Kim</b> · Architect<div class="muted">Review the code change and design impact</div></div></li>
+          <li><span class="wt">●</span><div><b>Tessa Moore</b> · QA<div class="muted">Confirm the regression test was added</div></div></li>
+          <li><span class="wt">●</span><div><b>Operations</b><div class="muted">Customer remediation: 12 of 12 refunds issued, notices pending</div></div></li></ul></div>
+      <div class="card"><h3>Counts toward metrics</h3><p class="small muted" style="margin:0">Emergency changes this quarter: <b>1</b>. A rising count is flagged to Compliance and appears in the audit summary.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N2 · G3 pull request review</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .browser{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:var(--shadow);max-width:640px}
+  .browser .bar-top{background:#f1f3f6;padding:7px 10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border)}
+  .browser .dot{width:9px;height:9px;border-radius:50%;background:#d0d5dd}
+  .browser .url{margin-left:8px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:1px 10px;font-size:11px;color:#667085;flex:1}
+  .app-body{padding:14px 16px}
+  .app-body h4{margin:0 0 8px;font-size:14px}
+  .li{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid #eef0f3;border-radius:8px;margin-bottom:6px;font-size:13px}
+  .li .who{margin-left:auto;font-size:11px;border-radius:99px;padding:1px 8px;background:#e8f0ff;color:#2b6fe8}
+  .li .free{margin-left:auto;font-size:11px;color:#667085}
+</style>
+</head>
+<body data-user="ben" data-nav="map" data-crumb="INIT-202 <span>› G3 · PR #42 › Review</span>" data-story="Day 12 · 15:20">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>G3 · PR #42 · Shared packing list (claim items)</h1><span class="pill wait" id="statePill">Waiting on a reviewer</span></div>
+      <div class="muted">Implements <span class="chip">US-7</span> · <span class="chip agent">Backend Agent</span> RUN-0412 + <span class="chip agent">Frontend Agent</span> RUN-0413 · <span class="chip">agent/run-0412 → main</span></div>
+    </div>
+    <div class="actions"><span class="small muted">Prototype:</span>
+      <select id="viewAs" style="width:auto"><option value="ben">View as Ben (eligible reviewer)</option><option value="mina">View as Mina (sponsor)</option></select></div>
+  </div>
+
+  <div class="grid g-main" data-tabgroup>
+    <div>
+      <div class="tabs">
+        <button class="tab active" data-tab="diff">Changes <span class="count">5 files</span></button>
+        <button class="tab" data-tab="preview">Preview</button>
+        <button class="tab" data-tab="checks">Checks</button>
+      </div>
+
+      <div data-pane="diff" class="stack">
+        <div class="callout ok"><span class="ci">✔</span><div><b>No sensitive paths touched.</b> No auth, infrastructure, migration or new dependency in this change. One reviewer is required.</div></div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/api/src/domain/packing/claimItem.ts</b><span class="chip">new</span></div>
+          <span class="ln ctx">@@ -0,0 +1,9 @@</span>
+          <span class="ln add">+/** US-7: an item can be claimed by one member at a time. */</span>
+          <span class="ln add">+export function claimItem(item: Item, member: MemberId, now: Date): Result {</span>
+          <span class="ln add">+  if (item.claimedBy &amp;&amp; item.claimedBy !== member) return conflict(item.claimedBy);</span>
+          <span class="ln add">+  return ok({ ...item, claimedBy: member, claimedAt: now, version: item.version + 1 });</span>
+          <span class="ln add">+}</span>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/web/src/features/packing/PackingList.tsx</b><span class="chip">new</span></div>
+          <span class="ln ctx">@@ -0,0 +1,10 @@</span>
+          <span class="ln add">+const claim = useClaim(tripId);   // optimistic update, rolls back on conflict</span>
+          <span class="ln add">+&lt;button onClick={() =&gt; claim.mutate(item.id)}</span>
+          <span class="ln add">+        disabled={item.claimedBy &amp;&amp; !isMe(item.claimedBy)}&gt;</span>
+          <span class="ln add">+  {item.claimedBy ? `Claimed by ${item.claimedBy.name}` : "I'll bring it"}</span>
+          <span class="ln add">+&lt;/button&gt;</span>
+        </div>
+        <div class="diff">
+          <div class="fh"><b class="mono">apps/api/src/domain/packing/claimItem.test.ts</b><span class="chip">14 tests</span></div>
+          <span class="ln add">+it("rejects a second claimant and returns who holds the item", () =&gt; { … });</span>
+        </div>
+      </div>
+
+      <div data-pane="preview" hidden>
+        <div class="callout info small" style="margin-bottom:12px"><span class="ci">🔗</span><div>A preview environment was created for this pull request. It is destroyed when the PR merges or closes.</div></div>
+        <div class="browser">
+          <div class="bar-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">pr-42.preview.trailmates.dev/trips/42</span></div>
+          <div class="app-body"><h4>Saturday: Eagle Ridge loop · Packing list</h4>
+            <div class="li">⛺ Tent (2-person) <span class="who">Mina</span></div>
+            <div class="li">🔥 Camp stove <span class="who">Ben</span></div>
+            <div class="li">💧 Water filter <span class="who">Mina</span></div>
+            <div class="li">🥾 First-aid kit <span class="free">I'll bring it</span></div></div>
+        </div>
+      </div>
+
+      <div data-pane="checks" hidden class="card stack">
+        <div class="grid g2">
+          <div class="card" style="background:#fafbfc"><div class="card-h"><h3>Agent verification report</h3><span class="chip warn right">agent-reported · advisory</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>23 tests, lint, types</div></li><li><span class="ok">✔</span><div>App started · <span class="mono">/health</span> 200</div></li><li><span class="ok">✔</span><div>Headless browser flow 5/5 (frontend agent)</div></li></ul>
+            <div class="small muted">RUN-0412, RUN-0413 · commit <span class="hash">d41c9a7</span></div></div>
+          <div class="card" style="border-color:#bfe6cf"><div class="card-h"><h3>CI re-run (authoritative)</h3><span class="chip ok right">independent</span></div>
+            <ul class="checks small"><li><span class="ok">✔</span><div>Same <span class="mono">verify</span> contract, fresh environment</div></li><li><span class="ok">✔</span><div>23 unit · 5 browser · coverage 88%</div></li><li><span class="ok">✔</span><div>Dependency and secret scans clean</div></li></ul>
+            <div class="small muted">Bound to commit <span class="hash">d41c9a7</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Independent review</h3></div>
+        <dl class="kv small" style="grid-template-columns:110px 1fr">
+          <dt>Sponsor</dt><dd><span class="chip human">Mina Park</span> started both runs</dd>
+          <dt>Contributors</dt><dd><span class="chip human">Mina Park</span></dd>
+          <dt>Required</dt><dd>1 reviewer who is not the sponsor</dd>
+          <dt>Eligible</dt><dd><span class="chip human">Ben Carter</span> <span class="chip human">Sofia Alvarez</span></dd></dl>
+        <div id="sod" class="callout ok small" style="margin-top:10px"><span class="ci">✔</span><div>You are eligible to approve. You did not start these runs.</div></div></div>
+
+      <div class="card"><div class="card-h"><h3>Review checklist</h3></div>
+        <ul class="checks small" id="att">
+          <li><label><input type="checkbox"> I read the diff, and tried the preview</label></li>
+          <li><label><input type="checkbox"> Two people claiming at once is handled</label></li>
+          <li><label><input type="checkbox"> Tests cover US-7</label></li></ul>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="sign">Approve &amp; merge</button><button class="btn">Request changes</button></div></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>Approved.</b> CI is green, so the Gate identity merged PR #42 into <span class="mono">main</span> and deleted the preview. Activity entry <b>ACT-0067</b> recorded.</div></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  document.getElementById('viewAs').addEventListener('change', e => {
+    const mina = e.target.value === 'mina';
+    const sod = document.getElementById('sod'), sign = document.getElementById('sign');
+    sod.className = 'callout small ' + (mina ? 'error' : 'ok'); sod.style.marginTop = '10px';
+    sod.innerHTML = mina
+      ? '<span class="ci">⛔</span><div><b>You cannot approve this change.</b> You started RUN-0412 and RUN-0413. Ben or Sofia must review. You can still comment.</div>'
+      : '<span class="ci">✔</span><div>You are eligible to approve. You did not start these runs.</div>';
+    sign.classList.toggle('disabled', mina);
+    document.querySelectorAll('#att input').forEach(i => i.disabled = mina);
+  });
+  document.getElementById('sign').addEventListener('click', e => {
+    if (e.target.classList.contains('disabled')) return;
+    document.getElementById('result').hidden = false;
+    document.getElementById('statePill').className = 'pill done'; document.getElementById('statePill').textContent = 'Merged';
+  });
+</script>
+</body>
+</html>

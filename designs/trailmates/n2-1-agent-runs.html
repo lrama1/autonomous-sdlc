@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N2 · Parallel agent runs</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .browser{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
+  .browser .bar-top{background:#f1f3f6;padding:7px 10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border)}
+  .browser .dot{width:9px;height:9px;border-radius:50%;background:#d0d5dd}
+  .browser .url{margin-left:8px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:1px 10px;font-size:11px;color:#667085;flex:1}
+  .app-body{padding:14px 16px}
+  .app-body h4{margin:0 0 8px;font-size:14px}
+  .li{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid #eef0f3;border-radius:8px;margin-bottom:6px;font-size:13px}
+  .li .who{margin-left:auto;font-size:11px;border-radius:99px;padding:1px 8px;background:#e8f0ff;color:#2b6fe8}
+  .li .free{margin-left:auto;font-size:11px;color:#667085}
+</style>
+</head>
+<body data-user="mina" data-nav="map" data-crumb="INIT-202 <span>› Agent runs</span>" data-story="Day 12 · 10:20">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Shared packing list</h1><span class="pill prog">2 runs in progress</span></div>
+      <div class="muted">Story US-7: members add items and claim them, so nobody brings three tents. Sponsor of both runs: <span class="chip human">Mina Park</span></div></div>
+    <div class="actions"><button class="btn">⏸ Pause both</button></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card" id="runBE"><div class="card-h"><h3>Backend Engineer Agent · RUN-0412</h3><span class="pill prog right">Verifying</span></div>
+      <ul class="timeline small">
+        <li class="done"><b>Read</b> US-7 and the data model<div class="when">10:02</div></li>
+        <li class="done"><b>Wrote tests first</b> 14 tests: claim, release, two people claiming at once<div class="when">10:06</div></li>
+        <li class="done"><b>Implemented</b> <span class="mono">claimItem</span> with a version check, and the API routes<div class="when">10:11</div></li>
+        <li class="run"><b>Verify in sandbox</b> API tests pass · app started with a Postgres sidecar<div class="when">now</div></li></ul>
+      <div class="small muted">Sandbox: ephemeral · token for <span class="mono">trailmates/app</span> only · cost $0.92 of $8 cap</div></div>
+
+    <div class="card" id="runFE"><div class="card-h"><h3>Frontend Engineer Agent · RUN-0413</h3><span class="pill prog right">Verifying</span></div>
+      <ul class="timeline small">
+        <li class="done"><b>Read</b> US-7 and the design tokens<div class="when">10:02</div></li>
+        <li class="done"><b>Wrote tests first</b> 9 component tests<div class="when">10:05</div></li>
+        <li class="done"><b>Implemented</b> <span class="mono">PackingList</span> with optimistic claim and conflict message<div class="when">10:12</div></li>
+        <li class="run"><b>Verify in sandbox</b> driving a headless browser through the real flow<div class="when">now</div></li></ul>
+      <div class="small muted">Sandbox: ephemeral · token for <span class="mono">trailmates/app</span> only · cost $0.78 of $8 cap</div></div>
+  </div>
+
+  <div class="card" id="e2e" style="margin-top:16px">
+    <div class="card-h"><h2>Frontend agent: headless browser check</h2><span class="chip warn right">agent-reported · advisory</span></div>
+    <div class="grid g2">
+      <div class="browser">
+        <div class="bar-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">localhost:3000/trips/42</span></div>
+        <div class="app-body"><h4>Saturday: Eagle Ridge loop · Packing list</h4>
+          <div class="li">⛺ Tent (2-person) <span class="who">Mina</span></div>
+          <div class="li">🔥 Camp stove <span class="who">Ben</span></div>
+          <div class="li">💧 Water filter <span class="who">Mina</span></div>
+          <div class="li">🥾 First-aid kit <span class="free">I'll bring it</span></div></div>
+      </div>
+      <div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Create a trip and open the packing list <span class="muted">0.8 s</span></div></li>
+          <li><span class="ok">✔</span><div>Add the item "Water filter"</div></li>
+          <li><span class="ok">✔</span><div>Claim it as Mina</div></li>
+          <li><span class="ok">✔</span><div>A second browser (Ben) sees the claim within a second <span class="muted">640 ms</span></div></li>
+          <li><span class="ok">✔</span><div>Two members claim the same item at once: one wins, the other sees a clear message</div></li></ul>
+        <div class="callout info small" style="margin-top:10px"><span class="ci">ℹ</span><div>Continuous integration re-runs the same flow after the pull request opens, and that result is the one that counts.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

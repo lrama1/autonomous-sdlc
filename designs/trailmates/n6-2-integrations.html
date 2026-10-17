@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N6 · Integrations</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  tr[data-r]{cursor:pointer}
+  tr[data-r].sel td{background:#eef4ff}
+  .hosts span{display:inline-block;font-family:var(--mono);font-size:12px;background:#f2f4f7;border-radius:5px;padding:1px 6px;margin:0 4px 4px 0}
+</style>
+</head>
+<body data-user="ben" data-nav="connect" data-crumb="Connections <span>› Integrations</span>" data-story="Day 2 · design">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1>Integrations</h1><span class="pill wait">1 waiting for you</span></div>
+      <div class="muted">Outside services the agents may call, where to read about them, and how to test them. INIT-201 Trip planning.</div></div>
+    <div class="actions"><button class="btn primary" id="add">+ Add an integration</button></div>
+  </div>
+  <div class="row small" style="margin-bottom:14px"><a href="n6-1-github-connection.html">GitHub</a> <span class="muted">·</span> <b>Integrations</b> <span class="muted">·</span> <a href="n6-3-repos-and-gateway.html">Repositories, models and engines</a></div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush"><table class="t"><thead><tr><th>Integration</th><th>Kind</th><th>Data sent</th><th>How to test</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></div>
+      <div class="card" id="entry"></div>
+      <div class="card" id="addForm" hidden><div class="card-h"><h3>Add an integration</h3><span class="chip right">goes to review</span></div>
+        <div class="grid g2">
+          <div><label class="small muted">Name</label><input type="text" placeholder="For example: Push notifications"></div>
+          <div><label class="small muted">Owner (a named person)</label><input type="text" placeholder="Ben Carter"></div>
+          <div><label class="small muted">Documentation links (OpenAPI spec preferred)</label><input type="text" placeholder="https://…/openapi.json"></div>
+          <div><label class="small muted">Hosts the agents may call</label><input type="text" placeholder="api.example.com"></div>
+          <div><label class="small muted">Data sent</label><select><option>none</option><option>personal</option><option>payment</option></select></div>
+          <div><label class="small muted">How to test it</label><select><option>Vendor sandbox account</option><option>Mock</option><option>Recorded responses</option><option>No test option</option></select></div>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="submit">Submit for review</button><span class="small muted">You never type credentials here. You pick a secret reference, and only test credentials may reach a sandbox.</span></div>
+        <div class="callout info small" id="submitted" hidden style="margin-top:10px"><span class="ci">ℹ</span><div>Submitted. The Architect reviews it, and a new host is a hard stop until someone approves it.</div></div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card" id="egress"><div class="card-h"><h3>What agents can reach</h3><span class="chip right">deny by default</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Model gateway <div class="hosts"><span>gateway.trailmates.internal</span></div></div></li>
+          <li><span class="ok">✔</span><div>GitHub <div class="hosts"><span>github.com</span><span>api.github.com</span></div></div></li>
+          <li><span class="ok">✔</span><div>Package registries <div class="hosts"><span>registry.npmjs.org</span></div></div></li>
+          <li><span class="ok">✔</span><div>Approved integrations <div class="hosts" id="intHosts"></div></div></li></ul></div>
+      <div class="card"><div class="card-h"><h3>Rules for agents</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Docs are fetched by the platform and saved as a snapshot. Agents read the snapshot.</div></li>
+          <li><span class="ok">✔</span><div>Docs are treated as untrusted text. They cannot change rules or approvals.</div></li>
+          <li><span class="ok">✔</span><div>Only test credentials enter a sandbox.</div></li>
+          <li><span class="ok">✔</span><div>A new host or credential is a hard stop.</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const KIND = { second: 'second-party', third: 'third-party' };
+  const R = [
+    { n: 'Weather forecast API', kind: 'third', sent: 'none', recv: 'none', test: 'vendor_sandbox', st: 'ok', stt: 'Approved', owner: 'Ben Carter', hosts: ['api.weatherprovider.example'],
+      docs: 'OpenAPI 3.0 · docs.weatherprovider.example/openapi.yaml', snap: '7bd3…1c52 · fetched Day 2 · 212 KB', auth: 'API key · secret ref trailmates/test/weather (free-tier test key)', lim: '60 requests/min on the free tier · $0', fail: 'Timeout 2 s, then show the last known forecast' },
+    { n: 'Email provider', kind: 'third', sent: 'personal', recv: 'none', test: 'mock', st: 'wait', stt: 'Proposed by the Architect Agent', owner: 'Ben Carter', hosts: ['api.mailprovider.example'],
+      docs: 'REST docs · docs.mailprovider.example/api', snap: 'a41c…9e07 · fetched Day 2 · 98 KB', auth: 'API key · secret ref trailmates/test/email', lim: '100 emails a day on the free plan · $0', fail: 'Queue and retry for 1 hour, then drop with a log entry' },
+    { n: 'Map tiles', kind: 'third', sent: 'none', recv: 'none', test: 'recorded', st: 'ok', stt: 'Approved', owner: 'Mina Park', hosts: ['tiles.mapprovider.example'],
+      docs: 'Tile API · docs.mapprovider.example/tiles', snap: 'e90a…33f1 · fetched Day 2 · 64 KB', auth: 'Public key · no secret', lim: '50,000 tiles a month on the free tier', fail: 'Show a plain list when tiles do not load' }
+  ];
+  const ST = { ok: 'chip ok', wait: 'chip warn' };
+  let sel = 1;
+  function rows() {
+    document.getElementById('rows').innerHTML = R.map((r, i) => `<tr data-r="${i}" class="${i === sel ? 'sel' : ''}"><td><b>${r.n}</b></td><td>${KIND[r.kind]}</td><td><span class="chip ${r.sent === 'personal' ? 'warn' : ''}">${r.sent}</span></td><td class="mono small">${r.test}</td><td><span class="${ST[r.st]}">${r.st === 'ok' ? '✔ ' : '⏳ '}${r.stt}</span></td></tr>`).join('');
+    document.getElementById('intHosts').innerHTML = R.filter(r => r.st === 'ok').flatMap(r => r.hosts).map(h => `<span>${h}</span>`).join('');
+  }
+  function detail() {
+    const r = R[sel];
+    document.getElementById('entry').innerHTML = `
+      <div class="card-h"><h2>${r.n}</h2><span class="${ST[r.st]} right">${r.stt}</span></div>
+      <dl class="kv small" style="grid-template-columns:130px 1fr">
+        <dt>Owner</dt><dd><span class="chip human">${r.owner}</span></dd>
+        <dt>Documentation</dt><dd>${r.docs}</dd>
+        <dt>Docs snapshot</dt><dd><span class="hash">${r.snap}</span></dd>
+        <dt>Hosts</dt><dd class="hosts">${r.hosts.map(h => `<span>${h}</span>`).join('')}</dd>
+        <dt>Authentication</dt><dd>${r.auth}</dd>
+        <dt>Data</dt><dd>sends <b>${r.sent}</b> · receives <b>${r.recv}</b></dd>
+        <dt>How to test</dt><dd><span class="mono">${r.test}</span></dd>
+        <dt>Limits and cost</dt><dd>${r.lim}</dd>
+        <dt>When it fails</dt><dd>${r.fail}</dd></dl>
+      ${r.st === 'wait' ? `<div class="callout warn small" style="margin-top:10px"><span class="ci">⚑</span><div>Sends <b>${r.sent}</b> data (names and emails) to a third party. Until you confirm it, its host is <b>not</b> on the agent allowlist.</div></div>
+        <div class="row" style="margin-top:10px"><button class="btn primary" id="confirm">Confirm</button><button class="btn">Edit</button></div>
+        <div class="callout ok small" id="done" hidden style="margin-top:10px"><span class="ci">✔</span><div>Confirmed. <b>api.mailprovider.example</b> is now on the allowlist for INIT-201, and the Backend Agent can use the mock to build and test invite emails.</div></div>` : ''}`;
+    const c = document.getElementById('confirm');
+    if (c) c.addEventListener('click', () => {
+      document.getElementById('done').hidden = false; c.classList.add('disabled');
+      R[sel].st = 'ok'; R[sel].stt = 'Approved'; rows();
+      const h = document.querySelector('#entry .card-h .chip'); h.className = 'chip ok right'; h.textContent = 'Approved';
+    });
+  }
+  document.getElementById('rows').addEventListener('click', e => { const t = e.target.closest('tr[data-r]'); if (t) { sel = +t.dataset.r; rows(); detail(); } });
+  document.getElementById('add').addEventListener('click', () => { const f = document.getElementById('addForm'); f.hidden = !f.hidden; });
+  document.getElementById('submit').addEventListener('click', () => { document.getElementById('submitted').hidden = false; });
+  rows(); detail();
+</script>
+</body>
+</html>

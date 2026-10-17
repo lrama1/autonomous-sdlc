@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N6 · Repositories, models and engines</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  .chip{white-space:nowrap}
+  .meter{height:8px;background:#eceff3;border-radius:99px;overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--primary)}
+</style>
+</head>
+<body data-user="ben" data-nav="connect" data-crumb="Connections <span>› Repositories, models and engines</span>" data-story="Day 1 · setup">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Repositories, models and engines</h1><div class="muted">What agents may touch, which models they use, and which coding engine does the work for each role.</div></div>
+  </div>
+  <div class="row small" style="margin-bottom:14px"><a href="n6-1-github-connection.html">GitHub</a> <span class="muted">·</span> <a href="n6-2-integrations.html">Integrations</a> <span class="muted">·</span> <b>Repositories, models and engines</b></div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card flush" id="registry"><div class="card-h" style="padding:14px 16px 0"><h2>Repository registry</h2><button class="btn sm right">+ Register repository</button></div>
+        <table class="t"><thead><tr><th>Repository</th><th>Access</th><th>Write mode</th><th>Branch</th><th>Model policy</th><th>Used by</th></tr></thead><tbody>
+          <tr><td class="id">you/trailmates-app</td><td class="small">read-write</td><td class="mono small">branch_pr</td><td class="mono small">main</td><td><span class="chip">any</span></td><td class="small">INIT-201, INIT-202</td></tr>
+          <tr><td class="id">you/trailmates-scratch</td><td class="small">read-write</td><td class="mono small">direct</td><td class="mono small">main</td><td><span class="chip">any</span></td><td class="small">experiments</td></tr>
+          <tr><td class="id">you/design-system</td><td class="small">read-only</td><td class="mono small">reference</td><td class="mono small">main</td><td><span class="chip">any</span></td><td class="small">Frontend Agent</td></tr></tbody></table>
+        <div class="small muted" style="padding:10px 16px">Agents can read or write only these repositories. Protected paths for every entry: <span class="mono">.github/workflows/**</span>, <span class="mono">CODEOWNERS</span>, <span class="mono">.claude/**</span>, verification scripts. A repository with model policy <span class="mono">own-account</span> never goes through OpenRouter.</div></div>
+
+      <div class="card flush" id="engines"><div class="card-h" style="padding:14px 16px 0"><h2>Coding engines</h2><span class="chip right">one workflow, several engines</span></div>
+        <table class="t"><thead><tr><th>Engine</th><th>Status</th><th>Models through the gateway</th><th>Talks to people with</th></tr></thead><tbody>
+          <tr><td><b>Claude Code</b> <span class="chip">headless</span></td><td><span class="chip ok">✔ active</span></td><td class="small">Yes, Anthropic-compatible endpoint</td><td class="small">Platform tools (MCP): ask_human, declare_assumption, request_checkpoint</td></tr>
+          <tr><td><b>OpenAI Codex</b></td><td><span class="chip warn">planned</span></td><td class="small">Yes, OpenAI-compatible endpoint</td><td class="small">Same platform tools (MCP)</td></tr>
+          <tr><td><b>GitHub Copilot</b></td><td><span class="chip warn">planned</span></td><td class="small">No, GitHub-hosted models. Runs outside the cost controls and the run record says so</td><td class="small">Same platform tools (MCP)</td></tr></tbody></table>
+        <div class="small muted" style="padding:10px 16px">Approval rules do not live inside an engine. They are enforced at the git boundary, at merge, and at deploy, so every engine behaves the same.</div></div>
+
+      <div class="card flush" id="roles"><div class="card-h" style="padding:14px 16px 0"><h2>Engine per agent role</h2></div>
+        <table class="t"><thead><tr><th>Agent</th><th>Engine</th><th>Model alias</th></tr></thead><tbody>
+          <tr><td>Product, Architect</td><td>Claude Code</td><td class="mono small">agent-strong</td></tr>
+          <tr><td>Frontend, Backend</td><td>Claude Code</td><td class="mono small">agent-default</td></tr>
+          <tr><td>Tester, DevOps</td><td>Claude Code</td><td class="mono small">agent-fast</td></tr></tbody></table></div>
+    </div>
+
+    <div class="stack">
+      <div class="card" id="gateway"><div class="card-h"><h3>Model gateway</h3><span class="chip right">all LLM traffic</span></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div><b>Gateway</b> · sandboxes get a per-run token and never see a provider key</div></li>
+          <li><span class="ok">✔</span><div><b>OpenRouter</b> · default<div class="muted">Agents key <span class="mono">sk-or-…c41</span> · Claude only · limit $50 · spent $12.40<br>Platform services key <span class="mono">sk-or-…7d2</span> · any model per alias · limit $20 · spent $3.10</div></div></li>
+          <li><span class="ok">✔</span><div><b>Amazon Bedrock</b> · optional, for repositories with <span class="mono">own-account</span> policy</div></li></ul></div>
+
+      <div class="card" id="aliases"><div class="card-h"><h3>Model aliases</h3></div>
+        <table class="t" style="font-size:13px"><tbody>
+          <tr><td class="id">agent-strong</td><td><span class="mono">~anthropic/claude-opus-latest</span></td></tr>
+          <tr><td class="id">agent-default</td><td><span class="mono">~anthropic/claude-sonnet-latest</span></td></tr>
+          <tr><td class="id">agent-fast</td><td><span class="mono">~anthropic/claude-haiku-latest</span></td></tr>
+          <tr><td class="id">svc-default</td><td>any model <span class="chip">per alias</span></td></tr></tbody></table>
+        <p class="small muted" style="margin:8px 0 0">Agents use aliases. Changing provider is a configuration change.</p></div>
+
+      <div class="card"><div class="card-h"><h3>This month</h3></div>
+        <div class="small muted">Spent $176 of $400</div><div class="meter" style="margin:4px 0 8px"><i style="width:44%"></i></div>
+        <p class="small muted" style="margin:0">A run that would exceed its cap stops and asks. That is a hard stop.</p></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harbor · SDLC map</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-nav="map">
+<div id="content">
+  <div class="page-head">
+    <div><div class="row"><h1 id="ttl"></h1></div><div class="row wrap small" style="margin-top:4px" id="chips"></div></div>
+    <div class="actions"><span class="small muted">Prototype state:</span>
+      <select id="snap" style="width:auto">
+        <option value="s1">G1 pending</option><option value="g3">G3 · PR in review</option><option value="g4">G4 · Verification</option>
+        <option value="g5">G5 · Security review</option><option value="g6">G6 · Release candidate</option></select></div>
+  </div>
+
+  <div class="card">
+    <div class="flow" id="flow"></div>
+    <div class="crloop"><span>Change Request: findings and baseline changes re-enter at the affected gate</span></div>
+    <div class="row wrap small" style="margin-top:22px">
+      <span class="pill none">Not started</span><span class="pill prog">In progress</span><span class="pill wait">Waiting on human</span><span class="pill block">Blocked</span><span class="pill done">Done</span><span class="pill dev">Deviation open</span>
+      <span class="muted right">In the product this view is React + xyflow. Click a gate.</span>
+    </div>
+  </div>
+
+  <div class="grid g-main" style="margin-top:16px">
+    <div class="card" id="detail"></div>
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Where is my interaction?</h3></div><div id="you" class="small"></div></div>
+      <div class="card"><h3>Key artifacts</h3><ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">
+        <li><a href="j1-2-review-g1.html">Requirements (docs/requirements)</a></li>
+        <li><a href="j3-1-traceability.html">Traceability matrix</a></li>
+        <li><a href="j4-2-release.html">Release package</a></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script>
+  const Q = new URLSearchParams(location.search);
+  const INIT = {
+    101: { id: 'INIT-101', name: 'IRA Account Opening',       repo: 'harbor/ira-account-opening', level: 'Regulated',  st: 's1', story: 'Day 1' },
+    102: { id: 'INIT-102', name: 'Account Funding',           repo: 'harbor/ira-funding',         level: 'Regulated',  st: 'g3', story: 'Day 6' },
+    103: { id: 'INIT-103', name: 'Portfolio Management',      repo: 'harbor/portfolio-mgmt',      level: 'Controlled', st: 'g4', story: 'Day 14' },
+    104: { id: 'INIT-104', name: 'Move Money',                repo: 'harbor/ira-move-money',      level: 'Regulated',  st: 'g5', story: 'Day 20' },
+    105: { id: 'INIT-105', name: 'User Profile Management',   repo: 'harbor/profile-mgmt',        level: 'Controlled', st: 'g3', story: 'Day 9' }
+  };
+  const iid = Q.get('i') || '101', I = INIT[iid] || INIT[101];
+  document.body.dataset.user = Q.get('u') || 'maya';
+  document.body.dataset.crumb = `${I.id} <span>› ${I.name}</span>`;
+  document.body.dataset.story = I.story;
+  document.title = `${I.id} · SDLC map`;
+</script>
+<script src="../assets/app.js"></script>
+<script>
+  const G = [
+    { id: 'G0', name: 'Plan & risk intake', stage: 'Plan', agent: 'Product Agent', need: 3, link: 'j1-1-new-initiative.html', open: 'Open intake',
+      desc: 'Repository verified, profile and strictness level chosen, roles assigned, regulatory classification confirmed by Compliance.',
+      signers: [['Product Owner', 'Maya Patel'], ['Compliance & Risk', 'Elena Rossi']] },
+    { id: 'G1', name: 'Requirements baseline', stage: 'Requirements', agent: 'Product Agent', need: 5, link: 'j1-2-review-g1.html', open: 'Open review pack',
+      desc: 'Requirements with IDs and acceptance criteria, each mapped to a control. Assumptions dispositioned. Freezes baseline BL-1.',
+      signers: [['Product Owner (owner)', 'Maya Patel'], ['Compliance & Risk (independent)', 'Elena Rossi']] },
+    { id: 'G2', name: 'Architecture & risk baseline', stage: 'Architecture', agent: 'Architect Agent', need: 5, link: '#', open: 'Open review pack',
+      desc: 'ADRs, hexagonal scaffolding with ports for banks, custodian and identity vendors. Freezes baseline BL-2.',
+      signers: [['Architect', 'Noah Kim'], ['Security', 'Tariq Ahmed']] },
+    { id: 'G3', name: 'Change merge (per PR)', stage: 'Implementation', agent: 'Backend Engineer Agent', need: 4, link: 'j2-2-review-pr.html', open: 'Open PR review pack',
+      desc: 'Pull requests into main. Money-movement paths trigger Architect and Security co-review. New dependencies create SOUP records.',
+      signers: [['Backend Engineer (≠ sponsor)', 'Hannah Wright'], ['Architect (money-movement path)', 'Noah Kim'], ['Security (money-movement path)', 'Tariq Ahmed']] },
+    { id: 'G4', name: 'Verification complete', stage: 'Verification', agent: 'Tester Agent', need: 4, link: 'j3-1-traceability.html', open: 'Open traceability',
+      desc: 'Every requirement covered by a passing test bound to the commit SHA. Gaps block the gate.',
+      signers: [['QA / Tester', 'Tessa Moore']] },
+    { id: 'G5', name: 'Security review', stage: 'Security', agent: 'Security Agent', need: 3, link: 'j4-1-security-review.html', open: 'Open security review',
+      desc: 'Threat model, scan results, findings and any risk acceptance. Agent output is advisory.',
+      signers: [['Security', 'Tariq Ahmed']] },
+    { id: 'G6', name: 'Release authorization', stage: 'Release', agent: 'DevOps Agent', need: 6, link: 'j4-2-release.html', open: 'Open release package',
+      desc: 'Release package, SBOM, trace matrix, calendar and change-freeze check. Deployer ≠ approver.',
+      signers: [['Release Approver', 'Grace Lin'], ['Compliance & Risk', 'Elena Rossi']] },
+    { id: 'G7', name: 'Post-release review', stage: 'Post-release', agent: 'Product Agent', need: 3, link: '#', open: 'Open',
+      desc: 'Customer feedback and incidents become change requests or problem reports.',
+      signers: [['Product Owner', 'Maya Patel'], ['Compliance & Risk', 'Elena Rossi']] }
+  ];
+  const SN = {
+    s1: { st: ['done', 'wait', 'none', 'none', 'none', 'none', 'none', 'none'], sel: 'G1' },
+    g3: { st: ['done', 'done', 'done', 'wait', 'none', 'none', 'none', 'none'], sel: 'G3' },
+    g4: { st: ['done', 'done', 'done', 'done', 'wait', 'none', 'none', 'none'], sel: 'G4' },
+    g5: { st: ['done', 'done', 'done', 'done', 'done', 'wait', 'none', 'none'], sel: 'G5' },
+    g6: { st: ['done', 'done', 'done', 'done', 'done', 'done', 'wait', 'none'], sel: 'G6' }
+  };
+  const LBL = { none: 'Not started', prog: 'In progress', wait: 'Waiting on human', block: 'Blocked', done: 'Done', dev: 'Deviation open' };
+  const SHORT = { none: 'Not started', prog: 'In progress', wait: 'Waiting', block: 'Blocked', done: 'Done', dev: 'Deviation' };
+  let cur = SN[Q.get('s')] ? Q.get('s') : I.st, sel = SN[cur].sel;
+  document.getElementById('snap').value = cur;
+  document.getElementById('ttl').textContent = `${I.id} · ${I.name}`;
+
+  const ev = (g, s) => s === 'done' ? g.need : s === 'wait' ? g.need - 1 : 0;
+  function draw() {
+    const S = SN[cur];
+    document.getElementById('flow').innerHTML = G.map((g, i) => {
+      const s = S.st[i], have = ev(g, s);
+      const flag = (g.id === 'G1' && s === 'done') ? '<span class="flag-tag">BL-1 frozen</span>' : (g.id === 'G2' && s === 'done') ? '<span class="flag-tag">BL-2 frozen</span>' : '';
+      return `<div class="gnode s-${s} ${sel === g.id ? 'sel' : ''}" data-g="${g.id}">
+        <div class="stage">${g.stage}</div><div class="gid">${g.id}</div><div class="gname">${g.name}</div>
+        <span class="pill ${s}">${SHORT[s]}</span>
+        <div><div class="small muted">Evidence ${have}/${g.need}</div><div class="bar ${s === 'wait' ? 'wait' : ''}"><i style="width:${have / g.need * 100}%"></i></div></div>
+        <span class="chip agent">${g.agent.replace(' Engineer', '')}</span>${flag}</div>`;
+    }).join('');
+    const bl = []; if (S.st[1] === 'done') bl.push('BL-1'); if (S.st[2] === 'done') bl.push('BL-2');
+    const lvl = I.level === 'Regulated' ? 'ok' : 'warn';
+    document.getElementById('chips').innerHTML = `<span class="chip">Financial Services overlay (preview)</span><span class="chip">${I.repo}</span><span class="chip ${lvl}">Strictness: ${I.level}</span><span class="chip">Baselines: ${bl.length ? bl.join(', ') : 'none yet'}</span><span class="chip ok">Open deviations: 0</span>`;
+    const w = G[S.st.indexOf('wait')];
+    document.getElementById('you').innerHTML = w ? `Next decision: <b>${w.id} · ${w.name}</b>. Waiting on <b>${w.signers.map(x => x[1]).join(', ')}</b>.` : '';
+    detail();
+  }
+  function detail() {
+    const g = G.find(x => x.id === sel), i = G.indexOf(g), s = SN[cur].st[i], have = ev(g, s);
+    const sig = g.signers.map(x => `<tr><td>${x[0]}</td><td><span class="chip human">${x[1]}</span></td><td>${s === 'done' ? '<span class="chip ok">✔ signed</span>' : '<span class="chip warn">⏳ pending</span>'}</td></tr>`).join('');
+    document.getElementById('detail').innerHTML = `
+      <div class="card-h"><h2>${g.id} · ${g.name}</h2><span class="pill ${s} right">${LBL[s]}</span></div>
+      <p class="muted">${g.desc}</p>
+      <div class="grid g3" style="margin:10px 0 12px">
+        <div><div class="small muted">Prepared by</div><span class="chip agent">${g.agent}</span></div>
+        <div><div class="small muted">Evidence completeness</div><b>${have}/${g.need}</b> items</div>
+        <div><div class="small muted">SoD check</div>${s === 'none' ? '<span class="chip">n/a yet</span>' : '<span class="chip ok">satisfied</span>'}</div>
+      </div>
+      <table class="t"><thead><tr><th>Required role</th><th>Person</th><th>Status</th></tr></thead><tbody>${sig}</tbody></table>
+      <div class="row" style="margin-top:12px">${g.link === '#' ? '' : `<a class="btn primary" href="${g.link}">${g.open}</a>`}</div>`;
+  }
+  document.getElementById('flow').addEventListener('click', e => { const n = e.target.closest('.gnode'); if (!n) return; sel = n.dataset.g; draw(); });
+  document.getElementById('snap').addEventListener('change', e => { cur = e.target.value; sel = SN[cur].sel; draw(); });
+  draw();
+</script>
+</body>
+</html>

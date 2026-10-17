@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E2 · Change request CR-004</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body data-user="nadia" data-nav="map" data-crumb="INIT-304 <span>› Change request CR-004</span>" data-story="Oct 31 · 14:00">
+<div id="content">
+  <div class="page-head">
+    <div>
+      <div class="row"><h1>CR-004 · Carrier changes its shipping label format</h1><span class="pill wait" id="statePill">Waiting on 2 people</span></div>
+      <div class="muted">INIT-304 Fulfillment and support tools · raised by <span class="chip human">Aisha Khan</span> (Operations) on Oct 31 · impact analysis prepared by the <span class="chip agent">Product Agent</span></div>
+    </div>
+    <div class="actions"><a class="btn" href="map.html?i=304&s=g3">Back to map</a></div>
+  </div>
+
+  <div class="callout warn" style="margin-bottom:14px"><span class="ci">⏰</span><div><b>External deadline.</b> The carrier stops accepting ZPL labels on <b>Nov 12</b>. Release 4.2 on <b>Nov 10</b> is the last release before the switch, and the change freeze starts Nov 18.</div></div>
+
+  <div class="grid g-main">
+    <div class="stack">
+      <div class="card" id="impact"><div class="card-h"><h2>Impact analysis</h2><span class="chip right">from the traceability graph</span></div>
+        <table class="t"><thead><tr><th>Affected item</th><th>Kind</th><th>What happens</th></tr></thead><tbody>
+          <tr><td class="id">REQ-414</td><td>Requirement</td><td class="small">Wording changes from ZPL to PDF (see the spec diff below)</td></tr>
+          <tr><td class="id">BC-14 · US-324</td><td>Business rule · story</td><td class="small">"One label per shipment" is unchanged. Its 4 tests need new expected output.</td></tr>
+          <tr><td class="mono small">apps/warehouse/labels/printLabel.ts</td><td>Code</td><td class="small">Replace the ZPL template with PDF rendering</td></tr>
+          <tr><td class="id">INIT-302 returns</td><td>Other initiative</td><td class="small"><span class="chip ok">No change</span> Return labels already come from the carrier as PDF.</td></tr>
+          <tr><td class="id">G3 · G4 · G6</td><td>Gates</td><td class="small">Re-enter at change merge, verification (print test on both printers), then release 4.2</td></tr></tbody></table>
+        <div class="small muted" style="margin-top:8px">Nothing else in the approved spec is affected. Anything outside this list stays approved.</div></div>
+
+      <div class="card" id="diff"><div class="card-h"><h2>Spec diff · REQ-414</h2><span class="chip right">spec v1 → v2 (proposed)</span></div>
+        <div class="diff">
+          <div class="fh"><b>REQ-414</b><span class="chip">Fulfillment · label printing</span></div>
+          <span class="ln del">- The warehouse system shall print one shipping label per shipment in the carrier's ZPL format.</span>
+          <span class="ln add">+ The warehouse system shall print one shipping label per shipment in the carrier's PDF format,</span>
+          <span class="ln add">+ sized 4 x 6 inches, on the thermal printers and on the desktop printer.</span>
+          <span class="ln ctx">  Unchanged: reprinting a label voids the previous one (BC-14).</span>
+        </div></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Approvals</h3></div>
+        <ul class="checks small">
+          <li><span id="sN" class="wt">●</span><div style="flex:1"><b>Nadia Rahman</b> · Product Owner<div class="muted">Owns the requirement and the business rule.</div></div><button class="btn primary sm" id="apNadia">Approve</button></li>
+          <li><span id="sO" class="wt">●</span><div style="flex:1"><b>Owen Brooks</b> · Architect<div class="muted">Owns the design impact.</div></div><button class="btn primary sm" id="apOwen">Approve</button></li></ul>
+        <div class="small muted" style="margin-top:8px">The raiser, Aisha, cannot approve her own request. Both approvals are recorded.</div></div>
+
+      <div class="callout ok" id="result" hidden><span class="ci">✔</span><div><b>CR-004 approved.</b> Spec <b>v2</b> recorded (<b>ACT-0173</b>). The Backend Agent was given the new requirement and started RUN-0583. The change re-enters at G3 and must pass G4 and G6 for release 4.2.</div></div>
+
+      <div class="card"><div class="card-h"><h3>Schedule check</h3></div>
+        <ul class="checks small">
+          <li><span class="ok">✔</span><div>Estimated agent time: about 1 hour. Review: 1 day.</div></li>
+          <li><span class="ok">✔</span><div>Fits before the Nov 10 release and the Nov 12 carrier switch</div></li>
+          <li><span class="ok">✔</span><div>No conflict with the change freeze</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="cast.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  const signed = new Set();
+  function sign(k, btn, icon, ev) {
+    const b = document.getElementById(btn); b.className = 'chip ok'; b.textContent = '✔ approved ' + ev;
+    const i = document.getElementById(icon); i.className = 'ok'; i.textContent = '✔';
+    signed.add(k);
+    const p = document.getElementById('statePill');
+    if (signed.size === 2) { document.getElementById('result').hidden = false; p.className = 'pill done'; p.textContent = 'Approved'; }
+    else p.textContent = 'Waiting on 1 person';
+  }
+  document.getElementById('apNadia').addEventListener('click', () => sign('n', 'apNadia', 'sN', 'ACT-0171'));
+  document.getElementById('apOwen').addEventListener('click', () => sign('o', 'apOwen', 'sO', 'ACT-0172'));
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>16 · Strictness &amp; repositories</title>
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .sbx-banner{background:repeating-linear-gradient(45deg,#fff4dc,#fff4dc 12px,#ffeccb 12px,#ffeccb 24px);border:1px solid #f0d9a0;color:#7a4b00;border-radius:8px;padding:8px 12px;font-weight:600}
+  .lv{display:inline-block;border-radius:6px;padding:0 7px;font-size:12px;font-weight:600;margin-right:3px}
+  .lv.s{background:var(--wait-bg);color:var(--wait)}.lv.c{background:var(--prog-bg);color:var(--prog)}.lv.r{background:var(--done-bg);color:var(--done)}
+</style>
+</head>
+<body data-user="jordan" data-nav="strict" data-crumb="Admin <span>› Strictness &amp; repositories</span>" data-story="any time">
+<div id="content">
+  <div class="page-head">
+    <div><h1>Strictness &amp; repositories</h1><div class="muted">Which repositories agents may touch, and how strictly controls are enforced. Prototype: switch deployment to see the testing setup.</div></div>
+    <div class="actions"><span class="small muted">Deployment:</span>
+      <select id="dep" style="width:auto"><option value="prod">acme-med production</option><option value="sbx">acme-med development (testing)</option></select></div>
+  </div>
+
+  <div id="banner"></div>
+
+  <div class="grid g-main" style="margin-top:14px">
+    <div class="stack">
+      <div class="card flush"><div class="card-h" style="padding:14px 16px 0"><h2>Repository registry</h2><button class="btn sm right">+ Register repository</button></div>
+        <table class="t"><thead><tr><th>Repository</th><th>Data class</th><th>Allowed levels</th><th>Access</th><th>Write mode</th><th>Used by</th></tr></thead><tbody id="reg"></tbody></table>
+        <div class="small muted" style="padding:10px 16px">Agents can read or write only these repositories. The GitHub App is installed only on them, so GitHub enforces the list too. Protected paths for every entry: <span class="mono">.github/workflows/**</span>, <span class="mono">CODEOWNERS</span>, <span class="mono">.claude/**</span>, platform policy files.</div></div>
+
+      <div class="card" id="pending"><div class="card-h"><h3>Pending registry change</h3><span class="pill wait right">Waiting for QRA</span></div>
+        <p class="small" style="margin:0">Register <b>acme-med/pump-firmware-gw</b> as <b>read-only reference</b>, data class <b>regulated</b>, levels Controlled and Regulated. Requested by Jordan Lee. Approval by <b>Sam Ivanova</b> (QRA) produces an evidence record.</p></div>
+
+      <div class="card"><div class="card-h"><h3>What each level changes</h3></div>
+        <table class="t" style="font-size:13px"><thead><tr><th></th><th>Sandbox</th><th>Controlled</th><th>Regulated</th></tr></thead><tbody>
+          <tr><td>Model gateway</td><td>Customer + OpenRouter</td><td>Customer account only (OpenRouter in a development deployment)</td><td>Customer account only</td></tr>
+          <tr><td>Agent git writes</td><td>Direct or PR</td><td>PR only</td><td>PR only + required check</td></tr>
+          <tr><td>Separation of duties</td><td>Warn</td><td>Enforced</td><td>Strict</td></tr>
+          <tr><td>Approvals</td><td>Humans or simulated</td><td>Humans</td><td>Humans + step-up</td></tr>
+          <tr><td>Evidence</td><td>Unsigned, watermarked</td><td>Signed, chained</td><td>+ WORM, requalification</td></tr>
+          <tr><td>Production release</td><td>Blocked</td><td>If profile allows</td><td>Allowed</td></tr></tbody></table></div>
+    </div>
+
+    <div class="stack">
+      <div class="card"><div class="card-h"><h3>Deployment floor</h3><span class="chip right">read-only</span></div>
+        <div id="floor"></div>
+        <p class="small muted" style="margin:8px 0 0">Set by the Terraform variable <span class="mono">min_strictness</span> at install time. It cannot be changed from this screen. Initiatives cannot be created below it.</p></div>
+
+      <div class="card"><div class="card-h"><h3>Model gateway</h3><span class="chip right">all LLM traffic</span></div><div id="gw"></div></div>
+
+      <div class="card"><div class="card-h"><h3>Model aliases</h3></div><div id="al"></div>
+        <p class="small muted" style="margin:8px 0 0">Agent definitions use aliases. Each deployment maps them to a model, so switching provider is a configuration change.</p></div>
+
+      <div class="card"><h3>Raising or lowering a level</h3><ul class="checks small">
+        <li><span class="ok">✔</span><div>Raise any time. Promotion re-signs gates at the new level.</div></li>
+        <li><span class="no">✖</span><div>No lowering once an initiative has Controlled-or-higher evidence. Use <b>Fork to sandbox</b> instead.</div></li>
+        <li><span class="ok">✔</span><div>Every change is recorded. At Controlled and above it needs a second authorizer (QRA).</div></li></ul></div>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+  const D = {
+    prod: {
+      banner: '',
+      floor: '<span class="lv c">Controlled</span> <span class="muted small">Sandbox is not available in this deployment.</span>',
+      reg: [
+        ['acme-med/dose-calc','internal','<span class="lv c">Controlled</span><span class="lv r">Regulated</span>','read-write','branch_pr','INIT-014'],
+        ['acme-med/alarm-limits-api','internal','<span class="lv c">Controlled</span><span class="lv r">Regulated</span>','read-write','branch_pr','INIT-009'],
+        ['acme-med/pump-firmware-gw','regulated','<span class="lv c">Controlled</span><span class="lv r">Regulated</span>','read-only','reference','—']
+      ],
+      gw: '<ul class="checks small"><li><span class="ok">✔</span><div><b>Model Gateway</b> · per-run tokens, budgets, usage records <span class="chip ok">active</span></div></li><li><span class="ok">✔</span><div><b>Amazon Bedrock</b> · us-east-1 · Claude (pinned MCR-0007) <span class="chip ok">default</span></div></li><li><span class="no">✖</span><div><b>OpenRouter</b> <span class="chip">disabled: the deployment floor is Controlled</span></div></li></ul>',
+      al: '<table class="t" style="font-size:13px"><tbody><tr><td class="id">agent-strong</td><td>Bedrock · Claude (pinned MCR-0007)</td></tr><tr><td class="id">agent-default</td><td>Bedrock · Claude (pinned MCR-0007)</td></tr><tr><td class="id">agent-fast</td><td>Bedrock · Claude (pinned MCR-0008)</td></tr><tr><td class="id">svc-default</td><td>Bedrock · Claude (pinned MCR-0008)</td></tr></tbody></table>'
+    },
+    sbx: {
+      banner: '<div class="sbx-banner">DEVELOPMENT deployment · Not audit-capable · compliance_valid=false · OpenRouter is the default model gateway · Agents may commit directly to registered test repositories</div>',
+      floor: '<span class="lv s">Sandbox</span> <span class="muted small">Sandbox and Controlled are available. Regulated cannot be selected because this deployment is not audit-capable. Production deploys are blocked.</span>',
+      reg: [
+        ['acme-med/sandbox-playground','test','<span class="lv s">Sandbox</span>','read-write','direct','INIT-S01'],
+        ['acme-med/sandbox-dose-calc','test','<span class="lv s">Sandbox</span><span class="lv c">Controlled</span>','read-write','branch_pr','INIT-S02']
+      ],
+      gw: '<ul class="checks small"><li><span class="ok">✔</span><div><b>Model Gateway</b> · sandboxes get a per-run token and never see a provider key <span class="chip ok">active</span></div></li><li><span class="ok">✔</span><div><b>OpenRouter</b> · default <span class="chip warn">test repos only</span><div class="muted">Agents key <span class="mono">sk-or-…c41</span> · Claude only · limit $50 · spent $12.40<br>Platform services key <span class="mono">sk-or-…7d2</span> · any model per alias · limit $20 · spent $3.10<br>Provider priority: Anthropic first-party</div></div></li><li><span class="ok">✔</span><div><b>Amazon Bedrock</b> · optional, for parity checks (hybrid mode)</div></li></ul>',
+      al: '<table class="t" style="font-size:13px"><tbody><tr><td class="id">agent-strong</td><td>OpenRouter · <span class="mono">~anthropic/claude-opus-latest</span></td></tr><tr><td class="id">agent-default</td><td>OpenRouter · <span class="mono">~anthropic/claude-sonnet-latest</span></td></tr><tr><td class="id">agent-fast</td><td>OpenRouter · <span class="mono">~anthropic/claude-haiku-latest</span></td></tr><tr><td class="id">svc-default</td><td>OpenRouter · any model <span class="chip">per alias</span></td></tr></tbody></table>'
+    }
+  };
+  function draw(k){
+    const d = D[k];
+    document.getElementById('banner').innerHTML = d.banner;
+    document.getElementById('floor').innerHTML = d.floor;
+    document.getElementById('gw').innerHTML = d.gw;
+    document.getElementById('al').innerHTML = d.al;
+    document.getElementById('reg').innerHTML = d.reg.map(r => `<tr><td class="id">${r[0]}</td><td><span class="chip">${r[1]}</span></td><td>${r[2]}</td><td class="small">${r[3]}</td><td><span class="mono">${r[4]}</span></td><td class="small">${r[5]}</td></tr>`).join('');
+    document.getElementById('pending').hidden = k !== 'prod';
+  }
+  document.getElementById('dep').addEventListener('change', e => draw(e.target.value));
+  draw('prod');
+</script>
+</body>
+</html>
