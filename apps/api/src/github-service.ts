@@ -1,7 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { githubApp } from '@sdlc/db';
+import { normalizePreviewState, safeUrl } from '@sdlc/core';
+import type { PreviewCandidate } from '@sdlc/core';
 import type { Db } from '@sdlc/db';
-import { appJwt, secretName } from './github-app.js';
+import { GitHubError, appJwt, secretName } from './github-app.js';
 import type { AppKind, GitHubClient } from './github-app.js';
 import type { SecretsStore } from './secrets.js';
 
@@ -139,6 +141,83 @@ export class GitHubService {
   async closePullRequest(repo: string, number: number): Promise<void> {
     const { token } = await this.tokenFor('gate', repo, { pull_requests: 'write' });
     await this.client.call('PATCH', `/repos/${repo}/pulls/${number}`, token, { state: 'closed' });
+  }
+
+  /**
+   * What the repository's pipeline has reported as a preview of a pull request: Deployments (for the commit and for the
+   * branch, so an older build can be called stale) and commit statuses with "preview" in their name. Read-only.
+   */
+  async previewCandidates(
+    repo: string,
+    number: number,
+  ): Promise<{ headSha: string; candidates: PreviewCandidate[]; deploymentsReadable: boolean }> {
+    const pr = await this.getPullRequest(repo, number);
+    const headSha = pr.head.sha;
+    const { token } = await this.tokenFor('gate', repo);
+    const candidates: PreviewCandidate[] = [];
+    let deploymentsReadable = true;
+
+    interface Deployment {
+      id: number;
+      sha: string;
+      environment?: string;
+      created_at: string;
+    }
+    interface DeploymentStatus {
+      state: string;
+      environment_url?: string;
+      target_url?: string;
+      created_at: string;
+    }
+    try {
+      const found = new Map<number, Deployment>();
+      for (const q of [`sha=${headSha}`, `ref=${encodeURIComponent(pr.head.ref)}`]) {
+        const list = await this.client.call<Deployment[]>(
+          'GET',
+          `/repos/${repo}/deployments?${q}&per_page=5`,
+          token,
+        );
+        for (const d of list) found.set(d.id, d);
+      }
+      for (const d of found.values()) {
+        const [s] = await this.client.call<DeploymentStatus[]>(
+          'GET',
+          `/repos/${repo}/deployments/${d.id}/statuses?per_page=1`,
+          token,
+        );
+        const state = s ? normalizePreviewState(s.state) : 'pending';
+        if (!state) continue;
+        candidates.push({
+          source: 'deployment',
+          sha: d.sha,
+          state,
+          url: safeUrl(s?.environment_url) ?? safeUrl(s?.target_url),
+          label: d.environment,
+          at: s?.created_at ?? d.created_at,
+        });
+      }
+    } catch (e) {
+      if (!(e instanceof GitHubError) || (e.status !== 403 && e.status !== 404)) throw e;
+      deploymentsReadable = false;
+    }
+
+    const combined = await this.client.call<{
+      statuses: Array<{ context: string; state: string; target_url?: string; created_at: string }>;
+    }>('GET', `/repos/${repo}/commits/${headSha}/status?per_page=100`, token);
+    for (const s of combined.statuses) {
+      if (!/preview/i.test(s.context)) continue;
+      const state = normalizePreviewState(s.state);
+      if (!state) continue;
+      candidates.push({
+        source: 'status',
+        sha: headSha,
+        state,
+        url: safeUrl(s.target_url),
+        label: s.context,
+        at: s.created_at,
+      });
+    }
+    return { headSha, candidates, deploymentsReadable };
   }
 
   async comment(repo: string, number: number, body: string): Promise<void> {

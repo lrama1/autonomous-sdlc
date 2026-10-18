@@ -560,7 +560,7 @@ Not proven, or not built:
 - **G6, release** (`POST /api/initiatives/:id/releases`). A Product Owner, DevOps or admin prepares a version. The platform lists what merged since the last release, pins the tip of the integration branch, and requires the required check to be green on it. The checkpoint is a hard stop for `RELEASE_APPROVER_ROLE` (default Product Owner), never defaulted, never answered in chat. On approval the **Gate App** creates the tag and the release with the notes, but only if the branch has not moved. Live: published on `sdlc-scratch`, then removed.
 
 Not built, or only partly:
-- **Previews** (an open decision, section 18). **Design and the Architect agent** (only the Product agent exists, so G1 covers the spec). **Stories as records**: they live inside the spec document.
+- **A platform-run preview** (the repository's pipeline provides previews today, see "Previews" below). **Design and the Architect agent** (only the Product agent exists, so G1 covers the spec). **Stories as records**: they live inside the spec document.
 - **Nothing starts the next stage for you.** The map shows where work is. A person starts the spec run, the engineer runs, and the release.
 - The map is boxes and arrows, not xyflow, and there is no portfolio view, release calendar or freeze, hotfix path, or scope-change re-opening.
 - A new external host in a code diff is not detected (agents are told to propose it, and the sandbox cannot reach it anyway). A `none` test strategy is shown as a warning, not enforced as a trigger. Credentials from the register are not put into sandboxes.
@@ -600,6 +600,16 @@ Not built, or only partly:
   - Local (non-Docker) runs on Windows need `COPILOT_BIN` to point at something `spawn` can run, because the npm shim is a `.ps1` file.
   - The phase B and C scripts had drifted since Step 3: balanced mode merged their docs-only change by rule, so they waited for a review that never came. They now start their initiatives in guided mode.
 
+**Previews (2026-10-18): the review pack shows the preview the repository's pipeline reported. Built and proven live against GitHub for commit statuses; Deployments are proven against a fake GitHub only.**
+
+Decided with the owner: show the link now (option 1), and have the platform build and serve previews itself (a `.sdlc/preview.yaml` run in Docker, option 2) later, when a repository with a UI needs it. Nothing the platform runs executes the previewed code.
+
+- **How a repository reports a preview.** Either a GitHub **Deployment** whose status has an `environment_url` (or `target_url`), or a **commit status** whose name contains "preview" and whose `target_url` is the address. Any host works (Vercel, Netlify, Amplify, a Terraform stack, a self-hosted box).
+- **What the review pack says** (`GET /api/interactions/:id/preview`, the "Preview" line on a pull request review). Rules are in `packages/core/src/preview.ts`: `ready` for a success on the pull request's current commit; `building`; `failed` (with the log link, if any); `stale` for a Deployment built from an older commit, never shown as ready, since the reviewer would approve code they did not look at; `none`; and `not_permitted` when GitHub refuses to list Deployments and no status was reported. Only `http` and `https` addresses become links. The answer is cached for 15 seconds per pull request, and the page looks again every 20 seconds while it is building, none or stale.
+- **Permission.** The Gate App manifest now asks for `deployments: read`. An App registered before this change does not have it, so GitHub answers 403 and the pack says `not_permitted` unless a status was reported. To turn Deployments on, open the Gate App's settings on GitHub, add "Deployments: Read-only" under repository permissions, then accept the new permission on the installation. I have not done this for the development App.
+- **Proven live** (`node --import tsx src/accept.ts preview docker`, real agent, Docker sandbox, real GitHub, `sdlc-scratch`): with nothing reported the pack says so (`not_permitted`, since the development App lacks the new permission); a pending `ci/preview` status shows as building; a success shows as ready with the right link and commit; after a second commit on the branch the old preview no longer reads as ready. Unit tests cover the rules and the route against a fake GitHub (Deployments, a Deployment for an older commit, a 403, a status, an unsafe address, the cache), and a browser test covers the stale and ready display.
+- **Not proven or not built.** Deployments against real GitHub (needs the permission above). A commit-status preview for an older commit reads as `none`, not `stale` (only Deployments are looked up by branch). The platform does not start, stop or pay for previews, does not expire them, and does not check that the preview address is one the repository owns. The review does not wait for a preview: a person can approve before one exists. The Gate does not require one.
+
 **CI (2026-10-18).** GitHub Actions now builds the sandbox image, so the six Docker sandbox tests run there (they used to be skipped) and pass on Ubuntu 24.04. The four actions are pinned to commit SHAs and are on versions that run on Node 24, which removes the Node 20 warning. The runner image is the pinned `ubuntu-24.04`. Two things the Linux run found:
 
 - Public ECR throttled GitHub's shared addresses (HTTP 429), so CI builds from Docker Hub (`--build-arg NODE_IMAGE=node:22-bookworm-slim`). The Dockerfile still defaults to ECR.
@@ -619,7 +629,7 @@ Not built, or only partly:
 | Item | Needed by |
 |---|---|
 | Sidecar manifest format | When a repository with services is first used |
-| Preview environments | Not built. A per-PR environment needs a place to run the app (the sandbox cannot be reached from outside). Decide when a repository with a running app is first used |
+| Preview environments | The review pack shows what the repository's pipeline reports (built, section 16). A platform-run preview (`.sdlc/preview.yaml` in Docker, then Fargate) waits until a repository with a UI needs it |
 | Cut-off between blocking and parking (120 s) | Step 1, tune with real use |
 | ~~Where Slack and Teams replies are authenticated~~ | Done in step 2 for Slack: signed request plus an admin-made link between a Slack user and a person. Teams is not built |
 | ~~Copilot adapter~~ | Done in step 4 (see section 16). The Codex adapter is not started |

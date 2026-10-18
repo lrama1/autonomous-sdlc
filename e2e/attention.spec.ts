@@ -121,6 +121,53 @@ test('a reviewer sees why a review needs them and approves it', async ({ page })
   ).toContainText('Approved');
 });
 
+test('a review shows the preview the repository reported, and warns when it is out of date', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review PR ${randomUUID().slice(0, 8)}`;
+  await db.insert(interaction).values({
+    initiativeId: f.initiativeId,
+    runId: f.runId,
+    type: 'review',
+    checkpointId: 'G3',
+    title,
+    contextCard: {
+      kind: 'pull_request',
+      summary: 'A small change.',
+      verify: { passed: true },
+      prUrl: 'https://github.com/o/r/pull/9',
+      prNumber: 9,
+    },
+    blocks: [],
+    roleNeeded: 'platform_admin',
+  });
+  // GitHub is not reachable from the demo, so the preview answer is supplied here.
+  let answer = {
+    state: 'stale',
+    url: 'https://pr-9.preview.example.test/',
+    label: 'preview/pr-9',
+    source: 'deployment',
+    sha: 'bbbbbbb2222222',
+    headSha: 'aaaaaaa1111111',
+    detail: 'This preview was built from bbbbbbb. The pull request is now at aaaaaaa.',
+  };
+  await page.route('**/api/interactions/*/preview', (route) => route.fulfill({ json: answer }));
+  await signInAs(page, /Dev Admin/);
+  await page.getByTestId('nav-queue').click();
+  const preview = card(page, title).getByTestId('preview');
+  await expect(preview).toHaveAttribute('data-state', 'stale');
+  await expect(preview).toContainText('out of date');
+  await expect(preview.getByRole('link', { name: 'preview/pr-9' })).toHaveAttribute(
+    'href',
+    'https://pr-9.preview.example.test/',
+  );
+  answer = { ...answer, state: 'ready', sha: 'aaaaaaa1111111', detail: 'Built from aaaaaaa.' };
+  await page.reload();
+  await page.getByTestId('nav-queue').click();
+  await expect(card(page, title).getByTestId('preview')).toHaveAttribute('data-state', 'ready');
+});
+
 test('assumptions are accepted or rejected, and a rejection asks the sponsor what to redo', async ({
   page,
 }) => {

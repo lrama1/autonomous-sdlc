@@ -933,6 +933,96 @@ try {
       });
     }
   }
+
+  // ---------------- Preview: the review pack shows what the repository's pipeline reported ----------------
+  if (phase === 'preview') {
+    say(
+      '--- preview: a review shows the preview the repository reported, and calls an old one stale ---',
+    );
+    if (!ghToken)
+      throw new Error('GH_TOKEN is needed to report a preview on the scratch repository');
+    const file = `docs/preview-${stamp}.md`;
+    const { run } = await startRun(
+      `Preview ${stamp}`,
+      `Create the file ${file} containing exactly the single line "preview ${stamp}" and commit it. Do not change anything else and do not ask any questions.`,
+      'guided',
+    );
+    const review = await waitFor(
+      'the review request',
+      () => openFor(bob, run.id, ['review']),
+      420_000,
+    );
+    const sha: string = review.contextCard.headSha;
+    const prNumber: number = review.contextCard.prNumber;
+    const auth = { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' };
+    const preview = () => call(bob, 'GET', `/api/interactions/${review.id}/preview`);
+    const report = (onSha: string, state: string, url: string) =>
+      fetch(`https://api.github.com/repos/${REPO}/statuses/${onSha}`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          state,
+          context: 'ci/preview',
+          target_url: url,
+          description: 'accept',
+        }),
+      });
+
+    const first = await preview();
+    check(
+      ['none', 'not_permitted'].includes(first.state),
+      `P  before the pipeline reports anything, the review says so (${first.state}: ${first.detail.slice(0, 80)}...)`,
+    );
+
+    await report(sha, 'pending', 'https://example.test/building');
+    await sleep(16_000); // the answer is cached for 15 seconds
+    const building = await preview();
+    check(
+      building.state === 'building',
+      `P  a pending report shows as building (${building.state})`,
+    );
+
+    await report(sha, 'success', `https://pr-${prNumber}.preview.example.test`);
+    await sleep(16_000);
+    const ready = await preview();
+    check(
+      ready.state === 'ready' &&
+        ready.url === `https://pr-${prNumber}.preview.example.test/` &&
+        ready.sha === sha,
+      `P  a successful report for the current commit shows as ready: ${ready.url} (${ready.source})`,
+    );
+
+    // The pull request moves to a new commit: the old preview must not read as current.
+    const branch: string = (await gh(`/repos/${REPO}/pulls/${prNumber}`)).head.ref;
+    const fileInfo = await gh(`/repos/${REPO}/contents/${file}?ref=${branch}`);
+    await fetch(`https://api.github.com/repos/${REPO}/contents/${file}`, {
+      method: 'PUT',
+      headers: auth,
+      body: JSON.stringify({
+        message: 'another commit on the branch',
+        content: Buffer.from(`preview ${stamp}\nmore\n`).toString('base64'),
+        sha: fileInfo.sha,
+        branch,
+      }),
+    });
+    await sleep(16_000);
+    const moved = await preview();
+    check(
+      moved.sha !== sha && moved.headSha !== sha && moved.state !== 'ready',
+      `P  after a new commit the old preview does not read as ready (${moved.state})`,
+    );
+
+    // Leave the scratch repository tidy: nothing from this check is merged.
+    await fetch(`https://api.github.com/repos/${REPO}/pulls/${prNumber}`, {
+      method: 'PATCH',
+      headers: auth,
+      body: JSON.stringify({ state: 'closed' }),
+    });
+    await fetch(`https://api.github.com/repos/${REPO}/git/refs/heads/${branch}`, {
+      method: 'DELETE',
+      headers: auth,
+    });
+  }
 } catch (e) {
   say(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
   checks.push([false, 'the script finished without an error']);

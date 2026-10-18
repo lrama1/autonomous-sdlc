@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AssumptionDto, AttentionProfile, InteractionDto } from '@sdlc/schemas';
+import type { AssumptionDto, AttentionProfile, InteractionDto, PreviewDto } from '@sdlc/schemas';
 import {
   ApiProblem,
   answerInteraction,
   decideAssumption,
   didntNeedToAsk,
   getAssumptions,
+  getPreview,
   getProfile,
   getQueue,
   snoozeInteraction,
@@ -36,6 +37,67 @@ const card = (i: InteractionDto) =>
     verify?: { passed?: boolean; attempts?: number };
     diff?: { files?: number; additions?: number; deletions?: number };
   };
+
+const PREVIEW_WORDS: Record<PreviewDto['state'], string> = {
+  ready: 'Preview',
+  building: 'Preview (building)',
+  failed: 'Preview (failed)',
+  stale: 'Preview (out of date)',
+  none: 'No preview',
+  not_permitted: 'No preview',
+};
+
+/** The preview the repository's pipeline published for this pull request. It is not run by the platform. */
+function PreviewLine({ id }: { id: string }) {
+  const [p, setP] = useState<PreviewDto | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const next = await getPreview(id);
+        if (stop) return;
+        setP(next);
+        setFailed(false);
+        // Keep looking while the pipeline may still publish one for the current commit.
+        if (next.state === 'building' || next.state === 'none' || next.state === 'stale')
+          timer = setTimeout(load, 20_000);
+      } catch {
+        if (!stop) setFailed(true);
+      }
+    };
+    void load();
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [id]);
+
+  if (failed && !p) {
+    return (
+      <div data-testid="preview">
+        <b>Preview</b>
+        Could not ask GitHub just now.
+      </div>
+    );
+  }
+  if (!p) return null;
+  return (
+    <div data-testid="preview" data-state={p.state}>
+      <b>{PREVIEW_WORDS[p.state]}</b>
+      {p.url && (
+        <>
+          <a href={p.url} target="_blank" rel="noreferrer noopener">
+            {p.label ?? 'Open the preview'}
+          </a>{' '}
+        </>
+      )}
+      <span className="muted">{p.detail}</span>
+    </div>
+  );
+}
 
 function Waiting({ i }: { i: InteractionDto }) {
   const n = i.blocks.length;
@@ -186,6 +248,7 @@ function Ask({
               </a>
             </div>
           )}
+          {c.prUrl && <PreviewLine id={i.id} />}
         </div>
       ) : (
         <div className="ctx">

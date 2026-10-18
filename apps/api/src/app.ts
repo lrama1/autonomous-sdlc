@@ -29,6 +29,7 @@ import { loadAttentionPolicy } from './attention-policy.js';
 import { registerAttentionRoutes } from './attention-routes.js';
 import { registerAutopilotRoutes } from './autopilot-routes.js';
 import { registerMapRoutes } from './map-routes.js';
+import { registerPreviewRoutes } from './preview-routes.js';
 import { applyReleaseDecision } from './releases.js';
 import { registerIntegrationRoutes, refreshAllDocs } from './integration-routes.js';
 import { applyIntegrationDecision, confirmedHosts, createDocFetcher } from './integrations.js';
@@ -173,6 +174,7 @@ export async function buildApp({
     await applyReleaseDecision(db, ghService, row);
   });
   registerMapRoutes(app, db, ghService, { approverRole: config.RELEASE_APPROVER_ROLE });
+  registerPreviewRoutes(app, db, ghService);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,

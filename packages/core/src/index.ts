@@ -7,3 +7,4 @@ export * from './metrics.js';
 export * from './autonomy.js';
 export * from './map.js';
 export * from './triggers.js';
+export * from './preview.js';

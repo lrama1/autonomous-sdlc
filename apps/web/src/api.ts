@@ -7,6 +7,7 @@ import {
   interactionSchema,
   interruptionMetricsSchema,
   meSchema,
+  previewSchema,
   readySchema,
   standingDecisionSchema,
 } from '@sdlc/schemas';
@@ -20,6 +21,7 @@ import type {
   InteractionDto,
   InterruptionMetricsDto,
   Me,
+  PreviewDto,
   Ready,
   StandingDecisionDto,
 } from '@sdlc/schemas';
@@ -98,6 +100,9 @@ export const didntNeedToAsk = (id: string): Promise<InteractionDto> =>
 
 export const getProfile = (): Promise<AttentionProfile> =>
   call('/api/attention/profile', attentionProfileSchema);
+
+export const getPreview = (id: string): Promise<PreviewDto> =>
+  call(`/api/interactions/${id}/preview`, previewSchema);
 
 export const getAssumptions = (): Promise<AssumptionDto[]> =>
   call('/api/assumptions', z.array(assumptionSchema));

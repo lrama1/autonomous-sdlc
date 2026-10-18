@@ -301,3 +301,15 @@ export const integrationSchema = z.object({
   ),
 });
 export type IntegrationDto = z.infer<typeof integrationSchema>;
+
+// A preview of a pull request, as the repository's pipeline reported it to GitHub (read-only for the platform).
+export const previewSchema = z.object({
+  state: z.enum(['ready', 'building', 'failed', 'stale', 'none', 'not_permitted']),
+  url: z.string().nullable(),
+  label: z.string().nullable(),
+  source: z.enum(['deployment', 'status']).nullable(),
+  sha: z.string().nullable(),
+  headSha: z.string(),
+  detail: z.string(),
+});
+export type PreviewDto = z.infer<typeof previewSchema>;

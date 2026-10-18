@@ -24,6 +24,8 @@ const PERMISSIONS: Record<AppKind, Record<string, 'read' | 'write'>> = {
     pull_requests: 'write',
     checks: 'read',
     statuses: 'read',
+    // Read-only, so the review pack can show a preview the repository's pipeline published (step 3, previews).
+    deployments: 'read',
     metadata: 'read',
   },
 };
