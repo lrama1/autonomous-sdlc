@@ -4,6 +4,7 @@ import { Assumptions } from './Assumptions';
 import { Autopilot } from './Autopilot';
 import { Bugs } from './Bugs';
 import { BudgetBanner, Costs } from './Costs';
+import { Portfolio } from './Portfolio';
 import { Integrations } from './Integrations';
 import { MapPage } from './MapPage';
 import { Interruptions } from './Interruptions';
@@ -25,6 +26,7 @@ type Route =
   | { page: 'integrations' }
   | { page: 'bugs' }
   | { page: 'costs' }
+  | { page: 'portfolio' }
   | { page: 'map'; initiativeId: string | null };
 
 function parseRoute(hash: string): Route {
@@ -36,6 +38,7 @@ function parseRoute(hash: string): Route {
   if (page === 'integrations') return { page: 'integrations' };
   if (page === 'bugs') return { page: 'bugs' };
   if (page === 'costs') return { page: 'costs' };
+  if (page === 'portfolio') return { page: 'portfolio' };
   if (page === 'map') return { page: 'map', initiativeId: id ?? null };
   return { page: 'home' };
 }
@@ -52,6 +55,7 @@ function useRoute(): Route {
 
 const NAV: Array<{ page: Route['page']; href: string; label: string }> = [
   { page: 'home', href: '#/', label: 'Home' },
+  { page: 'portfolio', href: '#/portfolio', label: 'Portfolio' },
   { page: 'map', href: '#/map', label: 'Map' },
   { page: 'queue', href: '#/queue', label: 'Attention queue' },
   { page: 'assumptions', href: '#/assumptions', label: 'Assumptions and decisions' },
@@ -117,6 +121,7 @@ export function App() {
       {state.phase === 'ready' && state.me && route.page === 'integrations' && <Integrations />}
       {state.phase === 'ready' && state.me && route.page === 'bugs' && <Bugs me={state.me} />}
       {state.phase === 'ready' && state.me && route.page === 'costs' && <Costs />}
+      {state.phase === 'ready' && state.me && route.page === 'portfolio' && <Portfolio />}
       {state.phase === 'ready' && state.me && route.page === 'map' && (
         <MapPage initiativeId={route.initiativeId} me={state.me} />
       )}

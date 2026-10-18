@@ -5,6 +5,7 @@ import {
   bugSchema,
   buildPlanSchema,
   costsSchema,
+  portfolioSchema,
   monthlyBudgetSchema,
   healthSchema,
   integrationSchema,
@@ -25,6 +26,7 @@ import type {
   BugDto,
   BuildPlanDto,
   CostsDto,
+  PortfolioDto,
   Health,
   IntegrationDto,
   InteractionDto,
@@ -267,5 +269,6 @@ export const getCosts = (days: number, initiativeId: string | null): Promise<Cos
     `/api/costs?days=${days}${initiativeId ? `&initiativeId=${initiativeId}` : ''}`,
     costsSchema,
   );
+export const getPortfolio = (): Promise<PortfolioDto> => call('/api/portfolio', portfolioSchema);
 export const getBudget = (): Promise<MonthlyBudgetDto> =>
   call('/api/costs/budget', monthlyBudgetSchema);

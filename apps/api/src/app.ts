@@ -35,6 +35,7 @@ import { registerBuildRoutes } from './build-routes.js';
 import { registerStageRoutes } from './stage-routes.js';
 import { registerBugRoutes } from './bug-routes.js';
 import { registerCostRoutes } from './cost-routes.js';
+import { registerPortfolioRoutes } from './portfolio.js';
 import { checkBudgetAlert } from './costs.js';
 import { stageTick } from './stages.js';
 import { applyReleaseDecision } from './releases.js';
@@ -190,6 +191,7 @@ export async function buildApp({
     alertPercent: config.BUDGET_ALERT_PERCENT,
   };
   registerCostRoutes(app, db, budget);
+  registerPortfolioRoutes(app, db);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,

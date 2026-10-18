@@ -461,3 +461,44 @@ export const costsSchema = z.object({
 });
 export type CostsDto = z.infer<typeof costsSchema>;
 export type MonthlyBudgetDto = z.infer<typeof monthlyBudgetSchema>;
+
+// Portfolio view (spec 10): every initiative at a glance, and the releases that went out.
+export const portfolioSchema = z.object({
+  initiatives: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      repository: z.string(),
+      autonomyMode: z.string(),
+      state: z.string(),
+      // The first stage that is not done. Null when every stage is done.
+      stage: z
+        .object({
+          id: z.string(),
+          title: z.string(),
+          status: z.enum(['not_started', 'working', 'waiting_human', 'blocked', 'done']),
+          waitingOn: z.array(z.string()),
+          detail: z.string(),
+        })
+        .nullable(),
+      spentUsd: z.number(),
+      budgetUsd: z.number().nullable(),
+      lastActivityAt: z.string(),
+      plan: z.object({ total: z.number(), merged: z.number(), failed: z.number() }).nullable(),
+      openBugs: z.number(),
+      openAsks: z.number(),
+      lastRelease: z.object({ version: z.string(), at: z.string() }).nullable(),
+    }),
+  ),
+  releases: z.array(
+    z.object({
+      initiativeId: z.string(),
+      initiativeTitle: z.string(),
+      version: z.string(),
+      tag: z.string(),
+      url: z.string().nullable(),
+      at: z.string(),
+    }),
+  ),
+});
+export type PortfolioDto = z.infer<typeof portfolioSchema>;

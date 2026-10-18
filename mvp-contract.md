@@ -451,6 +451,7 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /initiatives/:id/stages`, `POST /stages/:id/start` or `/skip` | The steps that start by themselves or wait for a click: spec, design, bug fix. The writes need a Product Owner, Architect or admin, or for a bug fix an engineer or admin |
 | `GET /bugs?initiativeId=`, `POST /initiatives/:id/bugs` | Bug reports and where each fix is. Anyone signed in can report |
 | `GET /costs?days=&initiativeId=`, `GET /costs/budget` | Spend by day, initiative, agent role and model, with the monthly budget meter. The budget call is for platform admins and returns the warning level |
+| `GET /portfolio` | Every initiative with its current stage, who it waits on, spend, last activity, plan progress, open bugs, and the releases that went out. Anyone signed in |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
 | `POST /slack/interactions` | **Slack only**, verified by Slack's request signature. Not under `/api` |
@@ -645,6 +646,14 @@ Decided with the owner: bugs come in through a form in the web app (not from Git
 - **Monthly budget.** `MONTHLY_BUDGET_USD` is one platform-wide figure for the calendar month (UTC); `0` means none. The page shows a meter. At `BUDGET_ALERT_PERCENT` (80) it turns to a warning, and at 100 to "exceeded".
 - **The alert is a warning only.** The worker records one `budget.alert` activity event per month and level, and platform admins see a banner on every page. It is not sent to Slack, and nothing is stopped. The per-initiative and per-run limits that do stop work are unchanged.
 - **Tested.** Four API tests (grouping, month boundary, the alert recorded once, the admin-only budget call) and a browser test with a one-dollar budget.
+
+**Portfolio view (2026-10-18). Built and tested (API, browser, looked at in the browser). Not run against a large number of initiatives.**
+
+- **The page** (nav "Portfolio"). Tiles for initiatives, those that need a person, total spend and open bugs. A table with one row per initiative: where it is (the first stage that is not done, with its status and the roles it waits on), build progress (merged of total, and failed), spend (and its budget), open bugs, time since the last activity, and the last release. Those that need a person come first, then the most recently active. Each title links to its map.
+- **A release list** under the table, newest month first, from the `release.published` activity events (version, date, initiative, a link to the notes). It is a list, not a calendar grid.
+- **One source for the stage.** The stage comes from the same code as the initiative's own map (`loadStages`), so the two cannot disagree.
+- **Limits.** The page reads every initiative and builds its map one at a time, so it is meant for the size of one team's work, not hundreds of initiatives. Cancelled and finished initiatives are still listed; there is no filter yet.
+- **Tested.** Three API tests (the row fields, ordering and open asks, sign-in required) and a browser test.
 
 **The pipeline: a goal becomes a spec, a design, a plan, and merged code (2026-10-18). Built and proven live (real agents, Docker sandbox, real GitHub).**
 

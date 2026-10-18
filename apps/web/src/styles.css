@@ -510,3 +510,12 @@ table.small td {
   padding: 0.25rem 0.5rem;
   border-bottom: 1px solid #eceff3;
 }
+
+ul.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+ul.plain li {
+  padding: 0.25rem 0;
+}

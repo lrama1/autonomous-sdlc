@@ -1,10 +1,10 @@
 import { desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { agentRun, buildPlan, buildTask, initiative, interaction, stageStart } from '@sdlc/db';
+import { initiative, interaction } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
-import { buildMap } from '@sdlc/core';
-import type { MapAsk, MapPlan, MapStageStart, Role } from '@sdlc/core';
+import type { Role } from '@sdlc/core';
 import { z } from 'zod';
+import { loadStages } from './map-data.js';
 import { requirePerson } from './people.js';
 import { prepareRelease } from './releases.js';
 import type { GitHubService } from './github-service.js';
@@ -23,51 +23,6 @@ export function registerMapRoutes(
     const [init] = await db.select().from(initiative).where(eq(initiative.id, id));
     if (!init)
       return reply.code(404).send({ error: { code: 'not_found', message: 'No such initiative.' } });
-    const runs = await db.select().from(agentRun).where(eq(agentRun.initiativeId, id));
-    const asks = await db
-      .select({ i: interaction, role: agentRun.agentRole })
-      .from(interaction)
-      .leftJoin(agentRun, eq(agentRun.id, interaction.runId))
-      .where(eq(interaction.initiativeId, id))
-      .orderBy(desc(interaction.createdAt));
-    const mapAsks: MapAsk[] = asks.map(({ i, role }) => {
-      const card = i.contextCard as { gate?: { state?: string }; release?: { state?: string } };
-      return {
-        id: i.id,
-        type: i.type,
-        checkpointId: i.checkpointId,
-        state: i.state,
-        title: i.title,
-        roleNeeded: i.roleNeeded,
-        hardStop: i.hardStop,
-        decision: (i.answer as { decision?: string | null } | null)?.decision ?? null,
-        runRole: role,
-        gate: card.gate?.state ?? null,
-        released: card.release?.state === 'released',
-      };
-    });
-    const [planRow] = await db
-      .select()
-      .from(buildPlan)
-      .where(eq(buildPlan.initiativeId, id))
-      .orderBy(desc(buildPlan.createdAt))
-      .limit(1);
-    const starts = await db
-      .select({ stage: stageStart.stage, state: stageStart.state })
-      .from(stageStart)
-      .where(eq(stageStart.initiativeId, id));
-    // Bug fixes are not part of the spec and design stage.
-    const specAndDesign = starts.filter((s) => s.stage === 'spec' || s.stage === 'design');
-    let plan: MapPlan | undefined;
-    if (planRow) {
-      const tasks = await db.select().from(buildTask).where(eq(buildTask.planId, planRow.id));
-      plan = {
-        state: planRow.state as MapPlan['state'],
-        total: tasks.length,
-        merged: tasks.filter((t) => t.state === 'merged' || t.state === 'skipped').length,
-        failed: tasks.filter((t) => t.state === 'failed').length,
-      };
-    }
     return {
       initiative: {
         id: init.id,
@@ -75,12 +30,7 @@ export function registerMapRoutes(
         goal: init.goal,
         autonomyMode: init.autonomyMode,
       },
-      stages: buildMap({
-        runs: runs.map((r) => ({ id: r.id, agentRole: r.agentRole, state: r.state })),
-        asks: mapAsks,
-        plan,
-        starts: specAndDesign as MapStageStart[],
-      }),
+      stages: (await loadStages(db, init)).stages,
     };
   });
 

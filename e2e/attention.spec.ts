@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import {
   assumption,
   buildPlan,
+  activityEvent,
   costRecord,
   buildTask,
   createDb,
@@ -331,6 +332,29 @@ test('the cost page shows where the money went, and an admin is warned near the 
     page.getByTestId('by-initiative').getByRole('link', { name: init!.title }),
   ).toBeVisible();
   await expect(page.getByTestId('by-day').locator('.bar')).toHaveCount(1);
+});
+
+test('the portfolio lists every initiative and the releases that went out', async ({ page }) => {
+  const f = await createRunFixture(db);
+  const [init] = await db.select().from(initiative).where(eq(initiative.id, f.initiativeId));
+  await db.insert(activityEvent).values({
+    actorType: 'system',
+    initiativeId: f.initiativeId,
+    action: 'release.published',
+    detail: { version: '9.9.9', tag: 'v9.9.9', url: 'https://example.test/release' },
+  });
+
+  await signInAs(page, /Dev Admin/);
+  await page.getByTestId('nav-portfolio').click();
+  const row = page.getByTestId(`row-${f.initiativeId}`);
+  await expect(row).toContainText(init!.title);
+  await expect(row).toContainText('9.9.9');
+  await expect(page.getByTestId('releases')).toContainText('9.9.9');
+  await expect(
+    page.getByTestId('releases').getByRole('link', { name: 'release notes' }).first(),
+  ).toHaveAttribute('href', /example\.test\/release/);
+  await row.getByRole('link', { name: init!.title }).click();
+  await expect(page).toHaveURL(new RegExp(`#/map/${f.initiativeId}`));
 });
 
 test('assumptions are accepted or rejected, and a rejection asks the sponsor what to redo', async ({
