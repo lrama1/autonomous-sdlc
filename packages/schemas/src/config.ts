@@ -37,6 +37,11 @@ export const apiConfigSchema = z.object({
   // How often the saved copies of integration documentation are fetched again, in hours. 0 turns it off.
   INTEGRATION_DOCS_INTERVAL_H: z.coerce.number().min(0).default(24),
   ATTENTION_TICK_MS: z.coerce.number().int().positive().default(2000),
+  // The build plan (mvp-contract section 16): how often it looks, and how many runs one initiative may have at once.
+  BUILD_TICK_MS: z.coerce.number().int().positive().default(3000),
+  BUILD_MAX_ACTIVE: z.coerce.number().int().positive().default(4),
+  // A design approved longer ago than this waits for a person to start its build, in every mode.
+  BUILD_AUTOSTART_MIN: z.coerce.number().int().positive().default(120),
   // Slack. Both are needed to answer from chat. Only the bot token is needed to send.
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
   SLACK_SIGNING_SECRET: z.string().min(1).optional(),

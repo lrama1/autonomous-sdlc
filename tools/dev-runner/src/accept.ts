@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -1067,6 +1067,243 @@ try {
     );
     const cost = await db.query('select cost_micros from agent_run where id = $1', [run.id]);
     say(`the design run cost $${(Number(cost.rows[0].cost_micros) / 1e6).toFixed(4)}`);
+  }
+
+  // ---------------- Build: an approved design becomes a plan, and its tasks run in order ----------------
+  if (phase === 'build') {
+    say(
+      '--- build: approving a design starts its tasks in dependency order, with nobody clicking ---',
+    );
+    const cara = await signInAs(stack.publicUrl, 'dev-cara'); // Architect
+    const specs: any[] = await gh(`/repos/${REPO}/contents/docs/spec`);
+    const specFile: string = specs
+      .map((s) => s.name as string)
+      .sort()
+      .at(-1)!;
+    const path = `ver-${stamp}`;
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Build ${stamp}`,
+      goal: `Build /${path}.`,
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+    });
+    const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+      role: 'architect',
+      budgetUsd: 1.5,
+      task:
+        `Design the approved spec docs/spec/${specFile}, but use the path /${path} in place of /version everywhere. ` +
+        `Write the design to docs/design/${path}.md following your instructions. ` +
+        `Make the task list exactly two tasks, both backend_engineer. T1 adds the route to src/server.js with its test in test/server.test.js. ` +
+        `T2 depends on T1 and only adds a short section to README.md that documents the route. ` +
+        `Do not ask any questions. Commit it and do not change any other file.`,
+    });
+    const g1 = await waitFor(
+      'the design review',
+      () => openFor(cara, designRun.id, ['review']),
+      600_000,
+    );
+    await call(cara, 'POST', `/api/interactions/${g1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Build it.',
+    });
+    say(
+      'the Architect approved the design; waiting for the Gate to merge it and the plan to appear',
+    );
+
+    const getPlan = async () =>
+      (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan as any;
+    const plan0 = await waitFor(
+      'the build plan',
+      async () => (await getPlan()) ?? null,
+      420_000,
+      3000,
+    );
+    check(
+      plan0.tasks.length === 2 && plan0.tasks[1].dependsOn.includes('T1'),
+      `B  the merged design became a plan with ${plan0.tasks.length} tasks: ${plan0.tasks.map((t: any) => `${t.key}${t.dependsOn.length ? ' after ' + t.dependsOn.join(',') : ''}`).join('; ')}`,
+    );
+    check(
+      plan0.state === 'active',
+      `B  the plan is active in a balanced initiative, with no one clicking (${plan0.state})`,
+    );
+
+    // Answer anything an engineer agent asks, with its own recommendation, so the build can go on.
+    const answerQuestions = async () => {
+      const queue: any[] = await call(bob, 'GET', '/api/interactions');
+      for (const q of queue) {
+        if (q.initiativeId !== init.id || !['question', 'decision'].includes(q.type)) continue;
+        const options = Array.isArray(q.options) ? q.options : [];
+        const choice = q.recommendation ?? options[0]?.id;
+        if (!choice) continue;
+        say(`answering the agent's question "${q.title}" with "${choice}"`);
+        await call(bob, 'POST', `/api/interactions/${q.id}/answer`, { answer: choice }).catch(
+          () => {},
+        );
+      }
+    };
+
+    const t1 = await waitFor(
+      'T1 starts',
+      async () => {
+        const p = await getPlan();
+        return p.tasks[0].runId ? p.tasks[0] : null;
+      },
+      120_000,
+      2000,
+    );
+    const afterStart = await getPlan();
+    check(
+      afterStart.tasks[1].state === 'waiting' && afterStart.tasks[1].runId === null,
+      'B  T2 waits while T1 is not merged',
+    );
+    const r1 = await waitFor(
+      'the T1 review',
+      async () => {
+        await answerQuestions();
+        return openFor(bob, t1.runId, ['review']);
+      },
+      600_000,
+      4000,
+    );
+    check(
+      r1.title.includes('T1:') || r1.title.includes('Add'),
+      `B  T1's pull request is titled from the task: "${r1.title}"`,
+    );
+    const midway = await getPlan();
+    check(
+      midway.tasks[0].state === 'review' && midway.tasks[1].state === 'waiting',
+      `B  while T1 is in review, T2 still waits (${midway.tasks.map((t: any) => t.key + ':' + t.state).join(' ')})`,
+    );
+    await call(bob, 'POST', `/api/interactions/${r1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Good.',
+    });
+
+    const t2 = await waitFor(
+      'T2 starts after T1 merges',
+      async () => {
+        const p = await getPlan();
+        return p.tasks[1].runId ? p : null;
+      },
+      420_000,
+      3000,
+    );
+    check(
+      t2.tasks[0].state === 'merged',
+      `B  T2 started only after T1 was merged by the Gate (${t2.tasks[0].state})`,
+    );
+    const done = await waitFor(
+      'the plan is done',
+      async () => {
+        await answerQuestions();
+        const p = await getPlan();
+        if (p.tasks.some((t: any) => t.state === 'failed'))
+          throw new Error(
+            `a task failed: ${JSON.stringify(p.tasks.map((t: any) => [t.key, t.state, t.detail]))}`,
+          );
+        return p.state === 'done' ? p : null;
+      },
+      600_000,
+      4000,
+    );
+    check(
+      done.tasks.every((t: any) => t.state === 'merged'),
+      `B  every task is merged and the plan is done (${done.tasks.map((t: any) => t.key + ':' + t.state).join(' ')})`,
+    );
+    const runs = await db.query(
+      "select r.sponsor_person_id, p.display_name from agent_run r join person p on p.id = r.sponsor_person_id where r.initiative_id = $1 and r.agent_role = 'backend_engineer'",
+      [init.id],
+    );
+    check(
+      runs.rows.length === 2 && runs.rows.every((r: any) => /Okafor/.test(r.display_name)),
+      `B  both build runs are sponsored by the person who approved the design (${runs.rows.map((r: any) => r.display_name).join(', ')})`,
+    );
+    const m: any = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    const build = m.stages.find((s: any) => s.id === 'build');
+    check(build.status === 'done', `B  the map shows build and review done: "${build.detail}"`);
+    const served = await gh(`/repos/${REPO}/contents/src/server.js`);
+    check(
+      Buffer.from(served.content, 'base64').toString('utf8').includes(`/${path}`),
+      `B  main now serves /${path}`,
+    );
+    const total = await db.query(
+      'select coalesce(sum(cost_micros),0) c from agent_run where initiative_id = $1',
+      [init.id],
+    );
+    say(
+      `the whole chain (design and two builds) cost $${(Number(total.rows[0].c) / 1e6).toFixed(4)}`,
+    );
+  }
+
+  // ---------------- Catch-up: two pull requests at once, so one is behind when its turn to merge comes ----------------
+  if (phase === 'catchup') {
+    say(
+      '--- catchup: the second of two pull requests is behind main, and the Gate brings it up to date ---',
+    );
+    const docTask = (file: string, text: string) =>
+      `Create the file ${file} containing exactly the single line "${text}" and commit it. Do not change anything else and do not ask any questions.`;
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Catch-up ${stamp}`,
+      goal: 'Two changes at once.',
+      repositoryId: repo.id,
+      autonomyMode: 'guided',
+    });
+    const files = [`docs/catch-a-${stamp}.md`, `docs/catch-b-${stamp}.md`];
+    const runs = await Promise.all(
+      files.map((f, i) =>
+        call(alice, 'POST', `/api/initiatives/${init.id}/runs`, {
+          task: docTask(f, `catch ${i} ${stamp}`),
+          budgetUsd: 1,
+        }),
+      ),
+    );
+    const reviews = await Promise.all(
+      runs.map((r) =>
+        waitFor(`the review of ${r.id}`, () => openFor(bob, r.id, ['review']), 420_000),
+      ),
+    );
+    for (const r of reviews)
+      await call(bob, 'POST', `/api/interactions/${r.id}/answer`, {
+        decision: 'approved',
+        answer: 'Fine.',
+      });
+    say('both approved at once; waiting for the Gate');
+    const gates = await waitFor(
+      'both are merged',
+      async () => {
+        const rows = await Promise.all(
+          reviews.map((r) =>
+            db.query("select context_card -> 'gate' as gate from interaction where id = $1", [
+              r.id,
+            ]),
+          ),
+        );
+        const g = rows.map((x) => x.rows[0]?.gate);
+        const bad = g.find((x) => x && !['waiting_ci', 'merged'].includes(x.state));
+        if (bad) throw new Error(`gate ended as ${bad.state}: ${bad.detail}`);
+        return g.every((x) => x?.state === 'merged') ? g : null;
+      },
+      600_000,
+      4000,
+    );
+    check(
+      gates.every((g: any) => g.mergedSha),
+      'U  both pull requests were merged by the Gate',
+    );
+    const caught = await db.query(
+      "select count(*)::int n from activity_event where action = 'gate.caught_up' and interaction_id = any($1)",
+      [reviews.map((r) => r.id)],
+    );
+    check(
+      caught.rows[0].n >= 1,
+      `U  the Gate brought a branch up to date with main (${caught.rows[0].n} time${caught.rows[0].n === 1 ? '' : 's'}) instead of failing`,
+    );
+    for (const f of files) {
+      const r = await fetch(`https://api.github.com/repos/${REPO}/contents/${f}`, {
+        headers: { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' },
+      });
+      check(r.status === 200, `U  main has ${f}`);
+    }
   }
 
   // ---------------- Preview: the review pack shows what the repository's pipeline reported ----------------

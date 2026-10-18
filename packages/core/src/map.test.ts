@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMap } from './map.js';
-import type { MapAsk, MapRun } from './map.js';
+import type { MapAsk, MapPlan, MapRun } from './map.js';
 
 let n = 0;
 const run = (agentRole: string, state: string): MapRun => ({ id: `r${++n}`, agentRole, state });
@@ -175,5 +175,51 @@ describe('the SDLC map', () => {
       );
       expect(s.status).toBe('blocked');
     });
+  });
+});
+
+describe('the build stage with a build plan', () => {
+  const plan = (o: Partial<MapPlan> = {}): MapPlan => ({
+    state: 'active',
+    total: 3,
+    merged: 1,
+    failed: 0,
+    ...o,
+  });
+  const build = (p: MapPlan | undefined, runs: MapRun[] = [], asks: MapAsk[] = []) =>
+    buildMap({ runs, asks, plan: p }).find((s) => s.id === 'build')!;
+
+  it('waits for a person to start an approved plan', () => {
+    const s = build(plan({ state: 'awaiting_start', merged: 0 }));
+    expect(s.status).toBe('waiting_human');
+    expect(s.waitingOn).toEqual(['product_owner', 'architect']);
+    expect(s.detail).toContain('3 tasks');
+  });
+
+  it('is blocked when the plan is invalid, or a task failed', () => {
+    expect(build(plan({ state: 'invalid' })).status).toBe('blocked');
+    const s = build(plan({ failed: 2 }), [run('backend_engineer', 'running')]);
+    expect(s.status).toBe('blocked');
+    expect(s.detail).toContain('2 build tasks failed');
+  });
+
+  it('is working while tasks wait for others, and says how far it got', () => {
+    const s = build(plan());
+    expect(s.status).toBe('working');
+    expect(s.detail).toContain('1 of 3 build tasks merged');
+  });
+
+  it('is done when the plan is done, and ignores a cancelled plan', () => {
+    expect(build(plan({ state: 'done', merged: 3 })).status).toBe('done');
+    expect(build(plan({ state: 'cancelled' })).status).toBe('not_started');
+  });
+
+  it('still shows an open review first', () => {
+    const s = build(
+      plan(),
+      [],
+      [ask({ type: 'review', checkpointId: 'G3', runRole: 'backend_engineer' })],
+    );
+    expect(s.status).toBe('waiting_human');
   });
 });

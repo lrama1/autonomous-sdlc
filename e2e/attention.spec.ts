@@ -4,6 +4,8 @@ import type { Page } from '@playwright/test';
 import { eq } from 'drizzle-orm';
 import {
   assumption,
+  buildPlan,
+  buildTask,
   createDb,
   createRunFixture,
   initiative,
@@ -166,6 +168,74 @@ test('a review shows the preview the repository reported, and warns when it is o
   await page.reload();
   await page.getByTestId('nav-queue').click();
   await expect(card(page, title).getByTestId('preview')).toHaveAttribute('data-state', 'ready');
+});
+
+test('an approved design waits for a person to start the build, then its first task starts', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [design] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G1',
+      state: 'answered',
+      title: `Review PR #88: design ${randomUUID().slice(0, 6)}`,
+      roleNeeded: 'architect',
+      contextCard: { kind: 'pull_request', prNumber: 88 },
+    })
+    .returning();
+  const [plan] = await db
+    .insert(buildPlan)
+    .values({
+      initiativeId: f.initiativeId,
+      designInteractionId: design!.id,
+      designPath: 'docs/design/thing.md',
+      designSha: 'abc123',
+      state: 'awaiting_start',
+      detail: 'The design is approved. A person starts the build.',
+      startedBy: f.personId,
+    })
+    .returning();
+  await db.insert(buildTask).values([
+    {
+      planId: plan!.id,
+      key: 'T1',
+      position: 0,
+      title: 'Add the route',
+      role: 'backend_engineer',
+      stories: ['US-1'],
+      paths: ['src/server.js'],
+      doneWhen: ['it answers'],
+    },
+    {
+      planId: plan!.id,
+      key: 'T2',
+      position: 1,
+      title: 'Document it',
+      role: 'backend_engineer',
+      dependsOn: ['T1'],
+      paths: ['README.md'],
+      doneWhen: ['it is written'],
+    },
+  ]);
+
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  const panel = page.getByTestId('build-plan');
+  await expect(panel).toHaveAttribute('data-state', 'awaiting_start');
+  await expect(page.getByTestId('stage-build')).toHaveAttribute('data-status', 'waiting_human');
+  await expect(panel.getByTestId('task-T2')).toContainText('after T1');
+  await panel.getByRole('button', { name: 'Start the build' }).click();
+  await expect(page.getByTestId('note')).toContainText('The build has started');
+  // The build worker queues the first task. The second waits for it to merge.
+  await expect(panel.getByTestId('task-T1')).toHaveAttribute('data-state', 'running', {
+    timeout: 20_000,
+  });
+  await expect(panel.getByTestId('task-T2')).toHaveAttribute('data-state', 'waiting');
 });
 
 test('assumptions are accepted or rejected, and a rejection asks the sponsor what to redo', async ({

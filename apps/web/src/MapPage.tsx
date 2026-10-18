@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Me } from '@sdlc/schemas';
+import type { BuildPlanDto, Me } from '@sdlc/schemas';
 import {
   ApiProblem,
+  cancelBuildPlan,
   createInitiative,
+  getBuildPlan,
   getInitiatives,
   getMap,
   getReleases,
   getRepositories,
   prepareRelease,
+  retryBuildTask,
+  skipBuildTask,
+  startBuildPlan,
   startRun,
 } from './api';
 import type { InitiativeMap, Stage } from './api';
@@ -26,6 +31,104 @@ const RUN_ROLES: Array<{ id: string; label: string }> = [
   { id: 'architect', label: 'Architect agent: design it and list the tasks (checkpoint G1)' },
   { id: 'backend_engineer', label: 'Backend Engineer agent: build and open a PR' },
 ];
+
+const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; cls: string }> = {
+  waiting: { label: 'Waiting', cls: 'none' },
+  running: { label: 'Running', cls: 'wait' },
+  review: { label: 'In review', cls: 'wait' },
+  merged: { label: 'Merged', cls: 'done' },
+  failed: { label: 'Failed', cls: 'stop' },
+  skipped: { label: 'Skipped', cls: 'none' },
+  cancelled: { label: 'Cancelled', cls: 'none' },
+};
+
+/** The approved design's tasks, and where each one is. People start it, retry, skip, or cancel here. */
+function BuildPlan({
+  plan,
+  mayControl,
+  act,
+}: {
+  plan: BuildPlanDto;
+  mayControl: boolean;
+  act: (fn: () => Promise<unknown>, done: string) => Promise<void>;
+}) {
+  const live = plan.state === 'active' || plan.state === 'awaiting_start';
+  return (
+    <div className="card" data-testid="build-plan" data-state={plan.state}>
+      <h3>Build plan</h3>
+      <p className="small muted">
+        From <code>{plan.designPath}</code>. {plan.detail}
+      </p>
+      {plan.errors.length > 0 && (
+        <ul className="small" data-testid="plan-errors">
+          {plan.errors.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      )}
+      <ul className="checks small">
+        {plan.tasks.map((t) => (
+          <li key={t.key} data-testid={`task-${t.key}`} data-state={t.state}>
+            <b>{t.key}</b> {t.title}{' '}
+            <span className={`pill ${TASK_STATE[t.state].cls}`}>{TASK_STATE[t.state].label}</span>
+            {t.dependsOn.length > 0 && (
+              <span className="muted"> after {t.dependsOn.join(', ')}</span>
+            )}
+            {t.prNumber !== null && <span className="muted"> ? PR #{t.prNumber}</span>}
+            {t.attempt > 1 && <span className="muted"> ? attempt {t.attempt}</span>}
+            {t.detail && <div className="muted">{t.detail}</div>}
+            {t.stuckBehind.length > 0 && (
+              <div className="muted">Stuck behind {t.stuckBehind.join(', ')}.</div>
+            )}
+            {mayControl && live && (t.state === 'failed' || t.state === 'waiting') && (
+              <div className="row wrap">
+                {t.state === 'failed' && (
+                  <button
+                    onClick={() =>
+                      void act(() => retryBuildTask(plan.id, t.key), `${t.key} will run again.`)
+                    }
+                  >
+                    Retry
+                  </button>
+                )}
+                <button
+                  onClick={() =>
+                    void act(
+                      () => skipBuildTask(plan.id, t.key),
+                      `${t.key} is skipped. What waits for it can start.`,
+                    )
+                  }
+                >
+                  Skip
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {mayControl && plan.state === 'awaiting_start' && (
+        <button
+          className="primary"
+          onClick={() =>
+            void act(
+              () => startBuildPlan(plan.id),
+              'The build has started. Tasks start as their dependencies merge.',
+            )
+          }
+        >
+          Start the build
+        </button>
+      )}{' '}
+      {mayControl && live && (
+        <button
+          onClick={() => void act(() => cancelBuildPlan(plan.id), 'The build plan is cancelled.')}
+        >
+          Cancel the plan
+        </button>
+      )}
+    </div>
+  );
+}
 
 function StageBox({ s, initiativeId }: { s: Stage; initiativeId: string }) {
   const st = STATUS[s.status];
@@ -153,6 +256,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const [role, setRole] = useState(RUN_ROLES[0]!.id);
   const [task, setTask] = useState('');
   const [version, setVersion] = useState('0.1.0');
+  const [plan, setPlan] = useState<BuildPlanDto | null>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -165,9 +269,14 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const loadMap = useCallback(async () => {
     if (!initiativeId) return setMap(null);
     try {
-      const [m, r] = await Promise.all([getMap(initiativeId), getReleases(initiativeId)]);
+      const [m, r, p] = await Promise.all([
+        getMap(initiativeId),
+        getReleases(initiativeId),
+        getBuildPlan(initiativeId),
+      ]);
       setMap(m);
       setReleases(r);
+      setPlan(p);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -194,6 +303,9 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
       setError(e instanceof ApiProblem ? e.message : String(e));
     }
   };
+  const mayControlBuild = me.roles.some((r) =>
+    ['product_owner', 'architect', 'platform_admin'].includes(r),
+  );
   const mayRelease = me.roles.some((r) =>
     ['product_owner', 'devops_release', 'platform_admin'].includes(r),
   );
@@ -285,6 +397,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
               </form>
             </div>
             <div className="stack">
+              {plan && <BuildPlan plan={plan} mayControl={mayControlBuild} act={act} />}
               <div className="card" data-testid="releases">
                 <h3>Releases</h3>
                 {releases.length === 0 && <p className="small muted">None yet.</p>}

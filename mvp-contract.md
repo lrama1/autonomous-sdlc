@@ -446,6 +446,8 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /integrations`, `POST`, `PATCH /integrations/:id`, `POST .../retire`, `POST .../refresh-docs`, `GET .../docs` | The Integration Register. Writes need an Architect, Engineer or admin |
 | `GET /initiatives/:id/map` | Stages with status and who each waits on |
 | `GET /initiatives/:id/releases`, `POST` `{ version }` | List releases. Prepare one (Product Owner, DevOps, admin) |
+| `GET /interactions/:id/preview` | What the repository's pipeline reported as a preview of a pull request under review |
+| `GET /initiatives/:id/plan`, `POST /plans/:id/start`, `POST /plans/:id/cancel`, `POST /plans/:id/tasks/:key/retry` or `/skip` | The build plan of an approved design. The writes need a Product Owner, Architect or admin |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
 | `POST /slack/interactions` | **Slack only**, verified by Slack's request signature. Not under `/api` |
@@ -478,6 +480,7 @@ One `config` module reads environment variables and validates them with `zod` at
 | `INTEGRATION_DOCS_INTERVAL_H` | `24` | How often saved integration documentation is fetched again. 0 turns it off |
 | `ATTENTION_FILE` | `rules/attention.yaml` | How people are reached (§5): reminder and escalation timing, working hours, the digest, what chat may settle |
 | `ATTENTION_TICK_MS` | `2000` | How often the engine hands out, reminds, escalates, applies defaults and delivers |
+| `BUILD_TICK_MS`, `BUILD_MAX_ACTIVE`, `BUILD_AUTOSTART_MIN` | `3000`, `4`, `120` | How often the build plan looks, how many runs one initiative may have going at once, and how long after its approval a design may still start building on its own |
 | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | | The token sends. The secret is needed to accept answers. Without the token the notifier only logs. `SLACK_API_URL` is for tests |
 | `GITHUB_APP_AGENT_REF`, `GITHUB_APP_GATE_REF` | | |
 
@@ -562,7 +565,7 @@ Not proven, or not built:
 
 Not built, or only partly:
 - **A platform-run preview** (the repository's pipeline provides previews today, see "Previews" below). **Stories as records**: they live inside the spec document.
-- **Nothing starts the next stage for you.** The map shows where work is. A person starts the spec run, the engineer runs, and the release.
+- **Only the build stage starts on its own** (see "The build plan" below). A person still starts the spec run, the design run, and the release.
 - The map is boxes and arrows, not xyflow, and there is no portfolio view, release calendar or freeze, hotfix path, or scope-change re-opening.
 - A new external host in a code diff is not detected (agents are told to propose it, and the sandbox cannot reach it anyway). A `none` test strategy is shown as a warning, not enforced as a trigger. Credentials from the register are not put into sandboxes.
 - The egress proxy is shared, so the allowlist is the union across initiatives, and a change restarts it (tunnels in other running sandboxes drop).
@@ -609,12 +612,32 @@ Not built, or only partly:
 - **A design that does not read is sent back.** Before verification, the runner checks the task list in every `docs/design/*.md` the branch changes (`apps/runner/src/design-check.ts`). If it is missing or invalid, the engine gets the errors in the same session and tries again, using the same attempts as verification; after the last one the run blocks and a person is asked. The run records a `design.checked` event. This came from the first live run: the agent wrote a `done_when` line with braces and a colon without quotes, which is not valid YAML. The prompt's own example had the same fault. Both are fixed, and a test keeps the prompt's example valid.
 - **Proven live** (`node --import tsx src/accept.ts design docker`, on the spec the Product agent wrote earlier in `sdlc-scratch`): the pull request is checkpoint G1 for the Architect and was not auto-approved in an autopilot initiative; it changes only the design file; an engineer cannot decide it; all ten sections are present; the task list validates and every story in the spec is served by a task; the map shows the stage waiting on the Architect; after the Architect approved it, the Gate merged it. The run cost about $0.08 to $0.13.
 - **Not proven or not built.**
-  - **Nothing consumes the task list yet.** Starting engineer runs from it, in dependency order, is the "start the next stage" work and is not built. So far it is only validated.
+  - **The task list is consumed by the build plan** (next section).
   - The spec used was a one-endpoint spec, so the design had one task. A larger spec, and how well the agent splits and orders work, were not tested.
   - Whether a design is good was not measured. A person reads it at G1, which is the point of the checkpoint.
   - It was run with Claude Code only. The map does not tell a spec that was approved from one that was never drafted: a design can be started before any spec is merged. The prompt tells the agent to ask in that case, but I did not test it.
   - The runner checks the shape of the list, not that the files in `paths` exist or that the stories exist in the spec.
   - The design from the live check was merged into `sdlc-scratch` (`docs/design/`).
+
+**The build plan: an approved design starts its own tasks (2026-10-18). Built and proven live (real agents, Docker sandbox, real GitHub).**
+
+Decided with the owner: in guided mode a person clicks "Start the build"; in balanced and autopilot it starts by itself. Up to 4 runs per initiative at once. A failed task waits and a person chooses retry, skip, or cancel the plan.
+
+- **A plan appears when a design is merged.** A worker (`apps/api/src/build.ts`, every `BUILD_TICK_MS`) finds each architect G1 review that the Gate merged and has no plan, reads the design file at the commit the Gate merged (so it is the one a person approved), and validates its `sdlc-tasks` list. The plan is `invalid`, with the reasons shown, if the file or list is missing or wrong, or if a task's role has no agent (only `backend_engineer` has one today). Otherwise it is `active` (balanced, autopilot) or `awaiting_start` (guided). A design approved more than `BUILD_AUTOSTART_MIN` minutes ago also waits for a person, whatever the mode, so turning the feature on does not start old designs. Tables `build_plan` and `build_task` (migration 0008).
+- **Order.** A task starts only when everything it depends on has been **merged by the Gate** (or skipped), so it builds on real code. A task in review does not count against the limit of running tasks. Each run is an ordinary Backend Engineer run with the agent's own budget, and nothing starts if the initiative's budget would be exceeded. The first line of the task is `T1: <title>`, so the pull request takes that title (this also fixes the long titles noted earlier for these runs). The prompt names the design to read, the files, the `done_when` lines, what was merged before, and the tasks other runs build.
+- **Who sponsors the runs.** The person who approved the design (or who clicked start). The independent-review rule then stops that person from approving the resulting pull requests; other engineers do.
+- **Task states** are `waiting`, `running`, `review`, `merged`, `failed`, `skipped`, `cancelled`, kept up to date from the run and its review. A task fails if its run fails, finishes without a pull request, the reviewer asks for changes or rejects it, or the Gate stops the merge. Tasks behind a failed one keep waiting and the Map page says which. A person (Product Owner, Architect, admin) can retry (a new run), skip (what waits for it can start), or cancel the plan (unfinished tasks are cancelled, and so are runs still going).
+- **The map.** The build stage waits on a person when a plan awaits its start, shows blocked for an invalid plan or a failed task, and shows how many tasks are merged. The Map page has a Build plan panel with the buttons.
+- **A fix the plan needed: the Gate catches a branch up.** The first live run stopped because main moved while the design's pull request waited (repository protection requires branches to be up to date), and the Gate failed on the refused merge. With parallel tasks that happens all the time. Now, when the merge is refused and the pull request is behind, the Gate has GitHub merge the base branch into the pull request's branch, checks that the only new commit is that merge (a commit with the reviewed commit and the base as parents; anything else is "commits pushed after the review", as before), waits for the check on the new commit, approves again, and merges. It gives up after 5 catch-ups. A conflict makes the review `failed`, with the reason. Proven live with two pull requests approved at once (`accept.ts catchup docker`): the second was brought up to date and both merged.
+- **Proven live** (`accept.ts build docker`, balanced initiative, the design had two tasks, T2 after T1): approving the design made a plan with two tasks and started T1 with nobody clicking; T2 waited while T1 was in review; after the Gate merged T1, T2 started; T2 (a README change) merged by rule; the plan was done; the map showed build done; main served the new route; both runs were sponsored by the Architect who approved; the design and both builds cost about $0.25. API tests cover plan creation (once per design, none for an unmerged one, guided, old, invalid, unstaffed), ordering, the limit, the budget, each way a task fails, retry, skip, cancel, and the routes and their roles. A browser test covers the panel and the start button.
+- **Not proven or not built.**
+  - Only two-task and one-task plans were run live, and the tasks were small. The limit of 4 and tasks running in parallel were tested against the database, not live (the catch-up test shows two parallel pull requests, not two parallel runs from one plan).
+  - Guided start was tested in the API and the browser, not live.
+  - Only the Backend Engineer has an agent, so a design with frontend tasks is `invalid`. No frontend agent exists.
+  - The plan does not check that a finished task did what its `done_when` said; the pull request review and the repository's checks do that.
+  - A task that fails needs a person. Nothing diagnoses it or reworks the design. A change to the design after approval means a new design run and a new plan; the old plan is not updated or cancelled for you.
+  - One worker process does this. Two API processes would race on starting tasks (a task could start twice).
+  - The build plan does not start the design, spec, or release steps. A person still starts them.
 
 **Previews (2026-10-18): the review pack shows the preview the repository's pipeline reported. Built and proven live against GitHub for commit statuses; Deployments are proven against a fake GitHub only.**
 

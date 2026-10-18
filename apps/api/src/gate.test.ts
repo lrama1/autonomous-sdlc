@@ -42,6 +42,11 @@ interface World {
   pr: { state: string; merged: boolean; sha: string };
   ci: string | null; // check conclusion, 'in_progress' for running, null for no such check
   mergeStatus: number;
+  /** The base branch moved: merging answers 405 until the Gate updates the branch. */
+  behind: boolean;
+  /** What updating the branch does: a plain merge commit, a commit that is not one, GitHub refusing, or moving again. */
+  update: 'merge' | 'other' | 'refuse' | 'again';
+  updates: number;
   calls: Array<{ method: string; url: string; body: any }>;
 }
 let world: World;
@@ -50,6 +55,9 @@ const reset = (): World =>
     pr: { state: 'open', merged: false, sha: 'sha-reviewed' },
     ci: 'success',
     mergeStatus: 200,
+    behind: false,
+    update: 'merge',
+    updates: 0,
     calls: [],
   });
 
@@ -148,6 +156,7 @@ beforeAll(async () => {
         number: 7,
         state: world.pr.state,
         merged: world.pr.merged,
+        mergeable_state: world.behind ? 'behind' : 'clean',
         head: { sha: world.pr.sha, ref: 'agent/x' },
         base: { ref: 'main' },
       });
@@ -166,6 +175,22 @@ beforeAll(async () => {
       });
     }
     if (req.method === 'POST' && url.endsWith('/reviews')) return json(200, { id: 1 });
+    if (req.method === 'PUT' && url.endsWith('/update-branch')) {
+      if (world.update === 'refuse') return json(422, { message: 'merge conflict' });
+      world.updates++;
+      world.pr.sha = `sha-updated-${world.updates}`;
+      world.behind = world.update === 'again';
+      return json(202, { message: 'Updating pull request branch.' });
+    }
+    if (req.method === 'GET' && /\/commits\/sha-updated-\d+$/.test(url)) {
+      const parent = world.updates > 1 ? `sha-updated-${world.updates - 1}` : 'sha-reviewed';
+      return json(200, {
+        parents:
+          world.update === 'other' ? [{ sha: parent }] : [{ sha: parent }, { sha: 'main-tip' }],
+      });
+    }
+    if (req.method === 'PUT' && url.endsWith('/merge') && world.behind)
+      return json(405, { message: 'Head branch is not up to date with the base branch' });
     if (req.method === 'PUT' && url.endsWith('/merge'))
       return world.mergeStatus === 200
         ? json(200, { sha: 'merge-sha-1', merged: true })
@@ -200,7 +225,7 @@ afterAll(async () => {
 beforeEach(() => reset());
 
 const gate = (o: { waitForCiMs?: number } = {}) =>
-  createGate({ db, github: service, log: () => {}, ...o });
+  createGate({ db, github: service, log: () => {}, catchUpPollMs: 0, ...o });
 
 describe('approval', () => {
   it('the Gate App approves and merges when a person approved, the check is green, and the commit is the reviewed one', async () => {
@@ -304,6 +329,61 @@ describe('approval', () => {
       state: 'failed',
       detail: expect.stringContaining('405'),
     });
+  });
+});
+
+describe('when the base branch moved on', () => {
+  it('has GitHub bring the branch up to date, waits for the checks on the new commit, and then merges', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    world.behind = true;
+    expect(await gate().afterDecision(row)).toBe('waiting_ci');
+    const update = world.calls.find((c) => c.url.endsWith('/update-branch'))!;
+    expect(update.body).toEqual({ expected_head_sha: 'sha-reviewed' });
+    expect((await card(row.id)).headSha).toBe('sha-updated-1');
+    expect((await card(row.id)).gate).toMatchObject({ state: 'waiting_ci', catchUps: 1 });
+    const log = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.interactionId, row.id));
+    expect(log.map((l) => l.action)).toContain('gate.caught_up');
+
+    world.calls.length = 0;
+    expect(await gate().tick()).toBeGreaterThanOrEqual(1);
+    expect(calledPaths()).toContain('GET /commits/sha-updated-1/check-runs');
+    expect(calledPaths()).toContain('PUT /pulls/7/merge');
+    expect((await card(row.id)).gate).toMatchObject({ state: 'merged', mergedSha: 'merge-sha-1' });
+  });
+
+  it('does not merge when the new commit is more than a merge of the base branch', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    world.behind = true;
+    world.update = 'other';
+    expect(await gate().afterDecision(row)).toBe('stale');
+    expect((await card(row.id)).gate.state).toBe('stale');
+    expect(world.calls.filter((c) => c.url.endsWith('/merge'))).toHaveLength(1);
+  });
+
+  it('says so when GitHub cannot update the branch', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    world.behind = true;
+    world.update = 'refuse';
+    expect(await gate().afterDecision(row)).toBe('failed');
+    expect((await card(row.id)).gate.detail).toContain('could not be updated');
+  });
+
+  it('gives up when the base branch keeps moving', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    world.behind = true;
+    world.update = 'again';
+    const g = gate();
+    await g.afterDecision(row);
+    for (let i = 0; i < 8 && (await card(row.id)).gate.state === 'waiting_ci'; i++) await g.tick();
+    expect((await card(row.id)).gate).toMatchObject({ state: 'failed', catchUps: 5 });
+    expect((await card(row.id)).gate.detail).toContain('moved 5 times');
   });
 });
 

@@ -30,6 +30,8 @@ import { registerAttentionRoutes } from './attention-routes.js';
 import { registerAutopilotRoutes } from './autopilot-routes.js';
 import { registerMapRoutes } from './map-routes.js';
 import { registerPreviewRoutes } from './preview-routes.js';
+import { buildTick } from './build.js';
+import { registerBuildRoutes } from './build-routes.js';
 import { applyReleaseDecision } from './releases.js';
 import { registerIntegrationRoutes, refreshAllDocs } from './integration-routes.js';
 import { applyIntegrationDecision, confirmedHosts, createDocFetcher } from './integrations.js';
@@ -175,6 +177,7 @@ export async function buildApp({
   });
   registerMapRoutes(app, db, ghService, { approverRole: config.RELEASE_APPROVER_ROLE });
   registerPreviewRoutes(app, db, ghService);
+  registerBuildRoutes(app, db);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,
@@ -251,6 +254,30 @@ export async function buildApp({
       }, 5000);
     });
     app.addHook('onClose', async () => clearInterval(gateTimer));
+  }
+
+  if (workers) {
+    let buildTimer: NodeJS.Timeout | undefined;
+    let buildBusy = false;
+    app.addHook('onReady', async () => {
+      buildTimer = setInterval(() => {
+        if (buildBusy) return;
+        buildBusy = true;
+        buildTick({
+          db,
+          github: ghService,
+          agents: loadedAgents,
+          maxActive: config.BUILD_MAX_ACTIVE,
+          autoStartMinutes: config.BUILD_AUTOSTART_MIN,
+          log: (l) => app.log.info(l),
+        })
+          .catch((e) => app.log.error({ err: e }, 'build tick failed'))
+          .finally(() => {
+            buildBusy = false;
+          });
+      }, config.BUILD_TICK_MS);
+    });
+    app.addHook('onClose', async () => clearInterval(buildTimer));
   }
 
   if (workers && config.RUNNER_ADAPTER !== 'none') {

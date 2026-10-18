@@ -100,7 +100,15 @@ function specStage(runs: MapRun[], asks: MapAsk[]): MapStage {
   return { ...base, status: 'not_started', waitingOn: [], detail: 'No spec yet.' };
 }
 
-function buildStage(runs: MapRun[], asks: MapAsk[]): MapStage {
+/** What the map needs to know about the build plan of an initiative. */
+export interface MapPlan {
+  state: 'awaiting_start' | 'active' | 'done' | 'cancelled' | 'invalid';
+  total: number;
+  merged: number;
+  failed: number;
+}
+
+function buildStage(runs: MapRun[], asks: MapAsk[], plan?: MapPlan): MapStage {
   const eng = runs.filter((r) => !SPEC_ROLES.has(r.agentRole));
   const mine = asks.filter(
     (a) =>
@@ -126,12 +134,48 @@ function buildStage(runs: MapRun[], asks: MapAsk[]): MapStage {
       waitingOn: unique(open.map((a) => a.roleNeeded)),
       detail: `${open.length} thing${open.length === 1 ? '' : 's'} waiting on a person.`,
     };
+  const p = plan && plan.state !== 'cancelled' ? plan : undefined;
+  if (p?.state === 'awaiting_start')
+    return {
+      ...base,
+      status: 'waiting_human',
+      waitingOn: ['product_owner', 'architect'],
+      detail: `The design is approved. A person starts the build (${p.total} task${p.total === 1 ? '' : 's'}).`,
+    };
+  if (p?.state === 'invalid')
+    return {
+      ...base,
+      status: 'blocked',
+      waitingOn: ['architect'],
+      detail: 'The approved design cannot be built as written. See the build plan.',
+    };
+  if (p?.state === 'active' && p.failed > 0)
+    return {
+      ...base,
+      status: 'blocked',
+      waitingOn: ['product_owner', 'architect'],
+      detail: `${p.failed} build task${p.failed === 1 ? '' : 's'} failed. A person retries or skips ${p.failed === 1 ? 'it' : 'them'}.`,
+    };
   if (active.length > 0)
     return {
       ...base,
       status: 'working',
       waitingOn: [],
       detail: `${active.length} run${active.length === 1 ? '' : 's'} in progress.`,
+    };
+  if (p?.state === 'active')
+    return {
+      ...base,
+      status: 'working',
+      waitingOn: [],
+      detail: `${p.merged} of ${p.total} build tasks merged. The next ones start as their dependencies merge.`,
+    };
+  if (p?.state === 'done')
+    return {
+      ...base,
+      status: 'done',
+      waitingOn: [],
+      detail: `All ${p.total} build task${p.total === 1 ? '' : 's'} are merged or skipped.`,
     };
   if (failed.length > 0)
     return {
@@ -187,13 +231,13 @@ function releaseStage(asks: MapAsk[], merged: number): MapStage {
   };
 }
 
-export function buildMap(input: { runs: MapRun[]; asks: MapAsk[] }): MapStage[] {
+export function buildMap(input: { runs: MapRun[]; asks: MapAsk[]; plan?: MapPlan }): MapStage[] {
   const merged = input.asks.filter(
     (a) => a.type === 'review' && a.gate === 'merged' && a.checkpointId === 'G3',
   ).length;
   return [
     specStage(input.runs, input.asks),
-    buildStage(input.runs, input.asks),
+    buildStage(input.runs, input.asks, input.plan),
     releaseStage(input.asks, merged),
   ];
 }

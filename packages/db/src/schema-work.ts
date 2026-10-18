@@ -327,3 +327,58 @@ export const githubApp = pgTable('github_app', {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+// The build plan: an approved design's task list, built one run at a time (mvp-contract section 16, step 4).
+export const buildPlan = pgTable(
+  'build_plan',
+  {
+    id: id(),
+    initiativeId: uuid('initiative_id')
+      .notNull()
+      .references(() => initiative.id),
+    // The approved design's review. One plan per approved design.
+    designInteractionId: uuid('design_interaction_id')
+      .notNull()
+      .unique()
+      .references(() => interaction.id),
+    designPath: text('design_path').notNull(),
+    // The commit the Gate merged, so the plan reads the design a person approved.
+    designSha: text('design_sha').notNull(),
+    state: text('state').notNull(), // awaiting_start | active | done | cancelled | invalid
+    detail: text('detail'),
+    errors: jsonb('errors').$type<string[]>().notNull().default([]),
+    // Sponsor of the runs it starts: whoever approved the design, or whoever clicked start.
+    startedBy: uuid('started_by').references(() => person.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('build_plan_initiative_idx').on(t.initiativeId)],
+);
+
+export const buildTask = pgTable(
+  'build_task',
+  {
+    id: id(),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => buildPlan.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(), // T1, T2, ...
+    position: integer('position').notNull(),
+    title: text('title').notNull(),
+    role: text('role').notNull(),
+    stories: jsonb('stories').$type<string[]>().notNull().default([]),
+    dependsOn: jsonb('depends_on').$type<string[]>().notNull().default([]),
+    paths: jsonb('paths').$type<string[]>().notNull().default([]),
+    doneWhen: jsonb('done_when').$type<string[]>().notNull().default([]),
+    state: text('state').notNull().default('waiting'), // waiting | running | review | merged | failed | skipped | cancelled
+    runId: uuid('run_id').references(() => agentRun.id),
+    attempt: integer('attempt').notNull().default(0),
+    detail: text('detail'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('build_task_plan_key').on(t.planId, t.key),
+    index('build_task_run_idx').on(t.runId),
+  ],
+);

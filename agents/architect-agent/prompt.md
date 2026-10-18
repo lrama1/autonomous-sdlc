@@ -33,7 +33,7 @@ The last section is a YAML list in a fence whose info string is exactly `sdlc-ta
     - 'a test covers it'
 ```
 
-- `id` is `T1`, `T2`, and so on, unique. `title` is one line. `role` is `backend_engineer` or `frontend_engineer`.
+- `id` is `T1`, `T2`, and so on, unique. `title` is one line. `role` is `backend_engineer`. (There is no frontend agent yet, so a task with any other role cannot be built.)
 - `stories` lists the spec's story ids the task serves. `depends_on` lists task ids that must be merged first. No circles.
 - `paths` lists the files the task is expected to touch.
 - `done_when` lists checks a test or a person can make. No vague lines such as "works well". **Put every line in single quotes** (write a quote inside a line twice: `''`). A line with a colon, a brace or a quote in it is not valid YAML without them.

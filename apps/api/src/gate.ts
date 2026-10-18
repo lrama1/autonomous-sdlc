@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { appendRunEvent, interaction, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
+import { GitHubError } from './github-app.js';
 import type { GitHubService } from './github-service.js';
 import { settleByPolicy } from './interactions.js';
 import type { InteractionRow } from './interactions.js';
@@ -22,6 +23,8 @@ export interface GateInfo {
   since: string;
   detail?: string;
   mergedSha?: string;
+  /** How many times the Gate brought the branch up to date with the base branch. */
+  catchUps?: number;
 }
 
 export interface GateOptions {
@@ -29,8 +32,13 @@ export interface GateOptions {
   github: GitHubService;
   /** How long to wait for the required check before giving up. */
   waitForCiMs?: number;
+  /** How long to wait between looks when GitHub updates a branch. */
+  catchUpPollMs?: number;
   log?: (line: string) => void;
 }
+
+const MAX_CATCH_UPS = 5;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const isPr = (row: InteractionRow): boolean =>
   (row.contextCard as { kind?: string }).kind === 'pull_request';
@@ -45,6 +53,7 @@ export function createGate({
   db,
   github,
   waitForCiMs = 30 * 60_000,
+  catchUpPollMs = 1000,
   log = (l) => console.log(l),
 }: GateOptions) {
   async function setGate(row: InteractionRow, info: GateInfo): Promise<void> {
@@ -77,6 +86,101 @@ export function createGate({
         state: info.state,
         ...extra,
       });
+  }
+
+  /**
+   * The base branch moved on while the pull request waited, and the repository requires branches to be up to date.
+   * The Gate has GitHub merge the base branch into the pull request's branch, then waits for the checks on the new
+   * commit. Nothing the agent wrote changes: the only new commit must be that merge. Anything else is treated as
+   * commits pushed after the review.
+   */
+  async function catchUp(
+    row: InteractionRow,
+    card: PrCard & { gate?: GateInfo },
+    since: string,
+  ): Promise<GateState> {
+    const done = card.gate?.catchUps ?? 0;
+    if (done >= MAX_CATCH_UPS) {
+      await finish(
+        row,
+        {
+          state: 'failed',
+          since,
+          detail: `the base branch moved ${done} times while this waited, so the Gate gave up`,
+          catchUps: done,
+        },
+        'gate.failed',
+      );
+      return 'failed';
+    }
+    try {
+      await github.updateBranch(card.repository, card.prNumber, card.headSha);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await finish(
+        row,
+        {
+          state: 'failed',
+          since,
+          detail: `the branch is behind and could not be updated (conflicts?): ${message}`.slice(
+            0,
+            500,
+          ),
+          catchUps: done,
+        },
+        'gate.failed',
+      );
+      return 'failed';
+    }
+    let next = card.headSha;
+    for (let i = 0; i < 15 && next === card.headSha; i++) {
+      await sleep(catchUpPollMs);
+      next = (await github.getPullRequest(card.repository, card.prNumber)).head.sha;
+    }
+    if (next === card.headSha) {
+      // GitHub has not made the commit yet. The next pass will look again.
+      await setGate(row, {
+        state: 'waiting_ci',
+        since,
+        detail: 'asked GitHub to bring the branch up to date',
+        catchUps: done,
+      });
+      return 'waiting_ci';
+    }
+    const parents = await github.commitParents(card.repository, next);
+    if (parents.length !== 2 || !parents.includes(card.headSha)) {
+      await finish(
+        row,
+        {
+          state: 'stale',
+          since,
+          detail: `new commits were pushed after the review (${card.headSha.slice(0, 7)} to ${next.slice(0, 7)})`,
+        },
+        'gate.stale',
+      );
+      return 'stale';
+    }
+    await db
+      .update(interaction)
+      .set({
+        contextCard: sql`jsonb_set(${interaction.contextCard}, '{headSha}', to_jsonb(${next}::text))`,
+      })
+      .where(eq(interaction.id, row.id));
+    await recordActivity(db, {
+      actorType: 'system',
+      initiativeId: row.initiativeId,
+      runId: row.runId,
+      interactionId: row.id,
+      action: 'gate.caught_up',
+      detail: { from: card.headSha, to: next, prNumber: card.prNumber },
+    });
+    await setGate(row, {
+      state: 'waiting_ci',
+      since: new Date().toISOString(),
+      detail: `brought up to date with the base branch; waiting for the check on ${next.slice(0, 7)}`,
+      catchUps: done + 1,
+    });
+    return 'waiting_ci';
   }
 
   /** Looks at one approved review and moves it forward. Safe to call repeatedly. */
@@ -171,11 +275,20 @@ export function createGate({
           ? `Approved by the platform's rules, not by a person. ${a.text ?? ''} "${required}" passed. Review ${row.id}.`
           : `Approved by the platform: a person approved this change${a.text ? ` ("${a.text.slice(0, 200)}")` : ''} and "${required}" passed. Review ${row.id}.`,
       );
-      const merged = await github.gateMerge(
-        card.repository,
-        card.prNumber,
-        `${row.title.replace(/^Review PR #\d+: /, '')} (#${card.prNumber})`,
-      );
+      let merged: { sha: string };
+      try {
+        merged = await github.gateMerge(
+          card.repository,
+          card.prNumber,
+          `${row.title.replace(/^Review PR #\d+: /, '')} (#${card.prNumber})`,
+        );
+      } catch (e) {
+        if (e instanceof GitHubError && (e.status === 405 || e.status === 409)) {
+          const fresh = await github.getPullRequest(card.repository, card.prNumber);
+          if (fresh.mergeable_state === 'behind') return catchUp(row, card, since);
+        }
+        throw e;
+      }
       await finish(row, { state: 'merged', since, mergedSha: merged.sha }, 'pull_request.merged', {
         mergedSha: merged.sha,
         prNumber: card.prNumber,

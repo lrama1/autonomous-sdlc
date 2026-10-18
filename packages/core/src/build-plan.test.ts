@@ -1,0 +1,110 @@
+import { describe, expect, it } from 'vitest';
+import { planProgress, readyTasks, stuckBehind, taskPrompt } from './build-plan.js';
+import type { PlanTask, TaskState } from './build-plan.js';
+import type { DesignTask } from './design.js';
+
+const t = (key: string, state: TaskState, dependsOn: string[] = []): PlanTask => ({
+  key,
+  state,
+  dependsOn,
+});
+
+describe('readyTasks', () => {
+  it('starts tasks with nothing to wait for, in plan order', () => {
+    expect(
+      readyTasks([t('T1', 'waiting'), t('T2', 'waiting'), t('T3', 'waiting', ['T1'])], 4),
+    ).toEqual(['T1', 'T2']);
+  });
+
+  it('waits for a dependency to be merged, not just reviewed', () => {
+    expect(readyTasks([t('T1', 'review'), t('T2', 'waiting', ['T1'])], 4)).toEqual([]);
+    expect(readyTasks([t('T1', 'merged'), t('T2', 'waiting', ['T1'])], 4)).toEqual(['T2']);
+  });
+
+  it('treats a skipped dependency as settled, and a failed one as a reason to wait', () => {
+    expect(readyTasks([t('T1', 'skipped'), t('T2', 'waiting', ['T1'])], 4)).toEqual(['T2']);
+    expect(readyTasks([t('T1', 'failed'), t('T2', 'waiting', ['T1'])], 4)).toEqual([]);
+  });
+
+  it('never goes past the limit on running tasks', () => {
+    const tasks = [
+      t('T1', 'running'),
+      t('T2', 'running'),
+      t('T3', 'waiting'),
+      t('T4', 'waiting'),
+      t('T5', 'waiting'),
+    ];
+    expect(readyTasks(tasks, 3)).toEqual(['T3']);
+    expect(readyTasks(tasks, 2)).toEqual([]);
+    expect(readyTasks(tasks, 1)).toEqual([]);
+    expect(readyTasks(tasks, 5)).toEqual(['T3', 'T4', 'T5']);
+  });
+
+  it('does not count a task in review against the limit', () => {
+    expect(readyTasks([t('T1', 'review'), t('T2', 'waiting')], 1)).toEqual(['T2']);
+  });
+});
+
+describe('planProgress', () => {
+  it('is done when every task is merged or skipped', () => {
+    expect(planProgress([t('T1', 'merged'), t('T2', 'skipped')]).status).toBe('done');
+  });
+  it('is blocked when a task failed, even if others are running', () => {
+    expect(planProgress([t('T1', 'failed'), t('T2', 'running')]).status).toBe('blocked');
+  });
+  it('is working while a run or a review is in progress, and waiting otherwise', () => {
+    expect(planProgress([t('T1', 'review'), t('T2', 'waiting', ['T1'])]).status).toBe('working');
+    expect(planProgress([t('T1', 'waiting')]).status).toBe('waiting');
+  });
+  it('counts each state', () => {
+    const p = planProgress([t('T1', 'merged'), t('T2', 'running'), t('T3', 'waiting')]);
+    expect(p.counts).toMatchObject({ merged: 1, running: 1, waiting: 1, failed: 0 });
+    expect(p.total).toBe(3);
+  });
+});
+
+describe('stuckBehind', () => {
+  it('names the failed tasks a waiting task is behind', () => {
+    expect(
+      stuckBehind([t('T1', 'failed'), t('T2', 'waiting', ['T1']), t('T3', 'waiting', ['T2'])]),
+    ).toEqual({ T2: ['T1'] });
+  });
+});
+
+describe('taskPrompt', () => {
+  const a: DesignTask = {
+    id: 'T1',
+    title: 'Add the route',
+    role: 'backend_engineer',
+    stories: ['US-1'],
+    dependsOn: [],
+    paths: ['src/server.js'],
+    doneWhen: ['GET /x answers 200'],
+  };
+  const b: DesignTask = {
+    ...a,
+    id: 'T2',
+    title: 'Document it',
+    dependsOn: ['T1'],
+    stories: [],
+    paths: ['README.md'],
+  };
+  const c: DesignTask = { ...a, id: 'T3', title: 'Unrelated' };
+
+  it('starts with the task as the title, then says what to read and what is done', () => {
+    const p = taskPrompt({ path: 'docs/design/x.md' }, a, [a, b, c]);
+    expect(p.split('\n')[0]).toBe('T1: Add the route');
+    expect(p).toContain('Read docs/design/x.md first');
+    expect(p).toContain('Stories: US-1');
+    expect(p).toContain('- GET /x answers 200');
+    expect(p).toContain('Do not do their work: T2 (Document it); T3 (Unrelated)');
+    expect(p).not.toContain('Already merged');
+  });
+
+  it('says what was merged before, and leaves out an empty story line', () => {
+    const p = taskPrompt({ path: 'docs/design/x.md' }, b, [a, b, c]);
+    expect(p).toContain('Already merged before you started: T1 (Add the route)');
+    expect(p).not.toContain('Stories:');
+    expect(p).toContain('Do not do their work: T3 (Unrelated)');
+  });
+});

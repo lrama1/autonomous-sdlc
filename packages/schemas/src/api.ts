@@ -313,3 +313,42 @@ export const previewSchema = z.object({
   detail: z.string(),
 });
 export type PreviewDto = z.infer<typeof previewSchema>;
+
+// The build plan of an initiative: the approved design's tasks, and where each one is.
+export const buildTaskStateSchema = z.enum([
+  'waiting',
+  'running',
+  'review',
+  'merged',
+  'failed',
+  'skipped',
+  'cancelled',
+]);
+export const buildTaskSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  role: z.string(),
+  stories: z.array(z.string()),
+  dependsOn: z.array(z.string()),
+  paths: z.array(z.string()),
+  doneWhen: z.array(z.string()),
+  state: buildTaskStateSchema,
+  runId: z.string().nullable(),
+  prNumber: z.number().nullable(),
+  attempt: z.number(),
+  detail: z.string().nullable(),
+  /** The failed tasks this one is stuck behind. */
+  stuckBehind: z.array(z.string()),
+});
+export const buildPlanSchema = z.object({
+  id: z.string(),
+  initiativeId: z.string(),
+  state: z.enum(['awaiting_start', 'active', 'done', 'cancelled', 'invalid']),
+  designPath: z.string(),
+  detail: z.string().nullable(),
+  errors: z.array(z.string()),
+  tasks: z.array(buildTaskSchema),
+  createdAt: z.string(),
+});
+export type BuildPlanDto = z.infer<typeof buildPlanSchema>;
+export type BuildTaskDto = z.infer<typeof buildTaskSchema>;

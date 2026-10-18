@@ -1,9 +1,9 @@
 import { desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { agentRun, initiative, interaction } from '@sdlc/db';
+import { agentRun, buildPlan, buildTask, initiative, interaction } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { buildMap } from '@sdlc/core';
-import type { MapAsk, Role } from '@sdlc/core';
+import type { MapAsk, MapPlan, Role } from '@sdlc/core';
 import { z } from 'zod';
 import { requirePerson } from './people.js';
 import { prepareRelease } from './releases.js';
@@ -46,6 +46,22 @@ export function registerMapRoutes(
         released: card.release?.state === 'released',
       };
     });
+    const [planRow] = await db
+      .select()
+      .from(buildPlan)
+      .where(eq(buildPlan.initiativeId, id))
+      .orderBy(desc(buildPlan.createdAt))
+      .limit(1);
+    let plan: MapPlan | undefined;
+    if (planRow) {
+      const tasks = await db.select().from(buildTask).where(eq(buildTask.planId, planRow.id));
+      plan = {
+        state: planRow.state as MapPlan['state'],
+        total: tasks.length,
+        merged: tasks.filter((t) => t.state === 'merged' || t.state === 'skipped').length,
+        failed: tasks.filter((t) => t.state === 'failed').length,
+      };
+    }
     return {
       initiative: {
         id: init.id,
@@ -56,6 +72,7 @@ export function registerMapRoutes(
       stages: buildMap({
         runs: runs.map((r) => ({ id: r.id, agentRole: r.agentRole, state: r.state })),
         asks: mapAsks,
+        plan,
       }),
     };
   });

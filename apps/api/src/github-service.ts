@@ -108,6 +108,31 @@ export class GitHubService {
     return { sha: r.sha };
   }
 
+  /**
+   * Asks GitHub to merge the base branch into the pull request's branch, as a merge commit made by the Gate App.
+   * `expectedHeadSha` makes GitHub refuse if someone pushed in the meantime.
+   */
+  async updateBranch(repo: string, number: number, expectedHeadSha: string): Promise<void> {
+    const { token } = await this.tokenFor('gate', repo, {
+      contents: 'write',
+      pull_requests: 'write',
+    });
+    await this.client.call('PUT', `/repos/${repo}/pulls/${number}/update-branch`, token, {
+      expected_head_sha: expectedHeadSha,
+    });
+  }
+
+  /** The parent commits of a commit. */
+  async commitParents(repo: string, sha: string): Promise<string[]> {
+    const { token } = await this.tokenFor('gate', repo);
+    const c = await this.client.call<{ parents: Array<{ sha: string }> }>(
+      'GET',
+      `/repos/${repo}/commits/${sha}`,
+      token,
+    );
+    return c.parents.map((p) => p.sha);
+  }
+
   /** The commit a branch points at now. */
   async branchHead(repo: string, branch: string): Promise<string> {
     const { token } = await this.tokenFor('gate', repo);
@@ -136,6 +161,23 @@ export class GitHubService {
       { tag_name: r.tag, name: r.name, body: r.notes, draft: false, prerelease: false },
     );
     return { url: rel.html_url };
+  }
+
+  /** A text file at a commit, or null if it is not there. The Gate App reads it. */
+  async readFile(repo: string, filePath: string, ref: string): Promise<string | null> {
+    const { token } = await this.tokenFor('gate', repo);
+    try {
+      const r = await this.client.call<{ content?: string; encoding?: string }>(
+        'GET',
+        `/repos/${repo}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`,
+        token,
+      );
+      if (r.encoding !== 'base64' || typeof r.content !== 'string') return null;
+      return Buffer.from(r.content, 'base64').toString('utf8');
+    } catch (e) {
+      if (e instanceof GitHubError && e.status === 404) return null;
+      throw e;
+    }
   }
 
   async closePullRequest(repo: string, number: number): Promise<void> {
