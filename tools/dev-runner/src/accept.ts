@@ -13,6 +13,7 @@ import { startStack } from './stack.js';
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
 //   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all]
+//   PREVIEW_VARIANT=deployment makes the preview phase report through a GitHub Deployment instead of a commit status.
 //   BUG_VARIANT=norepro makes the bug phase report a bug that does not exist, to see the agent stop without a pull request. [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
@@ -2220,19 +2221,64 @@ try {
     const prNumber: number = review.contextCard.prNumber;
     const auth = { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' };
     const preview = () => call(bob, 'GET', `/api/interactions/${review.id}/preview`);
-    const report = (onSha: string, state: string, url: string) =>
-      fetch(`https://api.github.com/repos/${REPO}/statuses/${onSha}`, {
+    const viaDeployment = process.env.PREVIEW_VARIANT === 'deployment';
+    const deployments = new Map<string, number>();
+    const reportDeployment = async (onSha: string, state: string, url: string) => {
+      let id = deployments.get(onSha);
+      if (!id) {
+        const r = await fetch(`https://api.github.com/repos/${REPO}/deployments`, {
+          method: 'POST',
+          headers: auth,
+          body: JSON.stringify({
+            ref: onSha,
+            environment: `pr-${prNumber}-preview`,
+            auto_merge: false,
+            required_contexts: [],
+            description: 'accept',
+            transient_environment: true,
+          }),
+        });
+        if (!r.ok)
+          throw new Error(
+            `could not create a deployment: ${r.status} ${(await r.text()).slice(0, 200)}`,
+          );
+        id = ((await r.json()) as { id: number }).id;
+        deployments.set(onSha, id);
+      }
+      const s = await fetch(`https://api.github.com/repos/${REPO}/deployments/${id}/statuses`, {
         method: 'POST',
         headers: auth,
         body: JSON.stringify({
-          state,
-          context: 'ci/preview',
-          target_url: url,
+          state: state === 'pending' ? 'in_progress' : state,
+          environment_url: state === 'success' ? url : undefined,
           description: 'accept',
         }),
       });
+      if (!s.ok)
+        throw new Error(
+          `could not report a deployment status: ${s.status} ${(await s.text()).slice(0, 200)}`,
+        );
+    };
+    const report = (onSha: string, state: string, url: string) =>
+      viaDeployment
+        ? reportDeployment(onSha, state, url)
+        : fetch(`https://api.github.com/repos/${REPO}/statuses/${onSha}`, {
+            method: 'POST',
+            headers: auth,
+            body: JSON.stringify({
+              state,
+              context: 'ci/preview',
+              target_url: url,
+              description: 'accept',
+            }),
+          });
 
     const first = await preview();
+    if (viaDeployment)
+      check(
+        first.state === 'none',
+        `P  the Gate App can read Deployments now (${first.state}: ${first.detail.slice(0, 80)})`,
+      );
     check(
       ['none', 'not_permitted'].includes(first.state),
       `P  before the pipeline reports anything, the review says so (${first.state}: ${first.detail.slice(0, 80)}...)`,
@@ -2255,6 +2301,8 @@ try {
         ready.sha === sha,
       `P  a successful report for the current commit shows as ready: ${ready.url} (${ready.source})`,
     );
+    if (viaDeployment)
+      check(ready.source === 'deployment', `P  and it came from a Deployment (${ready.source})`);
 
     // The pull request moves to a new commit: the old preview must not read as current.
     const branch: string = (await gh(`/repos/${REPO}/pulls/${prNumber}`)).head.ref;
