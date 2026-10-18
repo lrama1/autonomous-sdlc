@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { agentRun, buildPlan, buildTask, initiative, interaction } from '@sdlc/db';
+import { agentRun, buildPlan, buildTask, initiative, interaction, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { parseDesignTasks, planProgress, readyTasks, taskPrompt } from '@sdlc/core';
 import type { DesignTask, TaskState } from '@sdlc/core';
@@ -30,6 +30,7 @@ const RUN_FAILED = new Set(['failed', 'cancelled', 'budget_exceeded', 'timed_out
 const GATE_STOPPED = new Set(['ci_failed', 'failed', 'stale', 'closed', 'timed_out']);
 /** How many times a task is redone on the current main after its pull request conflicted. */
 const MAX_REDO = 2;
+const NO_PR = 'The run finished without opening a pull request.';
 const REDO = 'Redoing: its pull request conflicted with changes that merged meanwhile.';
 
 interface DesignCard {
@@ -180,7 +181,7 @@ function settle(
     return task.state === 'running' ? null : { state: 'running', detail: null };
 
   if (!review) {
-    return { state: 'failed', detail: 'The run finished without opening a pull request.' };
+    return { state: 'failed', detail: NO_PR };
   }
   const card = review.contextCard as { gate?: { state?: string; detail?: string } };
   const decision = (review.answer as { decision?: string } | null)?.decision;
@@ -244,6 +245,23 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
       .where(eq(buildTask.id, task.id));
     task.state = next.state;
     task.detail = next.detail;
+    if (next.detail === NO_PR && task.runId) {
+      // Say what the agent said, so a person can tell "already done" from "gave up" without opening the run.
+      const [said] = await db
+        .select({ payload: runEvent.payload })
+        .from(runEvent)
+        .where(and(eq(runEvent.runId, task.runId), eq(runEvent.type, 'run.summary')))
+        .orderBy(sql`${runEvent.seq} desc`)
+        .limit(1);
+      const text = String((said?.payload as { text?: string } | undefined)?.text ?? '')
+        .replace(/[#*`]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text) {
+        task.detail = `${NO_PR} The agent said: ${text.slice(0, 280)}${text.length > 280 ? '?' : ''} If the work is already there, skip this task.`;
+        await db.update(buildTask).set({ detail: task.detail }).where(eq(buildTask.id, task.id));
+      }
+    }
     if (next.redo) {
       const pr = review?.contextCard as { repository?: string; prNumber?: number } | undefined;
       if (pr?.repository && pr.prNumber) {

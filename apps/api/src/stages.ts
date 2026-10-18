@@ -3,6 +3,7 @@ import { agentRun, initiative, interaction, stageStart } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
+import type { GitHubService } from './github-service.js';
 import { RunError, createRun } from './runs.js';
 
 // The steps before the build (mvp-contract section 16): the spec is drafted from the initiative's goal, then the
@@ -15,10 +16,15 @@ export interface StageDeps {
   agents: Map<string, LoadedAgent>;
   /** A step that follows an approval older than this waits for a person to start it, whatever the mode. */
   autoStartMinutes?: number;
+  /** Used to close a pull request that a revision replaces. */
+  github?: Pick<GitHubService, 'comment' | 'closePullRequest'>;
   log?: (line: string) => void;
 }
 
 const SPEC_FILE = /^docs\/spec\/[^/]+\.md$/;
+const DESIGN_FILE = /^docs\/design\/[^/]+\.md$/;
+/** How many times a spec or a design is revised on request before a person takes over. */
+const MAX_REVISIONS = 3;
 
 export const specTask = (i: { title: string; goal: string }) =>
   [
@@ -37,6 +43,25 @@ export const designTask = (specPath: string) => {
     `Design the approved spec ${specPath}. Write the design to docs/design/${slug}.md following your instructions.`,
   ].join('\n');
 };
+
+/** What a revision run is told: the file, the reviewer's words, and that it starts from the current main branch. */
+export function reviseTask(
+  what: 'spec' | 'design',
+  filePath: string,
+  prNumber: number | undefined,
+  comment: string,
+  specPath?: string,
+) {
+  const name = filePath.split('/').pop()!.replace(/\.md$/, '');
+  return [
+    `Revise the ${what}: ${name}`.slice(0, 100),
+    '',
+    `A reviewer asked for changes to the ${what} at ${filePath}${prNumber ? ` (pull request #${prNumber}, now closed)` : ''}. Write the revised ${what} to the same path, from the current main branch, following your instructions. Rewrite the whole file, applying what the reviewer asked for and keeping what they did not mention.`,
+    ...(specPath ? ['', `The approved spec it designs is ${specPath}.`] : []),
+    '',
+    `The reviewer said: ${comment.trim() || '(no comment was given)'}`,
+  ].join('\n');
+}
 
 /** Called when an initiative is created with its steps on. The spec starts by itself, or waits for a click in guided mode. */
 export async function planSpecStart(
@@ -72,6 +97,100 @@ export async function planSpecStart(
 interface SpecCard {
   diff?: { changedPaths?: string[] };
   gate?: { state?: string };
+}
+
+interface ReviewCard {
+  repository?: string;
+  prNumber?: number;
+  diff?: { changedPaths?: string[] };
+}
+
+/**
+ * A spec or design that a reviewer sent back with "changes requested" gets a revision step: a new run of the same
+ * agent, started from the current main with the reviewer's words. The same person sponsors it as the first run, so the
+ * reviewer can still decide the result. After three revisions of one kind a person takes over.
+ */
+export async function ensureRevisions(deps: StageDeps): Promise<number> {
+  const { db } = deps;
+  const rows = await db
+    .select({ i: interaction, run: agentRun, init: initiative })
+    .from(interaction)
+    .innerJoin(agentRun, eq(agentRun.id, interaction.runId))
+    .innerJoin(initiative, eq(initiative.id, interaction.initiativeId))
+    .where(
+      and(
+        eq(interaction.type, 'review'),
+        eq(interaction.checkpointId, 'G1'),
+        eq(interaction.state, 'answered'),
+        inArray(agentRun.agentRole, ['product', 'architect']),
+        eq(initiative.autoStages, true),
+        sql`${interaction.answer} ->> 'decision' = 'changes_requested'`,
+        sql`not exists (select 1 from stage_start s where s.initiative_id = ${interaction.initiativeId} and s.key = 'revise:' || ${interaction.id}::text)`,
+      ),
+    );
+  let made = 0;
+  for (const { i, run, init } of rows) {
+    const what = run.agentRole === 'product' ? 'spec' : 'design';
+    const card = i.contextCard as ReviewCard;
+    const file = card.diff?.changedPaths?.find((p) =>
+      (what === 'spec' ? SPEC_FILE : DESIGN_FILE).test(p),
+    );
+    const comment = (i.answer as { text?: string } | null)?.text ?? '';
+    const [{ n }] = (await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(stageStart)
+      .where(
+        and(
+          eq(stageStart.initiativeId, init.id),
+          sql`${stageStart.key} like 'revise:%' and ${stageStart.stage} = ${what}`,
+        ),
+      )) as [{ n: number }];
+    const fresh =
+      !i.answeredAt ||
+      Date.now() - i.answeredAt.getTime() < (deps.autoStartMinutes ?? 120) * 60_000;
+    const problem = !file
+      ? `The pull request has no ${what} file to revise.`
+      : n >= MAX_REVISIONS
+        ? `This ${what} was revised ${n} times already. A person takes over.`
+        : null;
+    const specPath =
+      what === 'design' && file ? `docs/spec/${file.replace(/^docs\/design\//, '')}` : undefined;
+    const [row] = await db
+      .insert(stageStart)
+      .values({
+        initiativeId: init.id,
+        key: `revise:${i.id}`,
+        stage: what,
+        role: run.agentRole,
+        sourceInteractionId: i.id,
+        task: file
+          ? reviseTask(what, file, card.prNumber, comment, specPath)
+          : `Revise the ${what}`,
+        state: problem
+          ? 'invalid'
+          : init.autonomyMode === 'guided' || !fresh
+            ? 'awaiting_start'
+            : 'pending',
+        detail:
+          problem ??
+          (init.autonomyMode === 'guided' || !fresh
+            ? `Changes were requested. A person starts the revised ${what}.`
+            : `Changes were requested. The revised ${what} starts by itself.`),
+        startedBy: run.sponsorPersonId,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (!row) continue;
+    await recordActivity(db, {
+      actorType: 'system',
+      initiativeId: init.id,
+      interactionId: i.id,
+      action: 'stage.planned',
+      detail: { stage: what, revision: true, state: row.state },
+    });
+    made++;
+  }
+  return made;
 }
 
 /** Each merged spec that has no design step yet gets one. */
@@ -179,6 +298,24 @@ export async function startDueStages(deps: StageDeps): Promise<number> {
         .where(eq(stageStart.id, s.id));
       continue;
     }
+    // A revision replaces the pull request that was sent back.
+    if (s.key.startsWith('revise:') && s.sourceInteractionId && deps.github) {
+      const [src] = await db
+        .select()
+        .from(interaction)
+        .where(eq(interaction.id, s.sourceInteractionId));
+      const pr = src?.contextCard as ReviewCard | undefined;
+      if (pr?.repository && pr.prNumber) {
+        await deps.github
+          .comment(
+            pr.repository,
+            pr.prNumber,
+            'Closing this: a revised version is being written on the current main branch.',
+          )
+          .catch(() => {});
+        await deps.github.closePullRequest(pr.repository, pr.prNumber).catch(() => {});
+      }
+    }
     try {
       const run = await createRun(db, deps.agents, {
         initiativeId: init.id,
@@ -210,6 +347,7 @@ export async function startDueStages(deps: StageDeps): Promise<number> {
 }
 
 export async function stageTick(deps: StageDeps): Promise<void> {
+  await ensureRevisions(deps);
   await ensureDesignStarts(deps);
   await startDueStages(deps);
 }

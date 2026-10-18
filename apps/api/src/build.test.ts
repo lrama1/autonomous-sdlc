@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   activityEvent,
   agentRun,
+  appendRunEvent,
   buildPlan,
   buildTask,
   createDb,
@@ -534,6 +535,25 @@ describe('when a task goes wrong', () => {
       expect(after.tasks[0]!.detail).toContain(text);
     },
   );
+
+  it('says what the agent said when a task ends without a pull request, so a person can tell done from gave up', async () => {
+    designText = block(task('T1'));
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    const runId = (await planOf(f.initiativeId)).tasks[0]!.runId!;
+    await appendRunEvent(db, runId, 'run.summary', {
+      text: '## Summary\n\n**Nothing to change**: the tests for this already exist.',
+    });
+    await finishTask(plan.id, 'T1', 'no_pr');
+    await buildTick(deps());
+    const detail = (await planOf(f.initiativeId)).tasks[0]!.detail!;
+    expect(detail).toContain('without opening a pull request');
+    expect(detail).toContain(
+      'The agent said: Summary Nothing to change: the tests for this already exist.',
+    );
+    expect(detail).toContain('skip this task');
+  });
 
   it('starts the task again on retry, or lets what is behind it go on when it is skipped', async () => {
     designText = THREE;

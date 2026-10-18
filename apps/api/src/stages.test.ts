@@ -22,7 +22,14 @@ import { loadAgents } from './agents.js';
 import type { LoadedAgent } from './agents.js';
 import { loadConfig } from './config.js';
 import { MemorySecrets } from './secrets.js';
-import { designTask, ensureDesignStarts, planSpecStart, stageTick } from './stages.js';
+import {
+  designTask,
+  ensureDesignStarts,
+  ensureRevisions,
+  planSpecStart,
+  reviseTask,
+  stageTick,
+} from './stages.js';
 import type { StageDeps } from './stages.js';
 
 let devDb: DevDb;
@@ -33,7 +40,14 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let agents: Map<string, LoadedAgent>;
 let n = 0;
 
-const deps = (o: Partial<StageDeps> = {}): StageDeps => ({ db, agents, ...o });
+const closed: number[] = [];
+const github: StageDeps['github'] = {
+  comment: async () => {},
+  closePullRequest: async (_repo, number) => {
+    closed.push(number);
+  },
+};
+const deps = (o: Partial<StageDeps> = {}): StageDeps => ({ db, agents, github, ...o });
 
 async function newInitiative(o: { mode?: string; autoStages?: boolean } = {}) {
   const f = await createRunFixture(db);
@@ -74,6 +88,51 @@ async function approvedSpec(
         kind: 'pull_request',
         diff: { changedPaths: o.paths ?? ['docs/spec/weather.md'] },
         gate: o.merged === false ? { state: 'waiting_ci' } : { state: 'merged', mergedSha: 'abc' },
+      },
+    })
+    .returning();
+  return { ...f, review: review! };
+}
+
+/** A spec or design pull request that a reviewer sent back. */
+async function sentBack(
+  o: {
+    role?: 'product' | 'architect';
+    decision?: string;
+    text?: string;
+    mode?: string;
+    autoStages?: boolean;
+    path?: string;
+  } = {},
+) {
+  const role = o.role ?? 'product';
+  const f = await newInitiative(o);
+  await db.update(agentRun).set({ agentRole: role }).where(eq(agentRun.id, f.runId));
+  const [review] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G1',
+      state: 'answered',
+      title: 'Review PR #9',
+      roleNeeded: role === 'product' ? 'product_owner' : 'architect',
+      answer: {
+        decision: o.decision ?? 'changes_requested',
+        text: o.text ?? 'Add a story for errors.',
+      },
+      answeredAt: new Date(),
+      contextCard: {
+        kind: 'pull_request',
+        repository: 'o/r',
+        prNumber: 9,
+        diff: {
+          changedPaths: [
+            o.path ?? (role === 'product' ? 'docs/spec/weather.md' : 'docs/design/weather.md'),
+          ],
+        },
+        gate: { state: 'waiting_ci' },
       },
     })
     .returning();
@@ -239,6 +298,79 @@ describe('the design step', () => {
     expect((await startsOf(none.initiativeId))[0]).toMatchObject({ state: 'invalid' });
     await stageTick(deps());
     expect((await startsOf(guided.initiativeId))[0]!.state).toBe('awaiting_start');
+  });
+});
+
+describe('a spec or design that is sent back', () => {
+  it("is rewritten by a new run of the same agent, from the current main, with the reviewer's words", async () => {
+    const f = await sentBack({ text: 'Add a story for errors.' });
+    closed.length = 0;
+    expect(await ensureRevisions(deps())).toBeGreaterThanOrEqual(1);
+    const [s] = await startsOf(f.initiativeId);
+    expect(s).toMatchObject({
+      key: `revise:${f.review.id}`,
+      stage: 'spec',
+      role: 'product',
+      state: 'pending',
+      startedBy: f.personId,
+    });
+    expect(s!.task).toBe(reviseTask('spec', 'docs/spec/weather.md', 9, 'Add a story for errors.'));
+    expect(s!.task.split('\n')[0]).toBe('Revise the spec: weather');
+    expect(s!.task).toContain('The reviewer said: Add a story for errors.');
+
+    await stageTick(deps());
+    const [after] = await startsOf(f.initiativeId);
+    expect(after!.state).toBe('started');
+    const [run] = await db.select().from(agentRun).where(eq(agentRun.id, after!.runId!));
+    expect(run).toMatchObject({ agentRole: 'product', sponsorPersonId: f.personId, task: s!.task });
+    // The pull request that was sent back is closed.
+    expect(closed).toEqual([9]);
+    expect(await ensureRevisions(deps())).toBe(0);
+  });
+
+  it('also revises a design, and says which spec it is for', async () => {
+    const f = await sentBack({ role: 'architect', text: 'Split T1 in two.' });
+    await ensureRevisions(deps());
+    const [s] = await startsOf(f.initiativeId);
+    expect(s).toMatchObject({ stage: 'design', role: 'architect', state: 'pending' });
+    expect(s!.task).toContain('docs/design/weather.md');
+    expect(s!.task).toContain('The approved spec it designs is docs/spec/weather.md.');
+  });
+
+  it('is left alone when the reviewer approved or rejected, or the steps are off', async () => {
+    const rejected = await sentBack({ decision: 'rejected' });
+    const approved = await sentBack({ decision: 'approved' });
+    const off = await sentBack({ autoStages: false });
+    await ensureRevisions(deps());
+    expect(await startsOf(rejected.initiativeId)).toHaveLength(0);
+    expect(await startsOf(approved.initiativeId)).toHaveLength(0);
+    expect(await startsOf(off.initiativeId)).toHaveLength(0);
+  });
+
+  it('waits for a click in guided mode, and has no file to revise when the change has none', async () => {
+    const guided = await sentBack({ mode: 'guided' });
+    const none = await sentBack({ path: 'README.md' });
+    await ensureRevisions(deps());
+    expect((await startsOf(guided.initiativeId))[0]!.state).toBe('awaiting_start');
+    expect((await startsOf(none.initiativeId))[0]).toMatchObject({ state: 'invalid' });
+  });
+
+  it('hands over to a person after three revisions', async () => {
+    const f = await sentBack();
+    for (let k = 0; k < 3; k++) {
+      await db.insert(stageStart).values({
+        initiativeId: f.initiativeId,
+        key: `revise:earlier-${k}`,
+        stage: 'spec',
+        role: 'product',
+        task: 'x',
+        state: 'started',
+      });
+    }
+    await ensureRevisions(deps());
+    const mine = (await startsOf(f.initiativeId)).find((s) => s.key === `revise:${f.review.id}`)!;
+    expect(mine.state).toBe('invalid');
+    expect(mine.detail).toContain('revised 3 times');
   });
 });
 

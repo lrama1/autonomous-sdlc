@@ -269,7 +269,7 @@ export async function buildApp({
         const autoStartMinutes = config.BUILD_AUTOSTART_MIN;
         const log = (l: string) => app.log.info(l);
         // The spec and design steps first, then the build, so one pass can carry work from a step to the next.
-        stageTick({ db, agents: loadedAgents, autoStartMinutes, log })
+        stageTick({ db, agents: loadedAgents, autoStartMinutes, github: ghService, log })
           .catch((e) => app.log.error({ err: e }, 'stage tick failed'))
           .then(() =>
             buildTick({

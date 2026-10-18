@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -1621,6 +1621,164 @@ try {
       [init.id],
     );
     check(clicks.rows[0].n === 0, 'S  nobody clicked Start on any step');
+  }
+
+  // ---------------- Pipeline, harder: a vague goal, questions from the agents, and a spec that is sent back ----------------
+  if (phase === 'pipeline2') {
+    say(
+      '--- pipeline2: a vague goal, and the Product Owner asks for changes to the first spec ---',
+    );
+    const cara = await signInAs(stack.publicUrl, 'dev-cara');
+    const s = stamp;
+    const init = await call(bob, 'POST', '/api/initiatives', {
+      title: `Status ${s}`,
+      goal:
+        `Operators want to see what the app is doing: whether it is healthy, what version is running, and a short list of recent requests. ` +
+        `Keep it small, and name any new route with the suffix -${s} so it does not clash with an existing one.`,
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+      autoStages: true,
+    });
+    const t0 = Date.now();
+    const at = () => `${Math.round((Date.now() - t0) / 1000)}s`;
+    const stages = async () =>
+      (await call(bob, 'GET', `/api/initiatives/${init.id}/stages`)) as any[];
+    const jars: Array<[string, CookieJar]> = [
+      ['alice', alice],
+      ['bob', bob],
+      ['cara', cara],
+    ];
+    const answered = new Set<string>();
+    // Answers the agents' questions with their own recommendation, as whoever holds the role.
+    const answerQuestions = async () => {
+      for (const [who, jar] of jars) {
+        const q: any[] = await call(jar, 'GET', '/api/interactions');
+        for (const i of q) {
+          if (i.initiativeId !== init.id || answered.has(i.id)) continue;
+          if (!['question', 'decision'].includes(i.type)) continue;
+          const options = Array.isArray(i.options) ? i.options : [];
+          const choice = i.recommendation ?? options[0]?.id;
+          if (!choice) continue;
+          answered.add(i.id);
+          say(`${at()} ${who} answers "${i.title.slice(0, 90)}" with "${choice}"`);
+          await call(jar, 'POST', `/api/interactions/${i.id}/answer`, { answer: choice }).catch(
+            () => answered.delete(i.id),
+          );
+        }
+      }
+    };
+    const reviewOf = (jar: CookieJar, role: string, notIn: Set<string>) =>
+      waitFor(
+        `a ${role} review`,
+        async () => {
+          await answerQuestions();
+          const q: any[] = await call(jar, 'GET', '/api/interactions');
+          return (
+            q.find(
+              (i) =>
+                i.initiativeId === init.id &&
+                i.type === 'review' &&
+                i.roleNeeded === role &&
+                !notIn.has(i.id),
+            ) ?? null
+          );
+        },
+        900_000,
+        3000,
+      );
+    const seenReviews = new Set<string>();
+    const spec1 = await reviewOf(alice, 'product_owner', seenReviews);
+    seenReviews.add(spec1.id);
+    say(
+      `${at()} the first spec is ready for review: "${spec1.title}" (${spec1.contextCard.diff?.changedPaths?.join(', ')})`,
+    );
+    await call(alice, 'POST', `/api/interactions/${spec1.id}/answer`, {
+      decision: 'changes_requested',
+      answer:
+        'Add a story for what an operator sees when the app is unhealthy, and keep the recent-requests list to the last 10.',
+    });
+    say(`${at()} Alice asked for changes`);
+
+    // What does the platform do now? Watch for a minute and a half.
+    await sleep(90_000);
+    const after = await stages();
+    const runs: any[] = (await call(bob, 'GET', `/api/initiatives/${init.id}`)).runs;
+    const map: any = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    say(`${at()} steps: ${after.map((x) => `${x.stage}:${x.state}`).join(', ')}`);
+    say(`${at()} runs: ${runs.map((r) => `${r.role}:${r.state}`).join(', ')}`);
+    say(
+      `${at()} map: ${map.stages.map((x: any) => `${x.id}=${x.status} (${x.detail})`).join(' | ')}`,
+    );
+    const nextSpec = runs.filter((r) => r.role === 'product').length;
+    check(
+      nextSpec >= 2,
+      `R  a new spec run started after the changes were requested (${nextSpec} spec runs)`,
+    );
+    if (nextSpec >= 2) {
+      const spec2 = await reviewOf(alice, 'product_owner', seenReviews);
+      seenReviews.add(spec2.id);
+      say(`${at()} the revised spec is ready: "${spec2.title}"`);
+      const oldPr = await gh(`/repos/${REPO}/pulls/${spec1.contextCard.prNumber}`);
+      check(
+        oldPr.state === 'closed',
+        `R  the pull request that was sent back was closed (#${spec1.contextCard.prNumber} is ${oldPr.state})`,
+      );
+      const specRuns2 = (
+        (await call(bob, 'GET', `/api/initiatives/${init.id}`)).runs as any[]
+      ).filter((r) => r.role === 'product');
+      const rev = specRuns2.find((r) => r.task.startsWith('Revise the spec'));
+      check(
+        Boolean(rev) && rev.task.includes('last 10'),
+        "R  the revision run was given the reviewer's words",
+      );
+      const revised = Buffer.from(
+        (
+          await gh(
+            `/repos/${REPO}/contents/${spec2.contextCard.diff.changedPaths[0]}?ref=${encodeURIComponent(rev.branch)}`,
+          )
+        ).content,
+        'base64',
+      ).toString('utf8');
+      check(
+        /unhealthy|not healthy|degraded|failing|error/i.test(revised),
+        'R  the revised spec has the story about an unhealthy app',
+      );
+      check(
+        /\b10\b|ten/i.test(revised),
+        'R  the revised spec limits the recent-requests list to 10',
+      );
+      await call(alice, 'POST', `/api/interactions/${spec2.id}/answer`, {
+        decision: 'approved',
+        answer: 'Good.',
+      });
+      const designReview = await reviewOf(cara, 'architect', seenReviews);
+      seenReviews.add(designReview.id);
+      await call(cara, 'POST', `/api/interactions/${designReview.id}/answer`, {
+        decision: 'approved',
+        answer: 'Build it.',
+      });
+      await waitFor(
+        'the build plan',
+        async () => (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan ?? null,
+        420_000,
+        3000,
+      );
+      let final: any = null;
+      const timeline: string[] = [];
+      // A task whose work already exists ends without a pull request. A person looks and skips it.
+      for (let round = 0; round < 3 && final?.state !== 'done'; round++) {
+        const r = await drivePlan(init.id, [...seenReviews], Date.now(), true);
+        final = r.final;
+        timeline.push(...r.timeline);
+        for (const task of final.tasks.filter((x: any) => x.state === 'failed')) {
+          say(`${at()} ${task.key} failed: ${task.detail}`);
+          await call(alice, 'POST', `/api/plans/${final.id}/tasks/${task.key}/skip`);
+          say(`${at()} Alice skipped ${task.key}`);
+        }
+      }
+      say(`build timeline: ${timeline.join(' | ')}`);
+      check(final.state === 'done', `R  the plan finished (${final.state})`);
+    }
   }
 
   // ---------------- Overlap: three parallel tasks that all edit the same file ----------------
