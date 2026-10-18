@@ -11,7 +11,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -157,13 +157,12 @@ try {
   }
   check(Boolean(repo?.id), `1  ${REPO} is in the registry (branch_pr, ${repo.verifyCommand})`);
 
-  async function startRun(title: string, task: string) {
+  async function startRun(title: string, task: string, autonomyMode?: 'guided') {
     const init = await call(alice, 'POST', '/api/initiatives', {
       title,
       goal: title,
       repositoryId: repo.id,
-      // Balanced mode merges a docs-only change by rule (phase D). These phases are about a person's review.
-      autonomyMode: 'guided',
+      ...(autonomyMode ? { autonomyMode } : {}),
     });
     const run = await call(alice, 'POST', `/api/initiatives/${init.id}/runs`, {
       task,
@@ -381,7 +380,7 @@ try {
       `Before writing anything, call ask_human with blocking set to true, question "Which greeting should docs/greeting-${stamp}.md contain?", ` +
       `options [{id:"hello",label:"Hello"},{id:"howdy",label:"Howdy"}], recommendation "hello", topicKey "greeting-${stamp}". ` +
       `Wait for the answer, then write the file with exactly the chosen greeting word and commit. Remember the codename ZEBRA-${stamp} and mention it in your final summary.`;
-    const { run } = await startRun(`Greeting ${stamp}`, task);
+    const { run } = await startRun(`Greeting ${stamp}`, task, 'guided');
 
     const q = await waitFor(
       'the blocking question',
@@ -510,7 +509,7 @@ try {
       `Before writing anything, call ask_human with blocking set to true, question "Which closing word should docs/closing-${stamp}.md contain?", ` +
       `options [{id:"goodbye",label:"Goodbye"},{id:"cheers",label:"Cheers"}], recommendation "goodbye", topicKey "${topic}". ` +
       `Do not search standing decisions yourself: the platform checks them when you ask. If the answer comes from a standing decision, use its text exactly. Write the file with only that word and commit.`;
-    const { run } = await startRun(`Closing ${stamp}`, task);
+    const { run } = await startRun(`Closing ${stamp}`, task, 'guided');
 
     const finished = await waitFor(
       'the run finishes without anyone being asked',
@@ -871,6 +870,68 @@ try {
       map.stages.find((s: any) => s.id === 'release').status === 'done',
       'G  the map shows the release done',
     );
+  }
+
+  // ---------------- Compare: one realistic task, measured and never merged ----------------
+  if (phase === 'compare') {
+    say(`--- compare: one realistic task with ${engine ?? 'the default engine'} ---`);
+    const task =
+      'Add a bookmarks API to this small web app. Keep the storage in memory, in a new file src/bookmarks.js, and wire the routes into src/server.js. ' +
+      'POST /bookmarks takes JSON {url, title}. The url must be an absolute http or https URL, and the title must be a non-empty string of at most 100 characters. A bad request answers 400 with {"error": "<reason>"}. A good one answers 201 with the stored bookmark {id, url, title}. ' +
+      'GET /bookmarks lists them. GET /bookmarks/:id answers 404 with {"error": "not found"} when the id does not exist. DELETE /bookmarks/:id answers 204, or 404 when it does not exist. ' +
+      'Add tests under test/ that cover validation, creation, listing, lookup, deletion and both 404 cases. Commit your work. Do not ask any questions.';
+    const { run } = await startRun(`Bookmarks ${stamp}`, task, 'guided');
+    const ended = await waitFor(
+      'the run ends',
+      async () => {
+        const r = await runState(run.id);
+        return ['succeeded', 'failed', 'cancelled', 'budget_exceeded', 'timed_out'].includes(
+          r.state,
+        )
+          ? r
+          : null;
+      },
+      900_000,
+      3000,
+    );
+    const ev = await events(run.id);
+    const count = (type: string) => ev.filter((e) => e.type === type).length;
+    const usage = (
+      await db.query(
+        'select count(*)::int calls, coalesce(sum(input_tokens),0)::int tin, coalesce(sum(output_tokens),0)::int tout, coalesce(sum(cost_micros),0)::int cost from cost_record where run_id = $1',
+        [run.id],
+      )
+    ).rows[0];
+    const row = (
+      await db.query(
+        'select extract(epoch from (finished_at - started_at))::int seconds, branch, pr_number from agent_run where id = $1',
+        [run.id],
+      )
+    ).rows[0];
+    const verifies = ev.filter((e) => e.type === 'verify.finished').map((e) => e.payload.ok);
+    say(
+      `RESULT engine=${engine ?? 'claude-code'} state=${ended.state} seconds=${row.seconds} model_calls=${usage.calls} tokens_in=${usage.tin} tokens_out=${usage.tout} cost_usd=${(usage.cost / 1e6).toFixed(4)} tool_calls=${count('tool.call')} verify=${JSON.stringify(verifies)} pr=${row.pr_number}`,
+    );
+    check(ended.state === 'succeeded', 'C  the run succeeded');
+    if (row.pr_number && ghToken) {
+      const auth = { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' };
+      const diff = await fetch(`https://api.github.com/repos/${REPO}/pulls/${row.pr_number}`, {
+        headers: { ...auth, accept: 'application/vnd.github.v3.diff' },
+      }).then((r) => r.text());
+      const file = path.join(os.tmpdir(), `compare-${engine ?? 'claude-code'}.diff`);
+      await writeFile(file, diff);
+      say(`the pull request diff is in ${file} (${diff.split('\n').length} lines)`);
+      // Leave the scratch repository tidy: nothing from this comparison is merged.
+      await fetch(`https://api.github.com/repos/${REPO}/pulls/${row.pr_number}`, {
+        method: 'PATCH',
+        headers: auth,
+        body: JSON.stringify({ state: 'closed' }),
+      });
+      await fetch(`https://api.github.com/repos/${REPO}/git/refs/heads/${row.branch}`, {
+        method: 'DELETE',
+        headers: auth,
+      });
+    }
   }
 } catch (e) {
   say(`ERROR: ${e instanceof Error ? e.message : String(e)}`);

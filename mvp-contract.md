@@ -572,13 +572,25 @@ Not built, or only partly:
 - **How an agent picks its engine.** `engine:` in its `agent.yaml` (`claude-code` or `copilot-cli`). The run spec carries it, and the runner starts the matching adapter. An engine the runner does not know ends the run with an error that names it. Nothing else in the platform changes: same gateway, same MCP tools, same events, same park and resume.
 - **Adapter** (`apps/runner/src/copilot.ts`). Runs `copilot -p ... --output-format json` in its bring-your-own-key mode against the Model Gateway, with the run token as the bearer token and no GitHub sign-in. It reads the CLI's JSON lines into the same platform events (message, tool call, tool result, file changed, result), counts model calls to enforce `max_turns` (the CLI has no limit of its own), puts the system prompt in front of the first message, loads the platform tools through `--additional-mcp-config`, and turns off the CLI's own question tool, the built-in GitHub tools, telemetry and updates. Web tools are excluded and `git push` is denied. The session id is chosen by the runner (`--session-id`) and resumed with `--resume`.
 - **Image.** `@github/copilot@1.0.100-1` is installed next to Claude Code. The image grew from 826 MB to 1.15 GB.
-- **Proven live** (`ACCEPT_ENGINE=copilot-cli node --import tsx src/accept.ts <phase> docker`): the full loop to a merged pull request (A: question, assumption, verify, review, Gate merge, cost records add up); a runner killed during a question, then resumed with the same session and the codename remembered (B); a standing decision answering the agent with nobody asked (C). Claude Code was re-run on phase A after the refactor of the shared process code and passed.
+- **Proven live** (`ACCEPT_ENGINE=copilot-cli node --import tsx src/accept.ts <phase> docker`): the full loop to a merged pull request (A: question, assumption, verify, review, Gate merge, cost records add up); a runner killed during a question, then resumed with the same session and the codename remembered (B); a standing decision answering the agent with nobody asked (C); a docs-only change merged by rule and the same change held in guided mode (D); the Product agent's spec held as checkpoint G1 and a release approved and published (E). Claude Code was re-run on phase A after the refactor of the shared process code and passed.
+- **One real task, both engines** (`ACCEPT_ENGINE=<engine> node --import tsx src/accept.ts compare docker`: a bookmarks API with validation, five routes and tests, in the scratch repository, never merged). One run each, so this is a sample and not a benchmark:
+
+  | | Claude Code | Copilot CLI |
+  |---|---|---|
+  | Result | succeeded, verify passed first time | succeeded, verify passed first time |
+  | Time | 65 s | 59 s |
+  | Model calls | 12 | 11 |
+  | Input tokens recorded | 16 k | 234 k |
+  | Cost | $0.148 | $0.266 |
+  | Diff | 3 files, about 370 lines added | 3 files, about 350 lines added |
+
+  I read both diffs. Both did what was asked, with similar validation and tests. The Copilot run cost about 1.8 times as much. The input token gap suggests Claude Code's prompt is cached and the Copilot CLI's is not through this route (about 21 k tokens sent on every call), but I did not check that. If it holds, a long Copilot run costs more per step as the context grows.
 - **Not proven or not done.**
-  - Phases D and E (autopilot and release) were not run with this engine. They use the same Gate and the same tools, but I did not run them.
-  - Only the default alias (gent-default) was used, on small tasks. Quality against Claude Code on real tasks was not measured, and the cost comparison is not done (phase A cost $0.22 with Copilot).
+  - Only the default alias (`agent-default`) was used, on small tasks and one medium one. Larger tasks, other models and the cost of long runs were not measured.
   - The CLI is a pre-release version (1.0.100-1 is the build the spike used; the stable tag is 1.0.98). GitHub's terms for automated use of the CLI against a self-chosen model endpoint were not checked.
   - Local (non-Docker) runs on Windows need `COPILOT_BIN` to point at something `spawn` can run, because the npm shim is a `.ps1` file.
   - The phase B and C scripts had drifted since Step 3: balanced mode merged their docs-only change by rule, so they waited for a review that never came. They now start their initiatives in guided mode.
+
 ## 17. Test strategy
 
 - **Unit** (`packages/core`): state machines, rules evaluation, ranking, routing. No I/O.
