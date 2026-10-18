@@ -25,6 +25,12 @@ const ID = /^T\d{1,3}$/;
 const STORY = /^US-\d{1,3}$/;
 const MAX_TASKS = 20;
 
+const TEST_PATH =
+  /(^|\/)(tests?|__tests__|e2e|specs?)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb)$|(^|\/)test_[^/]+\.py$/i;
+
+/** Whether a path is a test file, by the usual names and folders. */
+export const isTestPath = (p: string): boolean => TEST_PATH.test(p.replace(/\\/g, '/'));
+
 const strings = (v: unknown): string[] | null =>
   Array.isArray(v) && v.every((x) => typeof x === 'string' && x.trim() !== '')
     ? (v as string[]).map((x) => x.trim())
@@ -99,6 +105,19 @@ export function validateDesignTasks(raw: unknown): DesignTasksResult {
     for (const d of t.dependsOn) {
       if (d === t.id) errors.push(`${t.id}: a task cannot depend on itself`);
       else if (!ids.has(d)) errors.push(`${t.id}: depends on ${d}, which is not a task`);
+    }
+  }
+  // Tests are written with the code they cover, in the same task. A task that only adds tests to code that another
+  // task writes ends up with nothing to do, because the first task already added them. A plan made only of test work
+  // (adding coverage to existing code) is fine.
+  const touchesCode = (t: DesignTask) => t.paths.some((p) => !isTestPath(p));
+  if (tasks.some(touchesCode)) {
+    for (const t of tasks) {
+      if (t.paths.length > 0 && !touchesCode(t)) {
+        errors.push(
+          `${t.id}: touches only test files (${t.paths.join(', ')}). Put these tests in the task that writes the code they cover`,
+        );
+      }
     }
   }
   if (errors.length > 0) return { ok: false, errors };

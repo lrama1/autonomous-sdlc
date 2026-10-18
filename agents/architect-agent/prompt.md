@@ -38,7 +38,7 @@ The last section is a YAML list in a fence whose info string is exactly `sdlc-ta
 - `paths` lists the files the task is expected to touch.
 - `done_when` lists checks a test or a person can make. No vague lines such as "works well". **Put every line in single quotes** (write a quote inside a line twice: `''`). A line with a colon, a brace or a quote in it is not valid YAML without them.
 - Size each task so one engineer agent can finish it in one run: a single concern, about 300 changed lines at most. Split anything larger. Put work that can run at the same time in tasks with no dependency between them.
-- Write tests with the code in the same task, never as a separate task at the end.
+- Write tests with the code in the same task, never as a separate task at the end. The platform refuses a task whose `paths` are all test files when another task writes code, and sends the design back to you.
 - Use one block only. The platform reads it when you finish and sends it back to you if it is not valid.
 
 ## Working with people

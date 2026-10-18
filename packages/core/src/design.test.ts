@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseDesignTasks, validateDesignTasks } from './design.js';
+import { isTestPath, parseDesignTasks, validateDesignTasks } from './design.js';
 
 const task = (o: Record<string, unknown> = {}) => ({
   id: 'T1',
@@ -68,6 +68,49 @@ describe('validateDesignTasks', () => {
     expect(
       errorsOf([task({ id: 'T1', depends_on: ['T2'] }), task({ id: 'T2', depends_on: ['T1'] })]),
     ).toContain('in a circle');
+  });
+});
+
+describe('test-only tasks', () => {
+  it('recognises test files by their usual names', () => {
+    for (const p of [
+      'test/server.test.js',
+      'tests/api.py',
+      'src/__tests__/a.ts',
+      'e2e/login.spec.ts',
+      'src/user.spec.ts',
+      'pkg/user_test.go',
+      'app/test_user.py',
+      'src\\a.test.ts',
+    ])
+      expect(isTestPath(p), p).toBe(true);
+    for (const p of ['src/server.js', 'src/latest.js', 'docs/testing.md', 'src/contest/a.ts'])
+      expect(isTestPath(p), p).toBe(false);
+  });
+
+  it('refuses a task that only adds tests when other tasks write the code', () => {
+    const msg = errorsOf([
+      task({ id: 'T1', paths: ['src/server.js', 'test/server.test.js'] }),
+      task({ id: 'T2', title: 'Add tests', paths: ['test/server.test.js'], depends_on: ['T1'] }),
+    ]);
+    expect(msg).toContain('T2: touches only test files (test/server.test.js)');
+    expect(msg).toContain('Put these tests in the task that writes the code');
+    expect(msg).not.toContain('T1:');
+  });
+
+  it('accepts a plan that is only about tests, and tasks that mix code and tests', () => {
+    expect(
+      validateDesignTasks([
+        task({ id: 'T1', paths: ['test/a.test.js'] }),
+        task({ id: 'T2', paths: ['test/b.test.js'] }),
+      ]).ok,
+    ).toBe(true);
+    expect(
+      validateDesignTasks([
+        task({ id: 'T1', paths: ['src/a.js', 'test/a.test.js'] }),
+        task({ id: 'T2', paths: ['src/b.js', 'test/b.test.js'] }),
+      ]).ok,
+    ).toBe(true);
   });
 });
 
