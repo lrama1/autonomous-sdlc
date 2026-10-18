@@ -12,7 +12,8 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all]
+//   BUG_VARIANT=norepro makes the bug phase report a bug that does not exist, to see the agent stop without a pull request. [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -1625,6 +1626,7 @@ try {
 
   // ---------------- Bug: a reported bug is reproduced, explained, fixed, reviewed, and merged ----------------
   if (phase === 'bug') {
+    const norepro = process.env.BUG_VARIANT === 'norepro';
     say(
       '--- bug: the Bug Agent reproduces a planted bug with a failing test, finds the cause, and fixes it ---',
     );
@@ -1645,9 +1647,10 @@ try {
         throw new Error(`could not plant ${file}: ${r.status} ${(await r.text()).slice(0, 200)}`);
     };
     // The bug: the discount is subtracted as if it were a flat amount. The one existing test happens to pass.
+    // In the norepro variant the code is right, and the report is wrong.
     await put(
       `src/discount-${s}.js`,
-      `// Applies a percentage discount to a price.\nexport function applyDiscount(price, percent) {\n  return price - percent;\n}\n`,
+      `// Applies a percentage discount to a price.\nexport function applyDiscount(price, percent) {\n  return ${norepro ? 'price * (1 - percent / 100)' : 'price - percent'};\n}\n`,
       `plant a bug (${s})`,
     );
     await put(
@@ -1707,76 +1710,160 @@ try {
       `B  the Bug Agent took it (${run.definition}, ${Math.round((Date.now() - t0) / 1000)}s after the report)`,
     );
 
-    const review = await waitFor(
-      'the fix review',
-      async () => {
+    if (norepro) {
+      // Right outcomes: it asks a person, or it stops with a summary. Wrong: a pull request.
+      const ended = (r: any) =>
+        ['succeeded', 'failed', 'cancelled', 'budget_exceeded', 'timed_out'].includes(r.state);
+      const settle = async () => {
         const q: any[] = await call(bob, 'GET', '/api/interactions');
-        return q.find((i) => i.runId === started.runId && i.type === 'review') ?? null;
-      },
-      600_000,
-      3000,
-    );
-    const paths: string[] = review.contextCard.diff.changedPaths;
-    check(
-      paths.includes(`src/discount-${s}.js`) && paths.some((p) => p.startsWith('test/')),
-      `B  the pull request changes the code and a test (${paths.join(', ')})`,
-    );
-    check(review.title.includes('Fix bug:'), `B  titled from the report: "${review.title}"`);
-    const summary = String(review.contextCard.summary ?? '');
-    for (const h of ['Reproduction', 'Cause', 'Fix', 'Risk'])
-      check(summary.includes(h), `B  the summary has a "${h}" section`);
-    say(`summary: ${summary.replace(/\s+/g, ' ').slice(0, 700)}`);
-    const mid: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
-    check(
-      mid[0].state === 'fixing' && mid[0].prNumber !== null,
-      `B  the report shows the fix in review (PR #${mid[0].prNumber})`,
-    );
+        const pr = q.find((i) => i.runId === started.runId && i.type === 'review');
+        if (pr) return { pr };
+        const ask = q.find(
+          (i) => i.runId === started.runId && i.type !== 'review' && i.state === 'open',
+        );
+        if (ask) return { ask };
+        const r = await call(bob, 'GET', `/api/runs/${started.runId}`);
+        return ended(r) ? { run: r } : null;
+      };
+      let end: any = await waitFor('the agent stops or asks', settle, 600_000, 3000);
+      if (end.ask) {
+        say(`the agent asked: "${end.ask.title}"`);
+        const waitingReport = await waitFor(
+          'the report shows the question',
+          async () => {
+            const all: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+            return /waiting for an answer/.test(all[0].detail ?? '') ? all[0] : null;
+          },
+          60_000,
+          3000,
+        );
+        check(
+          waitingReport.state === 'fixing',
+          'B  the report shows the agent is waiting for an answer, not "fixed"',
+        );
+        await call(bob, 'POST', `/api/interactions/${end.ask.id}/answer`, {
+          answer:
+            'The code is meant to be correct. The report is wrong, so please stop without making a pull request.',
+          makeStanding: false,
+        });
+        end = await waitFor(
+          'the agent stops',
+          async () => {
+            const q: any[] = await call(bob, 'GET', '/api/interactions');
+            const pr = q.find((i) => i.runId === started.runId && i.type === 'review');
+            if (pr) return { pr };
+            const r = await call(bob, 'GET', `/api/runs/${started.runId}`);
+            return ended(r) ? { run: r } : null;
+          },
+          600_000,
+          3000,
+        );
+      }
+      check(!end.pr, 'B  the agent did not open a pull request for a bug it could not see');
+      const opened = await gh(
+        `/repos/${REPO}/pulls?state=all&per_page=5&sort=created&direction=desc`,
+      );
+      check(
+        !opened.some((p: any) => new Date(p.created_at).getTime() > t0 - 5000),
+        'B  no pull request exists on the repository for it',
+      );
+      const after = await waitFor(
+        'the report needs attention',
+        async () => {
+          const all: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+          return all[0].state === 'needs_attention' ? all[0] : null;
+        },
+        60_000,
+        3000,
+      );
+      check(
+        /without a fix to review/.test(after.detail),
+        `B  the report says no fix was made ("${after.detail.slice(0, 400)}")`,
+      );
+      check(
+        /The agent said:/.test(after.detail),
+        'B  and it carries what the agent said, so nobody has to open the run',
+      );
+      const head = await gh(`/repos/${REPO}/commits/main`);
+      check(
+        head.commit.message.startsWith(`plant its only test (${s})`),
+        `B  main was not changed by the agent (it is still at "${head.commit.message.split('\n')[0]}")`,
+      );
+      const asks: any[] = await call(bob, 'GET', '/api/interactions');
+      say(`open asks from the run: ${asks.filter((i) => i.runId === started.runId).length}`);
+      say(`the report: ${after.detail}`);
+    } else {
+      const review = await waitFor(
+        'the fix review',
+        async () => {
+          const q: any[] = await call(bob, 'GET', '/api/interactions');
+          return q.find((i) => i.runId === started.runId && i.type === 'review') ?? null;
+        },
+        600_000,
+        3000,
+      );
+      const paths: string[] = review.contextCard.diff.changedPaths;
+      check(
+        paths.includes(`src/discount-${s}.js`) && paths.some((p) => p.startsWith('test/')),
+        `B  the pull request changes the code and a test (${paths.join(', ')})`,
+      );
+      check(review.title.includes('Fix bug:'), `B  titled from the report: "${review.title}"`);
+      const summary = String(review.contextCard.summary ?? '');
+      for (const h of ['Reproduction', 'Cause', 'Fix', 'Risk'])
+        check(summary.includes(h), `B  the summary has a "${h}" section`);
+      say(`summary: ${summary.replace(/\s+/g, ' ').slice(0, 700)}`);
+      const mid: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+      check(
+        mid[0].state === 'fixing' && mid[0].prNumber !== null,
+        `B  the report shows the fix in review (PR #${mid[0].prNumber})`,
+      );
 
-    await call(bob, 'POST', `/api/interactions/${review.id}/answer`, {
-      decision: 'approved',
-      answer: 'Fine.',
-    });
-    const fixed = await waitFor(
-      'the report is fixed',
-      async () => {
-        const all: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
-        if (all[0].state === 'needs_attention')
-          throw new Error(`needs attention: ${all[0].detail}`);
-        return all[0].state === 'fixed' ? all[0] : null;
-      },
-      420_000,
-      4000,
-    );
-    check(
-      fixed.state === 'fixed',
-      `B  once the Gate merged it, the report is fixed ("${fixed.detail}")`,
-    );
+      await call(bob, 'POST', `/api/interactions/${review.id}/answer`, {
+        decision: 'approved',
+        answer: 'Fine.',
+      });
+      const fixed = await waitFor(
+        'the report is fixed',
+        async () => {
+          const all: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+          if (all[0].state === 'needs_attention')
+            throw new Error(`needs attention: ${all[0].detail}`);
+          return all[0].state === 'fixed' ? all[0] : null;
+        },
+        420_000,
+        4000,
+      );
+      check(
+        fixed.state === 'fixed',
+        `B  once the Gate merged it, the report is fixed ("${fixed.detail}")`,
+      );
 
-    // Does the merged code do the right thing?
-    const code = Buffer.from(
-      (await gh(`/repos/${REPO}/contents/src/discount-${s}.js`)).content,
-      'base64',
-    ).toString('utf8');
-    const file = path.join(os.tmpdir(), `discount-${s}.mjs`);
-    await writeFile(file, code);
-    const mod = await import(`file:///${file.replace(/\\/g, '/')}`);
-    const results = [
-      mod.applyDiscount(200, 25),
-      mod.applyDiscount(80, 50),
-      mod.applyDiscount(100, 10),
-      mod.applyDiscount(50, 0),
-    ];
-    check(
-      JSON.stringify(results) === JSON.stringify([150, 40, 90, 50]),
-      `B  the merged function gives the right answers (${results.join(', ')})`,
-    );
-    const cost = await db.query(
-      'select coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1',
-      [init.id],
-    );
-    say(
-      `the fix cost $${(cost.rows[0].c / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - t0) / 1000)}s`,
-    );
+      // Does the merged code do the right thing?
+      const code = Buffer.from(
+        (await gh(`/repos/${REPO}/contents/src/discount-${s}.js`)).content,
+        'base64',
+      ).toString('utf8');
+      const file = path.join(os.tmpdir(), `discount-${s}.mjs`);
+      await writeFile(file, code);
+      const mod = await import(`file:///${file.replace(/\\/g, '/')}`);
+      const results = [
+        mod.applyDiscount(200, 25),
+        mod.applyDiscount(80, 50),
+        mod.applyDiscount(100, 10),
+        mod.applyDiscount(50, 0),
+      ];
+      check(
+        JSON.stringify(results) === JSON.stringify([150, 40, 90, 50]),
+        `B  the merged function gives the right answers (${results.join(', ')})`,
+      );
+      const cost = await db.query(
+        'select coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1',
+        [init.id],
+      );
+      say(
+        `the fix cost $${(cost.rows[0].c / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - t0) / 1000)}s`,
+      );
+    }
   }
 
   // ---------------- Pipeline, harder: a vague goal, questions from the agents, and a spec that is sent back ----------------

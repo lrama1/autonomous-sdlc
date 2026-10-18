@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { agentRun, bugReport, initiative, interaction, stageStart } from '@sdlc/db';
+import { agentRun, bugReport, initiative, interaction, runEvent, stageStart } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
@@ -153,8 +153,7 @@ export async function syncBugs(db: Db): Promise<void> {
         detail = `The fix run ended as ${run.state}.`;
       } else if (run?.state === 'succeeded' && !review) {
         state = 'needs_attention';
-        detail =
-          'The agent finished without a fix to review. It may not have reproduced the bug. See its summary.';
+        detail = `The agent finished without a fix to review. It may not have reproduced the bug.${await agentSaid(db, run.id)}`;
       } else if (review?.state === 'answered' && decision && decision !== 'approved') {
         state = 'needs_attention';
         detail = `The reviewer chose "${decision}".`;
@@ -166,13 +165,46 @@ export async function syncBugs(db: Db): Promise<void> {
         detail = `The merge stopped (${gate}).`;
       } else {
         state = 'fixing';
-        detail = review ? 'The fix is in review.' : 'The agent is working on it.';
+        const [asked] = review
+          ? []
+          : await db
+              .select({ title: interaction.title })
+              .from(interaction)
+              .where(
+                and(
+                  eq(interaction.runId, step.runId),
+                  inArray(interaction.type, ['question', 'decision']),
+                  eq(interaction.state, 'open'),
+                ),
+              )
+              .limit(1);
+        detail = review
+          ? 'The fix is in review.'
+          : asked
+            ? `The agent has a question and is waiting for an answer: ${asked.title.slice(0, 300)}`
+            : 'The agent is working on it.';
       }
     }
     if (state !== bug.state || detail !== bug.detail) {
       await db.update(bugReport).set({ state, detail }).where(eq(bugReport.id, bug.id));
     }
   }
+}
+
+/** The agent's closing words, trimmed to a line, so a person need not open the run to see why it stopped. */
+async function agentSaid(db: Db, runId: string): Promise<string> {
+  const [said] = await db
+    .select({ payload: runEvent.payload })
+    .from(runEvent)
+    .where(and(eq(runEvent.runId, runId), eq(runEvent.type, 'run.summary')))
+    .orderBy(sql`${runEvent.seq} desc`)
+    .limit(1);
+  const text = String((said?.payload as { text?: string } | undefined)?.text ?? '')
+    .replace(/[#*`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return ' See the run for its summary.';
+  return ` The agent said: ${text.slice(0, 400)}${text.length > 400 ? '...' : ''}`;
 }
 
 /** What a revision run is told: the file, the reviewer's words, and that it starts from the current main branch. */

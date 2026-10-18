@@ -12,6 +12,7 @@ import {
   initiative,
   interaction,
   person,
+  runEvent,
   runMigrations,
   stageStart,
 } from '@sdlc/db';
@@ -226,6 +227,22 @@ describe('following the fix', () => {
   it('needs a person when the agent made no fix, the run failed, or the reviewer declined', async () => {
     const none = await started();
     await db.update(agentRun).set({ state: 'succeeded' }).where(eq(agentRun.id, none.runId));
+    await db.insert(runEvent).values({
+      runId: none.runId,
+      seq: 9000,
+      type: 'run.summary',
+      payload: {
+        text: '**Reproduction**\nI ran applyDiscount(200, 25) and got 150, so I could not see the bug.',
+      },
+    });
+    const asking = await started();
+    await db.insert(interaction).values({
+      initiativeId: asking.f.initiativeId,
+      runId: asking.runId,
+      type: 'question',
+      title: 'Is the code meant to be buggy?',
+      roleNeeded: 'backend_engineer',
+    });
     const failed = await started();
     await db.update(agentRun).set({ state: 'failed' }).where(eq(agentRun.id, failed.runId));
     const declined = await started();
@@ -239,7 +256,14 @@ describe('following the fix', () => {
     });
     await syncBugs(db);
     expect((await stepOf(none.bug.id)).bug.detail).toContain('without a fix to review');
+    expect((await stepOf(none.bug.id)).bug.detail).toContain(
+      'The agent said: Reproduction I ran applyDiscount(200, 25) and got 150',
+    );
     expect((await stepOf(failed.bug.id)).bug.detail).toContain('ended as failed');
+    expect((await stepOf(asking.bug.id)).bug).toMatchObject({
+      state: 'fixing',
+      detail: expect.stringContaining('waiting for an answer: Is the code meant to be buggy?'),
+    });
     expect((await stepOf(declined.bug.id)).bug.detail).toContain('"changes_requested"');
     for (const x of [none, failed, declined])
       expect((await stepOf(x.bug.id)).bug.state).toBe('needs_attention');
