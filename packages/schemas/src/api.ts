@@ -307,10 +307,19 @@ export const previewSchema = z.object({
   state: z.enum(['ready', 'building', 'failed', 'stale', 'none', 'not_permitted']),
   url: z.string().nullable(),
   label: z.string().nullable(),
-  source: z.enum(['deployment', 'status']).nullable(),
+  source: z.enum(['deployment', 'status', 'platform']).nullable(),
   sha: z.string().nullable(),
   headSha: z.string(),
   detail: z.string(),
+  // The preview the platform itself runs from the pull request, if that is switched on.
+  platform: z.object({
+    available: z.boolean(),
+    id: z.string().nullable(),
+    state: z.enum(['none', 'starting', 'ready', 'failed', 'stopped', 'expired', 'unavailable']),
+    expiresAt: z.string().nullable(),
+    detail: z.string().nullable(),
+    ttlMinutes: z.number(),
+  }),
 });
 export type PreviewDto = z.infer<typeof previewSchema>;
 

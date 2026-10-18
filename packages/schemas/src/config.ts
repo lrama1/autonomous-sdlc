@@ -57,6 +57,13 @@ export const apiConfigSchema = z.object({
   // Hosts a sandbox may open HTTPS tunnels to. The platform itself is reached through fixed ports, not this list.
   RUNNER_EGRESS_ALLOW: z.string().default('github.com,registry.npmjs.org'),
   RUNS_DIR: z.string().default('.dev-data/runs'),
+  // Previews the platform runs itself from a pull request (needs RUNNER_ADAPTER=docker).
+  PREVIEW_MAX_ACTIVE: z.coerce.number().int().min(1).max(10).default(2),
+  PREVIEW_TTL_MIN: z.coerce.number().int().min(1).max(240).default(30),
+  PREVIEW_PORT_BASE: z.coerce.number().int().min(1024).max(65000).default(9100),
+  PREVIEW_MEMORY: z.string().default('512m'),
+  // Hosts a preview may open HTTPS tunnels to while it installs. Nothing else leaves the sandbox.
+  PREVIEW_EGRESS_ALLOW: z.string().default('registry.npmjs.org'),
   RUNNER_ENTRY: z.string().default('apps/runner/src/main.ts'),
   MAX_CONCURRENT_RUNS: z.coerce.number().int().positive().default(2),
   // How long a blocking ask_human holds the engine's tool call before the run parks (mvp-contract section 6).

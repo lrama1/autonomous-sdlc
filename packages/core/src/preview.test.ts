@@ -79,6 +79,51 @@ describe('choosePreview', () => {
   });
 });
 
+describe('a preview the platform runs', () => {
+  const run = (o: Partial<PreviewCandidate>): PreviewCandidate => ({
+    source: 'platform',
+    sha: HEAD,
+    state: 'success',
+    url: 'http://127.0.0.1:9100/',
+    at: '2026-10-18T10:00:00Z',
+    ...o,
+  });
+
+  it('is described as run by the platform, not by a pipeline', () => {
+    expect(choosePreview(HEAD, [run({})], true)).toMatchObject({
+      state: 'ready',
+      source: 'platform',
+      url: 'http://127.0.0.1:9100/',
+    });
+    expect(choosePreview(HEAD, [run({})], true).detail).toContain('Run by the platform');
+    expect(choosePreview(HEAD, [run({ state: 'pending', url: undefined })], true).detail).toContain(
+      'The platform is starting',
+    );
+    expect(choosePreview(HEAD, [run({ state: 'failure', url: undefined })], true)).toMatchObject({
+      state: 'failed',
+      detail: 'The platform could not start the preview.',
+    });
+  });
+
+  it('is out of date once the pull request has a new commit', () => {
+    expect(choosePreview('f'.repeat(40), [run({})], true).state).toBe('stale');
+  });
+
+  it('loses to a newer report from the pipeline, and wins over an older one', () => {
+    const pipeline: PreviewCandidate = {
+      source: 'deployment',
+      sha: HEAD,
+      state: 'success',
+      url: 'https://pr.example.test/',
+      at: '2026-10-18T11:00:00Z',
+    };
+    expect(choosePreview(HEAD, [run({}), pipeline], true).source).toBe('deployment');
+    expect(choosePreview(HEAD, [run({ at: '2026-10-18T12:00:00Z' }), pipeline], true).source).toBe(
+      'platform',
+    );
+  });
+});
+
 describe('safeUrl and normalizePreviewState', () => {
   it('lets only web addresses through', () => {
     expect(safeUrl('https://a.example.test/x')).toBe('https://a.example.test/x');

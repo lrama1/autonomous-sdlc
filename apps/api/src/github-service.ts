@@ -180,6 +180,16 @@ export class GitHubService {
     }
   }
 
+  /** The repository's files at a commit, as a gzipped tar. The Gate App reads it; the preview sandbox never sees a credential. */
+  async archive(repo: string, sha: string): Promise<Buffer> {
+    const { token } = await this.tokenFor('gate', repo);
+    return this.client.download(
+      `/repos/${repo}/tarball/${encodeURIComponent(sha)}`,
+      token,
+      100 * 1024 * 1024,
+    );
+  }
+
   async closePullRequest(repo: string, number: number): Promise<void> {
     const { token } = await this.tokenFor('gate', repo, { pull_requests: 'write' });
     await this.client.call('PATCH', `/repos/${repo}/pulls/${number}`, token, { state: 'closed' });

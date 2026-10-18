@@ -26,7 +26,7 @@ export interface DockerRunnerOptions {
 
 /** The name sandboxes use for the proxy, on their own network. The container behind it may be named anything. */
 export const EGRESS_ALIAS = 'sdlc-egress';
-const MANAGED = 'sdlc.managed=true';
+export const MANAGED = 'sdlc.managed=true';
 const PROXY_PORT = 3128;
 
 /** The container, network, and volume names for one run. */
@@ -36,7 +36,7 @@ export const namesFor = (runId: string) => ({
   volume: `sdlc-work-${runId}`,
 });
 
-async function docker(
+export async function docker(
   args: string[],
   opts: { allowFail?: boolean } = {},
 ): Promise<{ out: string; ok: boolean }> {
@@ -53,7 +53,7 @@ async function docker(
   }
 }
 
-interface Inspected {
+export interface Inspected {
   State?: { Running?: boolean };
   Config?: { Labels?: Record<string, string> };
   NetworkSettings?: { Networks?: Record<string, { IPAddress?: string }> };
@@ -63,7 +63,7 @@ interface Inspected {
  * `docker inspect` as JSON. Go templates need quotes, and quotes inside arguments do not survive Windows, so the
  * output is parsed here instead. Null when the container does not exist.
  */
-async function inspect(container: string): Promise<Inspected | null> {
+export async function inspect(container: string): Promise<Inspected | null> {
   const r = await docker(['inspect', container], { allowFail: true });
   if (!r.ok) return null;
   try {

@@ -412,6 +412,30 @@ export const stageStart = pgTable(
 );
 
 // A bug report (spec 9, step 7). The Bug Agent reproduces it, finds the cause, and proposes a fix.
+// A preview that the platform runs itself, in a sandbox, from a pull request's own code (mvp-contract section 16).
+export const previewRun = pgTable(
+  'preview_run',
+  {
+    id: id(),
+    interactionId: uuid('interaction_id').references(() => interaction.id),
+    initiativeId: uuid('initiative_id').references(() => initiative.id),
+    repository: text('repository').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    // starting | ready | failed | stopped | expired | unavailable (the repository has no .sdlc/preview.yaml)
+    state: text('state').notNull().default('starting'),
+    url: text('url'),
+    hostPort: integer('host_port'),
+    detail: text('detail'),
+    startedBy: uuid('started_by').references(() => person.id),
+    createdAt: createdAt(),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+  },
+  (t) => [index('preview_run_pr_idx').on(t.repository, t.prNumber)],
+);
+
 export const bugReport = pgTable(
   'bug_report',
   {

@@ -446,7 +446,8 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /integrations`, `POST`, `PATCH /integrations/:id`, `POST .../retire`, `POST .../refresh-docs`, `GET .../docs` | The Integration Register. Writes need an Architect, Engineer or admin |
 | `GET /initiatives/:id/map` | Stages with status and who each waits on |
 | `GET /initiatives/:id/releases`, `POST` `{ version }` | List releases. Prepare one (Product Owner, DevOps, admin) |
-| `GET /interactions/:id/preview` | What the repository's pipeline reported as a preview of a pull request under review |
+| `GET /interactions/:id/preview` | The preview of a pull request under review: what the repository's pipeline reported, or the one the platform runs. Includes the platform preview's state |
+| `POST /interactions/:id/preview/start`, `POST /previews/:id/stop` | Run the pull request in a sandbox (202 and a poll), or stop it. Any person with a role. 429 when the limit is reached |
 | `GET /initiatives/:id/plan`, `POST /plans/:id/start`, `POST /plans/:id/cancel`, `POST /plans/:id/tasks/:key/retry` or `/skip` | The build plan of an approved design. The writes need a Product Owner, Architect or admin |
 | `GET /initiatives/:id/stages`, `POST /stages/:id/start` or `/skip` | The steps that start by themselves or wait for a click: spec, design, bug fix. The writes need a Product Owner, Architect or admin, or for a bug fix an engineer or admin |
 | `GET /bugs?initiativeId=`, `POST /initiatives/:id/bugs` | Bug reports and where each fix is. Anyone signed in can report |
@@ -475,6 +476,7 @@ One `config` module reads environment variables and validates them with `zod` at
 | `GATEWAY_URL` | `http://gateway:8787` | |
 | `OPENROUTER_KEY_AGENTS_REF`, `OPENROUTER_KEY_SERVICES_REF` | | Secrets port references, never raw keys in config files |
 | `RUNNER_ADAPTER` | `process` \| `docker` \| `fargate` | |
+| `PREVIEW_MAX_ACTIVE`, `PREVIEW_TTL_MIN`, `PREVIEW_PORT_BASE`, `PREVIEW_MEMORY`, `PREVIEW_EGRESS_ALLOW` | `2`, `30`, `9100`, `512m`, `registry.npmjs.org` | Platform previews (they need `RUNNER_ADAPTER=docker`): how many run at once, how long each runs, the first local port, memory each, and the hosts the install step may reach |
 | `BLOCKING_MAX_S` | `120` | Section 6 |
 | `WEB_DIR`, `API_HOST` | `apps/web/dist`, `0.0.0.0` | The API serves the built web app, and listens on all interfaces in a container |
 | `BOOTSTRAP_ADMIN_EMAIL` | | Whoever signs in with this verified email gets the admin hat |
@@ -569,7 +571,7 @@ Not proven, or not built:
 - **G6, release** (`POST /api/initiatives/:id/releases`). A Product Owner, DevOps or admin prepares a version. The platform lists what merged since the last release, pins the tip of the integration branch, and requires the required check to be green on it. The checkpoint is a hard stop for `RELEASE_APPROVER_ROLE` (default Product Owner), never defaulted, never answered in chat. On approval the **Gate App** creates the tag and the release with the notes, but only if the branch has not moved. Live: published on `sdlc-scratch`, then removed.
 
 Not built, or only partly:
-- **A platform-run preview** (the repository's pipeline provides previews today, see "Previews" below). **Stories as records**: they live inside the spec document.
+- **Platform previews on Fargate** (Docker is built, see "Platform previews" below). **Stories as records**: they live inside the spec document.
 - **The steps start on their own, except the release** (see "The pipeline" and "The build plan" below). A person still starts the release, and starts any run by hand if the steps are turned off for an initiative.
 - The map is boxes and arrows, not xyflow, and there is no portfolio view, release calendar or freeze, hotfix path, or scope-change re-opening.
 - A new external host in a code diff is not detected (agents are told to propose it, and the sandbox cannot reach it anyway). A `none` test strategy is shown as a warning, not enforced as a trigger. Credentials from the register are not put into sandboxes.
@@ -731,6 +733,25 @@ Decided with the owner: show the link now (option 1), and have the platform buil
 - **Deployments, proven live** (`PREVIEW_VARIANT=deployment node --import tsx src/accept.ts preview docker`, real GitHub, real Deployment and Deployment statuses created on `sdlc-scratch`): the pack read the Deployment (`none` before it exists, `building` for `in_progress`, `ready` with the environment URL for `success`, and the source shown as a Deployment). After a new commit on the branch the old preview did not read as ready. It read `none`, not `stale`, because the test created the Deployment for a commit SHA and the branch lookup only finds Deployments created for the branch name. The `stale` state for Deployments is still proven only against a fake GitHub.
 - **Not proven or not built.** A commit-status preview for an older commit reads as `none`, not `stale` (only Deployments are looked up by branch). The platform does not start, stop or pay for previews, does not expire them, and does not check that the preview address is one the repository owns. The review does not wait for a preview: a person can approve before one exists. The Gate does not require one.
 
+**Platform previews (2026-10-18). Built and proven live (real agent, real GitHub, real Docker sandbox, on this machine). Not on AWS.**
+
+Decided with the owner: a reviewer clicks "Run it here" (in autopilot it starts by itself); Docker on this machine now and a design that lets Fargate come next; at most 2 at once, 30 minutes each, stopped when the review is decided, 512 MB each, no secrets; and the start command comes from `.sdlc/preview.yaml` **on the pull request's own branch**, run in the locked-down sandbox.
+
+- **What a repository adds.** `.sdlc/preview.yaml` with `start` (required, one line), and optionally `install` (run first, for example `npm ci`), `port` (1024 to 65535, default 3000) and `ready_path` (default `/`). Unknown keys and multi-line commands are refused, with the reason shown on the review (`packages/core/src/preview-config.ts`). The process is given `PORT` and `HOST=0.0.0.0`.
+- **Starting.** The review pack's Preview line has "Run it here" (anyone with a role can click it). The platform reads the file at the pull request's current commit, downloads that commit's archive with the Gate App, and starts it. The pack shows "building", then the link (`http://127.0.0.1:<port>/`, from port 9100), then when it stops. A new commit on the pull request stops the old preview and shows "out of date" until it is run again. In an **autopilot** initiative every open pull request review gets one automatic start (a repository without the file just shows "no preview.yaml"). If 2 are already running, the third is refused and the reviewer is told. Nothing else starts one.
+- **Stopping.** A person can stop it. It also stops 30 minutes after it was ready, when the review is decided, on a new commit, and when the API stops or restarts (leftovers are removed at start-up). Every start and stop is in the activity log (`preview.started`, `preview.failed`, `preview.stopped`).
+- **The sandbox** (`apps/api/src/docker-preview.ts`). Its own internal Docker network (no route to the host, the internet, or any run); the unprivileged image user; a read-only root file system; no capabilities; 512 MB, 1 CPU, 256 processes. It gets **no** environment from the platform: no token, no key, no address of the API or the gateway. The code is fetched by the platform and unpacked by a container that has no network at all, so the sandbox never holds a GitHub credential. Its only way out is a proxy **of its own** (not the agents' one, which forwards the API and gateway) that tunnels HTTPS to `PREVIEW_EGRESS_ALLOW` (the package registry) and refuses everything else. Its only way in is a forwarder container that publishes one port on `127.0.0.1`.
+- **Behind an interface.** `PreviewHost` (start, stop, reconcile) is all the rest of the platform calls. A Fargate host would be a second implementation.
+- **Proven live** (`node --import tsx src/accept.ts previewrun docker`, 15 checks): the agent opened a pull request with a small server and a `.sdlc/preview.yaml`; the review offered to run it; one click and it was ready in 4 s; the page answered with the pull request's own code; inside it there was no token or key in the environment, no internet, no route to the platform's API, and it ran as uid 1000; stopping it removed its containers and its port; it could be run again; deciding the review stopped it by itself; nothing was left running. A first attempt failed because the scratch repository is an ES module project and the test server used `require`. The review showed the program's own error message, which is the behaviour wanted.
+- **Tested.** 12 API tests with a fake host and a fake GitHub (start, ready, twice, new commit, no file, bad file, host failure, busy port, the limit of two, stop including while starting, expiry, decided review, autopilot, recovery, permissions); 3 tests with real containers for the Docker host (the sandbox probe above, a failing start with its output, a busy port and reconcile; they run in CI with the image); config parsing; the review-pack rules; a browser test for the buttons.
+- **Not proven or not built.**
+  - **Only an install-free server was run live.** `install: npm ci` through the package-registry tunnel was not run against a real project; the Docker test proves the tunnel to `registry.npmjs.org` opens (HTTP 200) and `example.com` is refused (403).
+  - **A real UI.** A front end that needs a build step, a database, or other services is not supported: one process, one port, nothing to talk to. No browser in the sandbox, so the platform does not look at the page.
+  - **The link is local.** `127.0.0.1:<port>` works for the person at this machine only. Sharing a preview with a teammate needs the Fargate host and a proxy with sign-in, which is the next step.
+  - **The branch decides how it runs.** The agent that wrote the pull request also wrote its `.sdlc/preview.yaml`, so the command is the agent's. The sandbox is what limits it, not review of the file. A kernel or Docker escape is out of scope here, as for the agent sandbox. Anyone on the machine can reach `127.0.0.1:<port>` while it runs.
+  - **Limits are per platform, not per person or initiative.** One person could use both slots.
+  - The review pack asks GitHub every 15 s but the platform's own state is read fresh, so Start and Stop show at once.
+
 **CI (2026-10-18).** GitHub Actions now builds the sandbox image, so the six Docker sandbox tests run there (they used to be skipped) and pass on Ubuntu 24.04. The four actions are pinned to commit SHAs and are on versions that run on Node 24, which removes the Node 20 warning. The runner image is the pinned `ubuntu-24.04`. Two things the Linux run found:
 
 - Public ECR throttled GitHub's shared addresses (HTTP 429), so CI builds from Docker Hub (`--build-arg NODE_IMAGE=node:22-bookworm-slim`). The Dockerfile still defaults to ECR.
@@ -750,7 +771,7 @@ Decided with the owner: show the link now (option 1), and have the platform buil
 | Item | Needed by |
 |---|---|
 | Sidecar manifest format | When a repository with services is first used |
-| Preview environments | The review pack shows what the repository's pipeline reports (built, section 16). A platform-run preview (`.sdlc/preview.yaml` in Docker, then Fargate) waits until a repository with a UI needs it |
+| Preview environments | The review pack shows what the repository's pipeline reports, and a reviewer can run the pull request in a Docker sandbox on this machine (both built, section 16). A Fargate host for it is not built |
 | Cut-off between blocking and parking (120 s) | Step 1, tune with real use |
 | ~~Where Slack and Teams replies are authenticated~~ | Done in step 2 for Slack: signed request plus an admin-made link between a Slack user and a person. Teams is not built |
 | ~~Copilot adapter~~ | Done in step 4 (see section 16). The Codex adapter is not started |

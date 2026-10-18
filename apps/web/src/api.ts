@@ -117,6 +117,17 @@ export const getProfile = (): Promise<AttentionProfile> =>
 export const getPreview = (id: string): Promise<PreviewDto> =>
   call(`/api/interactions/${id}/preview`, previewSchema);
 
+export const startPlatformPreview = (interactionId: string) =>
+  call(
+    `/api/interactions/${interactionId}/preview/start`,
+    z.object({ id: z.string(), state: z.string() }),
+    { method: 'POST' },
+  );
+export const stopPlatformPreview = (previewId: string) =>
+  call(`/api/previews/${previewId}/stop`, z.object({ id: z.string(), state: z.string() }), {
+    method: 'POST',
+  });
+
 export const getAssumptions = (): Promise<AssumptionDto[]> =>
   call('/api/assumptions', z.array(assumptionSchema));
 

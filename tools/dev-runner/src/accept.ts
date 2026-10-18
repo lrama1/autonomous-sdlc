@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|previewrun|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all]
 //   PREVIEW_VARIANT=deployment makes the preview phase report through a GitHub Deployment instead of a commit status.
 //   BUG_VARIANT=norepro makes the bug phase report a bug that does not exist, to see the agent stop without a pull request. [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
@@ -2325,6 +2325,159 @@ try {
     );
 
     // Leave the scratch repository tidy: nothing from this check is merged.
+    await fetch(`https://api.github.com/repos/${REPO}/pulls/${prNumber}`, {
+      method: 'PATCH',
+      headers: auth,
+      body: JSON.stringify({ state: 'closed' }),
+    });
+    await fetch(`https://api.github.com/repos/${REPO}/git/refs/heads/${branch}`, {
+      method: 'DELETE',
+      headers: auth,
+    });
+  }
+  // ---------------- Platform preview: the platform runs the pull request's own code, in a sandbox, for a reviewer ----------------
+  if (phase === 'previewrun') {
+    say(
+      '--- previewrun: a reviewer clicks Run it here; the platform runs the pull request in a sandbox, then stops it ---',
+    );
+    if (!ghToken) throw new Error('GH_TOKEN is needed to tidy the scratch repository');
+    const s = stamp;
+    const server = `preview-${s}.js`;
+    const { run } = await startRun(
+      `Platform preview ${s}`,
+      [
+        `Create two files and commit them. Do not change anything else and do not ask any questions.`,
+        ``,
+        `1. The file ${server} with exactly this content:`,
+        '```js',
+        `import http from 'node:http';`,
+        `http.createServer((req, res) => {`,
+        `  if (req.url === '/env') return res.end(JSON.stringify(Object.keys(process.env).filter((k) => /sdlc|token|secret|key/i.test(k))));`,
+        `  res.end('preview ${s}');`,
+        `}).listen(Number(process.env.PORT), process.env.HOST);`,
+        '```',
+        ``,
+        `2. The file .sdlc/preview.yaml with exactly this content:`,
+        '```yaml',
+        `start: node ${server}`,
+        `port: 4000`,
+        '```',
+      ].join('\n'),
+      'guided',
+    );
+    const review = await waitFor(
+      'the review request',
+      () => openFor(bob, run.id, ['review']),
+      420_000,
+    );
+    const auth = { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' };
+    const prNumber: number = review.contextCard.prNumber;
+    const pack = () => call(bob, 'GET', `/api/interactions/${review.id}/preview`);
+
+    const before = await pack();
+    check(
+      before.platform.available === true && before.platform.state === 'none',
+      `V  the review offers to run it, and nothing runs yet (${before.platform.state})`,
+    );
+    const t0 = Date.now();
+    const started = await call(bob, 'POST', `/api/interactions/${review.id}/preview/start`, {});
+    check(
+      started.state === 'starting',
+      'V  one click starts it (nobody had to configure anything)',
+    );
+    const ready = await waitFor(
+      'the preview is ready',
+      async () => {
+        const p = await pack();
+        if (p.platform.state === 'failed') throw new Error(`failed: ${p.platform.detail}`);
+        return p.platform.state === 'ready' ? p : null;
+      },
+      300_000,
+      3000,
+    );
+    check(
+      ready.state === 'ready' &&
+        ready.source === 'platform' &&
+        /^http:\/\/127\.0\.0\.1:\d+\/$/.test(ready.url),
+      `V  the review pack shows it as ready: ${ready.url} (${Math.round((Date.now() - t0) / 1000)}s)`,
+    );
+    const body = await (await fetch(ready.url)).text();
+    check(
+      body === `preview ${s}`,
+      `V  the page answers with the pull request's own code ("${body}")`,
+    );
+
+    // What the previewed code can see.
+    const envKeys = JSON.parse(await (await fetch(`${ready.url}env`)).text());
+    check(
+      envKeys.length === 0,
+      `V  it has no token, key or platform address in its environment (${JSON.stringify(envKeys)})`,
+    );
+    const container = `sdlc-preview-${started.id}`;
+    const probe = async (script: string) => {
+      try {
+        return (await exec('docker', ['exec', container, 'node', '-e', script])).stdout.trim();
+      } catch (e) {
+        return `ERR ${(e as Error).message.slice(0, 120)}`;
+      }
+    };
+    const internet = await probe(
+      `fetch('https://example.com',{signal:AbortSignal.timeout(5000)}).then(r=>console.log('HTTP '+r.status),e=>console.log('FAIL '+((e.cause&&e.cause.code)||e.name)))`,
+    );
+    check(internet.startsWith('FAIL'), `V  it cannot reach the internet (${internet})`);
+    const platform = await probe(
+      `fetch('http://host.docker.internal:8080/api/health',{signal:AbortSignal.timeout(5000)}).then(r=>console.log('HTTP '+r.status),e=>console.log('FAIL '+((e.cause&&e.cause.code)||e.name)))`,
+    );
+    check(platform.startsWith('FAIL'), `V  it cannot reach the platform's own API (${platform})`);
+    const who = await probe(`console.log(process.getuid())`);
+    check(who !== '0' && /^\d+$/.test(who), `V  it runs as an ordinary user (uid ${who})`);
+
+    // Stop it by hand.
+    await call(bob, 'POST', `/api/previews/${started.id}/stop`, {});
+    const gone = (
+      await exec('docker', ['ps', '-aq', '--filter', `label=sdlc.preview=${started.id}`])
+    ).stdout.trim();
+    check(gone === '', 'V  stopping it removes its containers');
+    check(
+      await fetch(ready.url, { signal: AbortSignal.timeout(3000) }).then(
+        () => false,
+        () => true,
+      ),
+      'V  and its port stops answering',
+    );
+    const after = await pack();
+    check(
+      after.platform.state === 'stopped',
+      `V  the review pack says it was stopped (${after.platform.state})`,
+    );
+
+    // Run it again, then decide the review: the preview must go with it.
+    await call(bob, 'POST', `/api/interactions/${review.id}/preview/start`, {});
+    const again = await waitFor(
+      'the second preview',
+      async () => ((await pack()).platform.state === 'ready' ? true : null),
+      300_000,
+      3000,
+    );
+    check(again === true, 'V  it can be run again for the same pull request');
+    await call(bob, 'POST', `/api/interactions/${review.id}/answer`, {
+      decision: 'rejected',
+      answer: 'Only a preview check.',
+    });
+    const stopped = await waitFor(
+      'the preview stops with the review',
+      async () => ((await pack()).platform.state === 'stopped' ? true : null),
+      60_000,
+      2000,
+    );
+    check(stopped === true, 'V  deciding the review stops the preview by itself');
+    const left = (
+      await exec('docker', ['ps', '-aq', '--filter', 'label=sdlc.preview'])
+    ).stdout.trim();
+    check(left === '', 'V  nothing from any preview is left running');
+
+    // Leave the scratch repository tidy.
+    const branch: string = (await gh(`/repos/${REPO}/pulls/${prNumber}`)).head.ref;
     await fetch(`https://api.github.com/repos/${REPO}/pulls/${prNumber}`, {
       method: 'PATCH',
       headers: auth,

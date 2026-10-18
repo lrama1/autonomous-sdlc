@@ -156,6 +156,14 @@ test('a review shows the preview the repository reported, and warns when it is o
     sha: 'bbbbbbb2222222',
     headSha: 'aaaaaaa1111111',
     detail: 'This preview was built from bbbbbbb. The pull request is now at aaaaaaa.',
+    platform: {
+      available: false,
+      id: null,
+      state: 'none',
+      expiresAt: null,
+      detail: null,
+      ttlMinutes: 30,
+    },
   };
   await page.route('**/api/interactions/*/preview', (route) => route.fulfill({ json: answer }));
   await signInAs(page, /Dev Admin/);
@@ -171,6 +179,110 @@ test('a review shows the preview the repository reported, and warns when it is o
   await page.reload();
   await page.getByTestId('nav-queue').click();
   await expect(card(page, title).getByTestId('preview')).toHaveAttribute('data-state', 'ready');
+});
+
+test('a reviewer can run the pull request in a sandbox from the review, and stop it', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review PR ${randomUUID().slice(0, 8)}`;
+  const [review] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G3',
+      title,
+      contextCard: {
+        kind: 'pull_request',
+        summary: 'A small change.',
+        verify: { passed: true },
+        prUrl: 'https://github.com/o/r/pull/12',
+        prNumber: 12,
+      },
+      blocks: [],
+      roleNeeded: 'platform_admin',
+    })
+    .returning();
+  const base = {
+    state: 'none',
+    url: null,
+    label: null,
+    source: null,
+    sha: null,
+    headSha: 'aaaaaaa1111111',
+    detail: 'The repository has not reported a preview for this pull request.',
+  };
+  const platform = (state: string, extra: Record<string, unknown> = {}) => ({
+    available: true,
+    id: 'p-1',
+    state,
+    expiresAt: null,
+    detail: null,
+    ttlMinutes: 30,
+    ...extra,
+  });
+  let answer: Record<string, unknown> = { ...base, platform: platform('none', { id: null }) };
+  const calls: string[] = [];
+  await page.route('**/api/interactions/*/preview', (route) => route.fulfill({ json: answer }));
+  await page.route('**/api/interactions/*/preview/start', (route) => {
+    calls.push(`start ${route.request().url().split('/').slice(-3, -2)[0]}`);
+    answer = { ...base, state: 'building', source: 'platform', platform: platform('starting') };
+    return route.fulfill({ status: 202, json: { id: 'p-1', state: 'starting' } });
+  });
+  await page.route('**/api/previews/*/stop', (route) => {
+    calls.push('stop');
+    answer = { ...base, platform: platform('stopped') };
+    return route.fulfill({ json: { id: 'p-1', state: 'stopped' } });
+  });
+
+  await signInAs(page, /Dev Admin/);
+  await page.getByTestId('nav-queue').click();
+  const line = card(page, title).getByTestId('preview');
+  await expect(line.getByTestId('platform-preview')).toContainText('sandbox for 30 minutes');
+  await line.getByRole('button', { name: 'Run it here' }).click();
+  await expect(line.getByRole('button', { name: 'Stop the preview' })).toBeVisible();
+  expect(calls[0]).toBe(`start ${review!.id}`);
+
+  answer = {
+    ...base,
+    state: 'ready',
+    url: 'http://127.0.0.1:9100/',
+    label: 'Run by the platform',
+    source: 'platform',
+    sha: 'aaaaaaa1111111',
+    detail:
+      'Run by the platform in a sandbox from aaaaaaa, the current commit. It stops by itself.',
+    platform: platform('ready', { expiresAt: new Date(Date.now() + 25 * 60_000).toISOString() }),
+  };
+  await page.reload();
+  await page.getByTestId('nav-queue').click();
+  const ready = card(page, title).getByTestId('preview');
+  await expect(ready).toHaveAttribute('data-state', 'ready');
+  await expect(ready.getByRole('link', { name: 'Run by the platform' })).toHaveAttribute(
+    'href',
+    'http://127.0.0.1:9100/',
+  );
+  await expect(ready).toContainText('The platform stops it at');
+  await ready.getByRole('button', { name: 'Stop the preview' }).click();
+  await expect(ready.getByRole('button', { name: 'Run it again' })).toBeVisible();
+  expect(calls).toContain('stop');
+
+  answer = {
+    ...base,
+    state: 'failed',
+    source: 'platform',
+    detail: 'The platform could not start the preview.',
+    platform: platform('failed', {
+      detail: 'the preview stopped before it answered. Its output ended: boom',
+    }),
+  };
+  await page.reload();
+  await page.getByTestId('nav-queue').click();
+  await expect(card(page, title).getByTestId('platform-preview-error')).toContainText(
+    'Its output ended: boom',
+  );
 });
 
 test('an approved design waits for a person to start the build, then its first task starts', async ({

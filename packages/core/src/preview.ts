@@ -5,7 +5,7 @@
 export type PreviewState = 'ready' | 'building' | 'failed' | 'stale' | 'none' | 'not_permitted';
 
 export interface PreviewCandidate {
-  source: 'deployment' | 'status';
+  source: 'deployment' | 'status' | 'platform';
   /** The commit the pipeline built. */
   sha: string;
   state: 'success' | 'pending' | 'failure';
@@ -20,7 +20,7 @@ export interface Preview {
   state: PreviewState;
   url: string | null;
   label: string | null;
-  source: 'deployment' | 'status' | null;
+  source: 'deployment' | 'status' | 'platform' | null;
   /** The commit the preview was built from, when there is one. */
   sha: string | null;
   /** The commit the pull request is at now. */
@@ -86,7 +86,10 @@ export function choosePreview(
       source: ready.source,
       sha: ready.sha,
       headSha,
-      detail: `Built from ${short(headSha)}, the current commit.`,
+      detail:
+        ready.source === 'platform'
+          ? `Run by the platform in a sandbox from ${short(headSha)}, the current commit. It stops by itself.`
+          : `Built from ${short(headSha)}, the current commit.`,
     };
   }
   if (latest?.state === 'pending') {
@@ -96,7 +99,10 @@ export function choosePreview(
       label: latest.label ?? null,
       source: latest.source,
       sha: latest.sha,
-      detail: 'The pipeline is still building the preview.',
+      detail:
+        latest.source === 'platform'
+          ? 'The platform is starting this pull request in a sandbox.'
+          : 'The pipeline is still building the preview.',
     };
   }
   if (latest?.state === 'failure') {
@@ -107,7 +113,10 @@ export function choosePreview(
       source: latest.source,
       sha: latest.sha,
       url: latest.url ?? null,
-      detail: 'The pipeline reported that the preview failed.',
+      detail:
+        latest.source === 'platform'
+          ? 'The platform could not start the preview.'
+          : 'The pipeline reported that the preview failed.',
     };
   }
 

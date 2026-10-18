@@ -122,6 +122,26 @@ export class GitHubClient {
     return (text ? JSON.parse(text) : {}) as T;
   }
 
+  /** A binary download (a repository archive). GitHub redirects to its archive host, and fetch follows. */
+  async download(path: string, auth: string, maxBytes: number): Promise<Buffer> {
+    const res = await this.doFetch(`${this.apiUrl}${path}`, {
+      headers: {
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2022-11-28',
+        'user-agent': 'autonomous-sdlc',
+        authorization: `Bearer ${auth}`,
+      },
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new GitHubError(res.status, `GitHub GET ${path} failed (${res.status})`);
+    const length = Number(res.headers.get('content-length') ?? 0);
+    if (length > maxBytes)
+      throw new GitHubError(413, `the archive is ${length} bytes, over the limit`);
+    const body = Buffer.from(await res.arrayBuffer());
+    if (body.length > maxBytes) throw new GitHubError(413, `the archive is over ${maxBytes} bytes`);
+    return body;
+  }
+
   /** Step 3 of the manifest flow: trade the one-time code for the App's credentials. */
   convertManifest(code: string): Promise<ConvertedApp> {
     return this.call('POST', `/app-manifests/${encodeURIComponent(code)}/conversions`, null);

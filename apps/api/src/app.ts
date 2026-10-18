@@ -13,6 +13,9 @@ import { GitHubClient } from './github-app.js';
 import { createGate } from './gate.js';
 import { GitHubService } from './github-service.js';
 import { DockerRunner } from './docker-runner.js';
+import { DockerPreviewHost } from './docker-preview.js';
+import type { PreviewHost } from './docker-preview.js';
+import { PreviewService } from './previews.js';
 import { ProcessRunner } from './launcher.js';
 import type { RunnerAdapter } from './launcher.js';
 import { loadRules } from './rules.js';
@@ -69,6 +72,8 @@ export interface BuildOptions {
   slack?: SlackClient;
   /** Fetches documentation links for the Integration Register. Tests replace it. */
   docFetcher?: DocFetcher;
+  /** Where platform previews run. Tests pass a fake. Otherwise the Docker host is used when the Docker runner is. */
+  previewHost?: PreviewHost;
 }
 
 export async function buildApp({
@@ -83,6 +88,7 @@ export async function buildApp({
   policy: policyOverride,
   slack: slackOverride,
   docFetcher,
+  previewHost,
 }: BuildOptions) {
   const app = Fastify({ logger });
   const { db, pool } = deps ?? createDb(config.DATABASE_URL, { caFile: config.DATABASE_CA_FILE });
@@ -182,7 +188,49 @@ export async function buildApp({
     await applyReleaseDecision(db, ghService, row);
   });
   registerMapRoutes(app, db, ghService, { approverRole: config.RELEASE_APPROVER_ROLE });
-  registerPreviewRoutes(app, db, ghService);
+  const previewSettings = {
+    maxActive: config.PREVIEW_MAX_ACTIVE,
+    ttlMinutes: config.PREVIEW_TTL_MIN,
+    portBase: config.PREVIEW_PORT_BASE,
+  };
+  let previews: PreviewService | null = null;
+  const useHost = async (host: PreviewHost) => {
+    previews = new PreviewService({
+      db,
+      github: ghService,
+      host,
+      settings: previewSettings,
+      log: (l) => app.log.info(l),
+    });
+    await previews.recover();
+    if (workers) {
+      let busy = false;
+      const timer = setInterval(() => {
+        if (busy) return;
+        busy = true;
+        previews!
+          .tick()
+          .catch((e) => app.log.error({ err: e }, 'preview tick failed'))
+          .finally(() => {
+            busy = false;
+          });
+      }, config.BUILD_TICK_MS);
+      app.addHook('onClose', async () => {
+        clearInterval(timer);
+        await previews?.idle();
+      });
+    }
+    app.addHook('onClose', async () => {
+      // Nothing a preview started outlives the platform.
+      await host.reconcile().catch(() => {});
+      await host.close?.();
+    });
+  };
+  if (previewHost) await useHost(previewHost);
+  registerPreviewRoutes(app, db, ghService, () => previews, {
+    ttlMinutes: config.PREVIEW_TTL_MIN,
+  });
+  app.decorate('previews', () => previews);
   registerBuildRoutes(app, db);
   registerStageRoutes(app, db);
   registerBugRoutes(app, db, loadedAgents);
@@ -324,6 +372,17 @@ export async function buildApp({
             entry: config.RUNNER_ENTRY,
             cwd: process.cwd(),
           });
+    if (!previewHost && config.RUNNER_ADAPTER === 'docker')
+      await useHost(
+        new DockerPreviewHost({
+          image: config.RUNNER_IMAGE,
+          memory: config.PREVIEW_MEMORY,
+          allowHosts: config.PREVIEW_EGRESS_ALLOW.split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          log: (l) => app.log.info(l),
+        }),
+      );
     const worker = createRunWorker({
       db,
       apiUrl,
