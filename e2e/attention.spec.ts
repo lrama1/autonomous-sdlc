@@ -10,6 +10,7 @@ import {
   createRunFixture,
   initiative,
   interaction,
+  stageStart,
   standingDecision,
 } from '../packages/db/src/index.ts';
 
@@ -236,6 +237,30 @@ test('an approved design waits for a person to start the build, then its first t
     timeout: 20_000,
   });
   await expect(panel.getByTestId('task-T2')).toHaveAttribute('data-state', 'waiting');
+});
+
+test('a step before the build waits for a person to start it', async ({ page }) => {
+  const f = await createRunFixture(db);
+  await db.insert(stageStart).values({
+    initiativeId: f.initiativeId,
+    key: 'spec',
+    stage: 'spec',
+    role: 'product',
+    task: 'Draft the spec: Weather\n\nGoal: show the forecast',
+    state: 'awaiting_start',
+    detail: 'A person starts the spec.',
+    startedBy: f.personId,
+  });
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  const step = page.getByTestId('step-spec');
+  await expect(step).toContainText('Draft the spec: Weather');
+  await expect(page.getByTestId('stage-spec')).toHaveAttribute('data-status', 'waiting_human');
+  await step.getByRole('button', { name: 'Start' }).click();
+  await expect(page.getByTestId('note')).toContainText('is starting');
+  // The worker starts the run, and the step leaves the list.
+  await expect(page.getByTestId('step-spec')).toHaveCount(0, { timeout: 20_000 });
 });
 
 test('assumptions are accepted or rejected, and a rejection asks the sponsor what to redo', async ({

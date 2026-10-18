@@ -1,9 +1,9 @@
 import { desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { agentRun, buildPlan, buildTask, initiative, interaction } from '@sdlc/db';
+import { agentRun, buildPlan, buildTask, initiative, interaction, stageStart } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { buildMap } from '@sdlc/core';
-import type { MapAsk, MapPlan, Role } from '@sdlc/core';
+import type { MapAsk, MapPlan, MapStageStart, Role } from '@sdlc/core';
 import { z } from 'zod';
 import { requirePerson } from './people.js';
 import { prepareRelease } from './releases.js';
@@ -52,6 +52,10 @@ export function registerMapRoutes(
       .where(eq(buildPlan.initiativeId, id))
       .orderBy(desc(buildPlan.createdAt))
       .limit(1);
+    const starts = await db
+      .select({ stage: stageStart.stage, state: stageStart.state })
+      .from(stageStart)
+      .where(eq(stageStart.initiativeId, id));
     let plan: MapPlan | undefined;
     if (planRow) {
       const tasks = await db.select().from(buildTask).where(eq(buildTask.planId, planRow.id));
@@ -73,6 +77,7 @@ export function registerMapRoutes(
         runs: runs.map((r) => ({ id: r.id, agentRole: r.agentRole, state: r.state })),
         asks: mapAsks,
         plan,
+        starts: starts as MapStageStart[],
       }),
     };
   });

@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -163,6 +163,8 @@ try {
       title,
       goal: title,
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       ...(autonomyMode ? { autonomyMode } : {}),
     });
     const run = await call(alice, 'POST', `/api/initiatives/${init.id}/runs`, {
@@ -740,6 +742,8 @@ try {
       title: `Guided ${stamp}`,
       goal: `Guided ${stamp}`,
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'guided',
     });
     const file2 = `docs/guided-${stamp}.md`;
@@ -791,6 +795,8 @@ try {
       title: `Version endpoint ${stamp}`,
       goal: 'Let operators see which version is running.',
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'autopilot',
     });
     const slug = `version-${stamp}`;
@@ -1026,6 +1032,8 @@ try {
       title: `Design ${stamp}`,
       goal: `Design the ${slug} spec.`,
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'autopilot',
     });
     const run = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
@@ -1151,6 +1159,8 @@ try {
       title: `Build ${stamp}`,
       goal: `Build /${path}.`,
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'balanced',
     });
     const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
@@ -1315,6 +1325,8 @@ try {
       title: `Big build ${s}`,
       goal: 'Three small modules, a route that uses them, and a README note.',
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'balanced',
     });
     const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
@@ -1415,6 +1427,8 @@ try {
       title: `Mixed build ${s}`,
       goal: 'A small info module and a page that shows it.',
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'balanced',
     });
     const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
@@ -1491,6 +1505,124 @@ try {
     );
   }
 
+  // ---------------- Pipeline: a goal becomes a spec, a design, a plan and merged code, with people deciding at each checkpoint ----------------
+  if (phase === 'pipeline') {
+    say(
+      '--- pipeline: creating the initiative starts the spec, and each approval starts the next step ---',
+    );
+    const cara = await signInAs(stack.publicUrl, 'dev-cara'); // Architect
+    const s = stamp;
+    // Bob creates it, so he sponsors the spec run and Alice (a Product Owner) may decide it.
+    const init = await call(bob, 'POST', '/api/initiatives', {
+      title: `Pipeline ${s}`,
+      goal:
+        `Add GET /ver-${s} to the small web app in this repository. It answers HTTP 200 with JSON {"version": <the version in package.json>}, and has a test. ` +
+        `Keep the spec to at most two stories and the design to at most two tasks, both backend. Do not ask any questions.`,
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+      autoStages: true,
+    });
+    const t0 = Date.now();
+    const stages = async () =>
+      (await call(bob, 'GET', `/api/initiatives/${init.id}/stages`)) as any[];
+    const first = await waitFor(
+      'the spec step is started',
+      async () => {
+        const x = (await stages()).find((y) => y.stage === 'spec');
+        return x?.state === 'started' ? x : null;
+      },
+      60_000,
+      2000,
+    );
+    const specRun = await call(bob, 'GET', `/api/runs/${first.runId}`);
+    check(
+      specRun.role === 'product' &&
+        specRun.sponsorPersonId === (await call(bob, 'GET', '/api/me')).id,
+      `S  creating the initiative started the spec run by itself (${specRun.role}, ${Math.round((Date.now() - t0) / 1000)}s, sponsor Bob)`,
+    );
+
+    const reviewFor = (jar: CookieJar, role: string) =>
+      waitFor(
+        `a ${role} review`,
+        async () => {
+          const q: any[] = await call(jar, 'GET', '/api/interactions');
+          return (
+            q.find(
+              (i) => i.initiativeId === init.id && i.type === 'review' && i.roleNeeded === role,
+            ) ?? null
+          );
+        },
+        600_000,
+        3000,
+      );
+    const specReview = await reviewFor(alice, 'product_owner');
+    check(
+      specReview.checkpointId === 'G1' && specReview.contextCard.autoMerge?.auto === false,
+      'S  the spec is checkpoint G1 and waits for a Product Owner',
+    );
+    check(
+      !(await stages()).some((y) => y.stage === 'design'),
+      'S  no design has started while the spec is unapproved',
+    );
+    const approvedAt = Date.now();
+    await call(alice, 'POST', `/api/interactions/${specReview.id}/answer`, {
+      decision: 'approved',
+      answer: 'Good.',
+    });
+
+    const designReview = await reviewFor(cara, 'architect');
+    const steps = await stages();
+    const design = steps.find((y) => y.stage === 'design');
+    check(
+      design?.state === 'started' && design.title.startsWith('Design:'),
+      `S  approving and merging the spec started the design by itself (${design?.title}, ${Math.round((Date.now() - approvedAt) / 1000)}s after approval)`,
+    );
+    const designRun = await call(bob, 'GET', `/api/runs/${design.runId}`);
+    check(
+      designRun.role === 'architect' && designRun.task.includes('docs/spec/'),
+      'S  and it designs the spec that was approved',
+    );
+    await call(cara, 'POST', `/api/interactions/${designReview.id}/answer`, {
+      decision: 'approved',
+      answer: 'Build it.',
+    });
+
+    const plan = await waitFor(
+      'the build plan',
+      async () => (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan ?? null,
+      420_000,
+      3000,
+    );
+    check(
+      plan.state === 'active',
+      `S  approving the design started the build (${plan.tasks.length} tasks)`,
+    );
+    const { final, timeline } = await drivePlan(
+      init.id,
+      [specReview.id, designReview.id],
+      Date.now(),
+    );
+    say(`build timeline: ${timeline.join(' | ')}`);
+    check(final.state === 'done', `S  the plan finished (${final.state})`);
+    const served = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/src/server.js`)).content,
+      'base64',
+    ).toString('utf8');
+    check(served.includes(`/ver-${s}`), `S  main serves /ver-${s}`);
+    const cost = await db.query(
+      'select agent_role, count(*)::int n, coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1 group by agent_role order by agent_role',
+      [init.id],
+    );
+    say(
+      `cost: ${cost.rows.map((r: any) => `${r.agent_role} x${r.n} $${(r.c / 1e6).toFixed(3)}`).join(', ')}; total $${(cost.rows.reduce((a: number, r: any) => a + r.c, 0) / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - t0) / 1000)}s`,
+    );
+    const clicks = await db.query(
+      "select count(*)::int n from activity_event where initiative_id = $1 and action = 'stage.started_by_person'",
+      [init.id],
+    );
+    check(clicks.rows[0].n === 0, 'S  nobody clicked Start on any step');
+  }
+
   // ---------------- Overlap: three parallel tasks that all edit the same file ----------------
   if (phase === 'overlap') {
     // OVERLAP_PATHS=hidden: the design does not say that the tasks share a file, so only the Gate can notice.
@@ -1509,6 +1641,8 @@ try {
       title: `Overlap ${s}`,
       goal: 'Three routes in one file.',
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'balanced',
     });
     const route = (k: string) => `/${k}-${s}`;
@@ -1601,6 +1735,8 @@ try {
       title: `Catch-up ${stamp}`,
       goal: 'Two changes at once.',
       repositoryId: repo.id,
+      // These phases start every run themselves.
+      autoStages: false,
       autonomyMode: 'guided',
     });
     const files = [`docs/catch-a-${stamp}.md`, `docs/catch-b-${stamp}.md`];

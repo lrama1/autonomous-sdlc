@@ -47,6 +47,8 @@ export const initiativeCreateSchema = z.object({
   goal: z.string().min(1).max(4000),
   repositoryId: z.string().uuid(),
   autonomyMode: z.enum(['guided', 'balanced', 'autopilot']).default('balanced'),
+  // Start the spec from the goal now, and the design and build after each approval. False: a person starts every run.
+  autoStages: z.boolean().default(true),
   budgetUsd: z.number().positive().max(10_000).optional(),
 });
 export type InitiativeCreate = z.infer<typeof initiativeCreateSchema>;

@@ -55,6 +55,8 @@ export const initiative = pgTable('initiative', {
     .notNull()
     .references(() => person.id),
   budgetMicros: bigint('budget_micros', { mode: 'number' }),
+  // Whether the spec and design steps start by themselves (or on a click in guided mode). Off means a person starts every run.
+  autoStages: boolean('auto_stages').notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -381,4 +383,30 @@ export const buildTask = pgTable(
     unique('build_task_plan_key').on(t.planId, t.key),
     index('build_task_run_idx').on(t.runId),
   ],
+);
+
+// The steps before the build: drafting the spec from the goal, then designing the approved spec (mvp-contract section 16).
+export const stageStart = pgTable(
+  'stage_start',
+  {
+    id: id(),
+    initiativeId: uuid('initiative_id')
+      .notNull()
+      .references(() => initiative.id),
+    // "spec", or "design:<id of the spec review it follows>". One start per key.
+    key: text('key').notNull(),
+    stage: text('stage').notNull(), // spec | design
+    role: text('role').notNull(), // product | architect
+    sourceInteractionId: uuid('source_interaction_id').references(() => interaction.id),
+    // The first line is the pull request title.
+    task: text('task').notNull(),
+    state: text('state').notNull(), // pending | awaiting_start | started | cancelled | invalid
+    detail: text('detail'),
+    // Sponsor of the run: the person who started or approved the step before.
+    startedBy: uuid('started_by').references(() => person.id),
+    runId: uuid('run_id').references(() => agentRun.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [unique('stage_start_initiative_key').on(t.initiativeId, t.key)],
 );

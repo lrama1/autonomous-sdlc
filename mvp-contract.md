@@ -448,6 +448,7 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /initiatives/:id/releases`, `POST` `{ version }` | List releases. Prepare one (Product Owner, DevOps, admin) |
 | `GET /interactions/:id/preview` | What the repository's pipeline reported as a preview of a pull request under review |
 | `GET /initiatives/:id/plan`, `POST /plans/:id/start`, `POST /plans/:id/cancel`, `POST /plans/:id/tasks/:key/retry` or `/skip` | The build plan of an approved design. The writes need a Product Owner, Architect or admin |
+| `GET /initiatives/:id/stages`, `POST /stages/:id/start` or `/skip` | The spec and design steps that start by themselves or wait for a click. The writes need a Product Owner, Architect or admin |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
 | `POST /slack/interactions` | **Slack only**, verified by Slack's request signature. Not under `/api` |
@@ -565,7 +566,7 @@ Not proven, or not built:
 
 Not built, or only partly:
 - **A platform-run preview** (the repository's pipeline provides previews today, see "Previews" below). **Stories as records**: they live inside the spec document.
-- **Only the build stage starts on its own** (see "The build plan" below). A person still starts the spec run, the design run, and the release.
+- **The steps start on their own, except the release** (see "The pipeline" and "The build plan" below). A person still starts the release, and starts any run by hand if the steps are turned off for an initiative.
 - The map is boxes and arrows, not xyflow, and there is no portfolio view, release calendar or freeze, hotfix path, or scope-change re-opening.
 - A new external host in a code diff is not detected (agents are told to propose it, and the sandbox cannot reach it anyway). A `none` test strategy is shown as a warning, not enforced as a trigger. Credentials from the register are not put into sandboxes.
 - The egress proxy is shared, so the allowlist is the union across initiatives, and a change restarts it (tunnels in other running sandboxes drop).
@@ -620,6 +621,22 @@ Not built, or only partly:
   - The runner checks the shape of the list, not that the files in `paths` exist or that the stories exist in the spec.
   - The design from the live check was merged into `sdlc-scratch` (`docs/design/`).
 
+**The pipeline: a goal becomes a spec, a design, a plan, and merged code (2026-10-18). Built and proven live (real agents, Docker sandbox, real GitHub).**
+
+Decided with the owner: the same rule as the build. Guided mode waits for a click at each step; balanced and autopilot start each step themselves. The spec starts when the initiative is created, with its goal as the task.
+
+- **Steps.** Creating an initiative (with "Draft the spec now" on, the default) records a spec step. When a spec's pull request is approved and merged, a design step is recorded for that spec file, and when the design is merged the build plan appears. Each step becomes a run of the right agent. Table `stage_start` (migration 0009, one row per step, with the task text, the state `pending`, `awaiting_start`, `started`, `cancelled` or `invalid`, and the run it made) and `initiative.auto_stages`. The worker that runs the build plan starts them (`BUILD_TICK_MS`, `apps/api/src/stages.ts`).
+- **Who sponsors each run.** The spec run is sponsored by whoever created the initiative; the design run by the person who approved the spec (or clicked start); the build runs by the person who approved the design. So the independent-review rule bars each person from deciding their own step's output. **A consequence:** if the person who creates an initiative is the only Product Owner, nobody else may approve the spec. In a team of one, create the initiative with the steps off and start the spec by hand with someone else as sponsor, or turn the independent-review rule off.
+- **Nothing is skipped.** Each step still ends at its own checkpoint decided by a person: the spec by a Product Owner, the design by an Architect, each pull request by an engineer, even in autopilot. A rejected or changed spec or design stops the chain until a person decides.
+- **Controls.** A Product Owner, Architect or admin can start a waiting step or skip it (the run can still be started by hand). The Map page has a "Next steps" panel, and the spec and design stage shows who a waiting step needs. A spec approved more than `BUILD_AUTOSTART_MIN` minutes ago waits for a click, whatever the mode. The initiative budget is checked before each start. With "Draft the spec now" off, the initiative behaves as before and every run is started by hand.
+- **Proven live** (`accept.ts pipeline docker`: Bob creates a balanced initiative with a one-endpoint goal, Alice approves the spec, Cara the design, Bob the build pull request): the spec run started 4 s after creation with nobody clicking; no design started while the spec was unapproved; the design started 68 s after the approval (once the Gate had merged it) and designed that spec file; approving the design started the build; the build merged; main served the new route; no step was started by a click. Spec, design and one build cost $0.32 and took 184 s. API tests cover the states, the order, guided mode, old approvals, a missing spec file, budget, and the routes and roles. A browser test covers a waiting step and its Start button.
+- **Not proven or not built.**
+  - Guided mode and the Skip button were tested in the API and the browser, not live.
+  - Only one goal was run through: a one-endpoint change with a one-task design. How the chain behaves on a vague or large goal, a rejected spec, or a spec that needs a question answered was not tried live.
+  - The acceptance phases now create their initiatives with the steps off, because otherwise creating one would start a spec run they did not want.
+  - A step that failed or whose run ended without a pull request is not retried. A person starts it by hand.
+  - One worker process does this, like the build plan.
+
 **The build plan: an approved design starts its own tasks (2026-10-18). Built and proven live (real agents, Docker sandbox, real GitHub).**
 
 Decided with the owner: in guided mode a person clicks "Start the build"; in balanced and autopilot it starts by itself. Up to 4 runs per initiative at once. A failed task waits and a person chooses retry, skip, or cancel the plan.
@@ -658,7 +675,7 @@ Decided with the owner: in guided mode a person clicks "Start the build"; in bal
   - The plan does not check that a finished task did what its `done_when` said; the pull request review and the repository's checks do that.
   - A task that fails needs a person. Nothing diagnoses it or reworks the design. A change to the design after approval means a new design run and a new plan; the old plan is not updated or cancelled for you.
   - One worker process does this. Two API processes would race on starting tasks (a task could start twice).
-  - The build plan does not start the design, spec, or release steps. A person still starts them.
+  - The release is never started by the platform.
 
 **Previews (2026-10-18): the review pack shows the preview the repository's pipeline reported. Built and proven live against GitHub for commit statuses; Deployments are proven against a fake GitHub only.**
 

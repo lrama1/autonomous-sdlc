@@ -5,6 +5,7 @@ import { agentRun, githubApp, initiative, repositoryEntry, runEvent } from '@sdl
 import type { Db } from '@sdlc/db';
 import { initiativeCreateSchema, repositoryCreateSchema, runCreateSchema } from '@sdlc/schemas';
 import { recordActivity } from './activity.js';
+import { planSpecStart } from './stages.js';
 import type { LoadedAgent } from './agents.js';
 import { requirePerson } from './people.js';
 import { RunError, cancelRun, createRun } from './runs.js';
@@ -31,6 +32,7 @@ const initiativeDto = (i: typeof initiative.$inferSelect) => ({
   goal: i.goal,
   repositoryId: i.repositoryId,
   autonomyMode: i.autonomyMode,
+  autoStages: i.autoStages,
   state: i.state,
   budgetUsd: i.budgetMicros === null ? null : i.budgetMicros / 1_000_000,
   createdAt: i.createdAt.toISOString(),
@@ -147,6 +149,7 @@ export function registerWorkRoutes(
         goal: body.goal,
         repositoryId: repo.id,
         autonomyMode: body.autonomyMode,
+        autoStages: body.autoStages,
         createdBy: me.id,
         budgetMicros: body.budgetUsd === undefined ? null : Math.round(body.budgetUsd * 1_000_000),
       })
@@ -158,6 +161,7 @@ export function registerWorkRoutes(
       action: 'initiative.created',
       detail: { title: body.title, repository: repo.fullName },
     });
+    await planSpecStart(db, agents, row!, me.id);
     return reply.code(201).send(initiativeDto(row!));
   });
 

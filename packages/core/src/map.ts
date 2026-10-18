@@ -45,7 +45,13 @@ const SPEC_ROLES = new Set(['product', 'architect']);
 
 const unique = <T>(xs: T[]) => [...new Set(xs)];
 
-function specStage(runs: MapRun[], asks: MapAsk[]): MapStage {
+/** A step before the build that starts by itself or waits for a person: drafting the spec, designing it. */
+export interface MapStageStart {
+  stage: 'spec' | 'design';
+  state: string;
+}
+
+function specStage(runs: MapRun[], asks: MapAsk[], starts: MapStageStart[] = []): MapStage {
   const specRuns = runs.filter((r) => SPEC_ROLES.has(r.agentRole));
   const g1 = asks.filter((a) => a.checkpointId === 'G1');
   // The spec agents' own questions also hold this stage up.
@@ -73,6 +79,25 @@ function specStage(runs: MapRun[], asks: MapAsk[]): MapStage {
       status: 'waiting_human',
       waitingOn: unique(openG1.map((a) => a.roleNeeded)),
       detail: 'The spec needs a decision, or an agent is waiting on an answer.',
+    };
+  const awaiting = starts.filter((s) => s.state === 'awaiting_start');
+  if (awaiting.length > 0) {
+    const design = awaiting.some((s) => s.stage === 'design');
+    return {
+      ...base,
+      status: 'waiting_human',
+      waitingOn: [design ? 'architect' : 'product_owner'],
+      detail: design
+        ? 'The spec is approved. A person starts the design.'
+        : 'A person starts the spec.',
+    };
+  }
+  if (starts.some((s) => s.state === 'pending'))
+    return {
+      ...base,
+      status: 'working',
+      waitingOn: [],
+      detail: 'The next step is about to start.',
     };
   if (merged.length > 0 && !specRuns.some((r) => ACTIVE_RUN.has(r.state)))
     return {
@@ -232,12 +257,17 @@ function releaseStage(asks: MapAsk[], merged: number): MapStage {
   };
 }
 
-export function buildMap(input: { runs: MapRun[]; asks: MapAsk[]; plan?: MapPlan }): MapStage[] {
+export function buildMap(input: {
+  runs: MapRun[];
+  asks: MapAsk[];
+  plan?: MapPlan;
+  starts?: MapStageStart[];
+}): MapStage[] {
   const merged = input.asks.filter(
     (a) => a.type === 'review' && a.gate === 'merged' && a.checkpointId === 'G3',
   ).length;
   return [
-    specStage(input.runs, input.asks),
+    specStage(input.runs, input.asks, input.starts),
     buildStage(input.runs, input.asks, input.plan),
     releaseStage(input.asks, merged),
   ];

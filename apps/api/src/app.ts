@@ -32,6 +32,8 @@ import { registerMapRoutes } from './map-routes.js';
 import { registerPreviewRoutes } from './preview-routes.js';
 import { buildTick } from './build.js';
 import { registerBuildRoutes } from './build-routes.js';
+import { registerStageRoutes } from './stage-routes.js';
+import { stageTick } from './stages.js';
 import { applyReleaseDecision } from './releases.js';
 import { registerIntegrationRoutes, refreshAllDocs } from './integration-routes.js';
 import { applyIntegrationDecision, confirmedHosts, createDocFetcher } from './integrations.js';
@@ -178,6 +180,7 @@ export async function buildApp({
   registerMapRoutes(app, db, ghService, { approverRole: config.RELEASE_APPROVER_ROLE });
   registerPreviewRoutes(app, db, ghService);
   registerBuildRoutes(app, db);
+  registerStageRoutes(app, db);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,
@@ -263,14 +266,21 @@ export async function buildApp({
       buildTimer = setInterval(() => {
         if (buildBusy) return;
         buildBusy = true;
-        buildTick({
-          db,
-          github: ghService,
-          agents: loadedAgents,
-          maxActive: config.BUILD_MAX_ACTIVE,
-          autoStartMinutes: config.BUILD_AUTOSTART_MIN,
-          log: (l) => app.log.info(l),
-        })
+        const autoStartMinutes = config.BUILD_AUTOSTART_MIN;
+        const log = (l: string) => app.log.info(l);
+        // The spec and design steps first, then the build, so one pass can carry work from a step to the next.
+        stageTick({ db, agents: loadedAgents, autoStartMinutes, log })
+          .catch((e) => app.log.error({ err: e }, 'stage tick failed'))
+          .then(() =>
+            buildTick({
+              db,
+              github: ghService,
+              agents: loadedAgents,
+              maxActive: config.BUILD_MAX_ACTIVE,
+              autoStartMinutes,
+              log,
+            }),
+          )
           .catch((e) => app.log.error({ err: e }, 'build tick failed'))
           .finally(() => {
             buildBusy = false;

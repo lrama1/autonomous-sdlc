@@ -352,3 +352,17 @@ export const buildPlanSchema = z.object({
 });
 export type BuildPlanDto = z.infer<typeof buildPlanSchema>;
 export type BuildTaskDto = z.infer<typeof buildTaskSchema>;
+
+// A step before the build that starts by itself or waits for a click: drafting the spec, designing it.
+export const stageStartSchema = z.object({
+  id: z.string(),
+  initiativeId: z.string(),
+  stage: z.enum(['spec', 'design']),
+  state: z.enum(['pending', 'awaiting_start', 'started', 'cancelled', 'invalid']),
+  detail: z.string().nullable(),
+  runId: z.string().nullable(),
+  /** The first line of the task: what the step is called. */
+  title: z.string(),
+  createdAt: z.string(),
+});
+export type StageStartDto = z.infer<typeof stageStartSchema>;

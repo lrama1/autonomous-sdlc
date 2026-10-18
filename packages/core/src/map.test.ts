@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMap } from './map.js';
-import type { MapAsk, MapPlan, MapRun } from './map.js';
+import type { MapAsk, MapPlan, MapRun, MapStageStart } from './map.js';
 
 let n = 0;
 const run = (agentRole: string, state: string): MapRun => ({ id: `r${++n}`, agentRole, state });
@@ -221,5 +221,59 @@ describe('the build stage with a build plan', () => {
       [ask({ type: 'review', checkpointId: 'G3', runRole: 'backend_engineer' })],
     );
     expect(s.status).toBe('waiting_human');
+  });
+});
+
+describe('the spec and design stage with steps that start by themselves', () => {
+  const spec = (starts: MapStageStart[], runs: MapRun[] = [], asks: MapAsk[] = []) =>
+    buildMap({ runs, asks, starts }).find((s) => s.id === 'spec')!;
+
+  it('waits on a Product Owner to start the spec in guided mode', () => {
+    const s = spec([{ stage: 'spec', state: 'awaiting_start' }]);
+    expect(s.status).toBe('waiting_human');
+    expect(s.waitingOn).toEqual(['product_owner']);
+  });
+
+  it('waits on an Architect to start the design after the spec merged', () => {
+    const merged = ask({
+      checkpointId: 'G1',
+      state: 'answered',
+      decision: 'approved',
+      gate: 'merged',
+      runRole: 'product',
+      roleNeeded: 'product_owner',
+    });
+    const s = spec(
+      [{ stage: 'design', state: 'awaiting_start' }],
+      [run('product', 'succeeded')],
+      [merged],
+    );
+    expect(s.status).toBe('waiting_human');
+    expect(s.waitingOn).toEqual(['architect']);
+  });
+
+  it('is working while a step is about to start, instead of done', () => {
+    const merged = ask({
+      checkpointId: 'G1',
+      state: 'answered',
+      decision: 'approved',
+      gate: 'merged',
+      runRole: 'product',
+    });
+    const s = spec(
+      [{ stage: 'design', state: 'pending' }],
+      [run('product', 'succeeded')],
+      [merged],
+    );
+    expect(s.status).toBe('working');
+  });
+
+  it('ignores steps that started or were dropped', () => {
+    expect(
+      spec([
+        { stage: 'spec', state: 'started' },
+        { stage: 'design', state: 'cancelled' },
+      ]).status,
+    ).toBe('not_started');
   });
 });

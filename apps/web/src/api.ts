@@ -10,6 +10,7 @@ import {
   meSchema,
   previewSchema,
   readySchema,
+  stageStartSchema,
   standingDecisionSchema,
 } from '@sdlc/schemas';
 import type {
@@ -25,6 +26,7 @@ import type {
   Me,
   PreviewDto,
   Ready,
+  StageStartDto,
   StandingDecisionDto,
 } from '@sdlc/schemas';
 import { z } from 'zod';
@@ -218,6 +220,7 @@ export const createInitiative = (body: {
   goal: string;
   repositoryId: string;
   autonomyMode: 'guided' | 'balanced' | 'autopilot';
+  autoStages: boolean;
 }) =>
   call('/api/initiatives', z.object({ id: z.string().uuid() }).passthrough(), {
     method: 'POST',
@@ -240,3 +243,10 @@ export const retryBuildTask = (id: string, key: string) =>
   planAction(`/api/plans/${id}/tasks/${key}/retry`);
 export const skipBuildTask = (id: string, key: string) =>
   planAction(`/api/plans/${id}/tasks/${key}/skip`);
+
+export const getStageStarts = (initiativeId: string): Promise<StageStartDto[]> =>
+  call(`/api/initiatives/${initiativeId}/stages`, z.array(stageStartSchema));
+export const startStageStep = (id: string) =>
+  call(`/api/stages/${id}/start`, stageStartSchema, { method: 'POST' });
+export const skipStageStep = (id: string) =>
+  call(`/api/stages/${id}/skip`, stageStartSchema, { method: 'POST' });

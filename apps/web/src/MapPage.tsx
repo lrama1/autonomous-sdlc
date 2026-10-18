@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { BuildPlanDto, Me } from '@sdlc/schemas';
+import type { BuildPlanDto, Me, StageStartDto } from '@sdlc/schemas';
 import {
   ApiProblem,
   cancelBuildPlan,
@@ -9,10 +9,13 @@ import {
   getMap,
   getReleases,
   getRepositories,
+  getStageStarts,
   prepareRelease,
   retryBuildTask,
+  skipStageStep,
   skipBuildTask,
   startBuildPlan,
+  startStageStep,
   startRun,
 } from './api';
 import type { InitiativeMap, Stage } from './api';
@@ -35,6 +38,60 @@ const RUN_ROLES: Array<{ id: string; label: string }> = [
     label: 'Frontend Engineer agent: build a page or component and open a PR',
   },
 ];
+
+/** The steps before the build that wait for a person, or are about to start. */
+function NextSteps({
+  steps,
+  mayControl,
+  act,
+}: {
+  steps: StageStartDto[];
+  mayControl: boolean;
+  act: (fn: () => Promise<unknown>, done: string) => Promise<void>;
+}) {
+  const shown = steps.filter((s) => ['pending', 'awaiting_start', 'invalid'].includes(s.state));
+  if (shown.length === 0) return null;
+  return (
+    <div className="card" data-testid="next-steps">
+      <h3>Next steps</h3>
+      <ul className="checks small">
+        {shown.map((s) => (
+          <li key={s.id} data-testid={`step-${s.stage}`} data-state={s.state}>
+            <b>{s.title}</b>{' '}
+            <span className={`pill ${s.state === 'invalid' ? 'stop' : 'wait'}`}>
+              {s.state === 'awaiting_start'
+                ? 'Waiting for a person'
+                : s.state === 'pending'
+                  ? 'Starting'
+                  : 'Cannot start'}
+            </span>
+            {s.detail && <div className="muted">{s.detail}</div>}
+            {mayControl && s.state === 'awaiting_start' && (
+              <div className="row wrap">
+                <button
+                  className="primary"
+                  onClick={() => void act(() => startStageStep(s.id), `${s.title} is starting.`)}
+                >
+                  Start
+                </button>
+                <button
+                  onClick={() =>
+                    void act(
+                      () => skipStageStep(s.id),
+                      'Skipped. You can still start that run by hand.',
+                    )
+                  }
+                >
+                  Skip
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; cls: string }> = {
   waiting: { label: 'Waiting', cls: 'none' },
@@ -172,6 +229,7 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
     goal: '',
     repositoryId: '',
     autonomyMode: 'balanced' as 'guided' | 'balanced' | 'autopilot',
+    autoStages: true,
   });
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -232,6 +290,15 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
           <option value="autopilot">Autopilot: no trigger, no review</option>
         </select>
       </div>
+      <label className="row small">
+        <input
+          type="checkbox"
+          checked={f.autoStages}
+          onChange={(e) => setF({ ...f, autoStages: e.target.checked })}
+        />
+        Draft the spec now, then design and build after each approval (guided mode waits for a
+        click)
+      </label>
       <textarea
         aria-label="Goal"
         placeholder="The goal, in a few sentences"
@@ -261,6 +328,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const [task, setTask] = useState('');
   const [version, setVersion] = useState('0.1.0');
   const [plan, setPlan] = useState<BuildPlanDto | null>(null);
+  const [steps, setSteps] = useState<StageStartDto[]>([]);
 
   const loadList = useCallback(async () => {
     try {
@@ -273,14 +341,16 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const loadMap = useCallback(async () => {
     if (!initiativeId) return setMap(null);
     try {
-      const [m, r, p] = await Promise.all([
+      const [m, r, p, st] = await Promise.all([
         getMap(initiativeId),
         getReleases(initiativeId),
         getBuildPlan(initiativeId),
+        getStageStarts(initiativeId),
       ]);
       setMap(m);
       setReleases(r);
       setPlan(p);
+      setSteps(st);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -401,6 +471,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
               </form>
             </div>
             <div className="stack">
+              <NextSteps steps={steps} mayControl={mayControlBuild} act={act} />
               {plan && <BuildPlan plan={plan} mayControl={mayControlBuild} act={act} />}
               <div className="card" data-testid="releases">
                 <h3>Releases</h3>
