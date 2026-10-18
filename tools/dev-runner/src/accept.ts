@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -1232,6 +1232,152 @@ try {
     );
     say(
       `the whole chain (design and two builds) cost $${(Number(total.rows[0].c) / 1e6).toFixed(4)}`,
+    );
+  }
+
+  // ---------------- Big build: five tasks, three of them in parallel, then one that needs all three, then docs ----------------
+  if (phase === 'bigbuild') {
+    say('--- bigbuild: a five-task plan with three tasks that can run at the same time ---');
+    const cara = await signInAs(stack.publicUrl, 'dev-cara'); // Architect
+    const specs: any[] = await gh(`/repos/${REPO}/contents/docs/spec`);
+    const specFile: string = specs
+      .map((s) => s.name as string)
+      .sort()
+      .at(-1)!;
+    const s = stamp;
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Big build ${s}`,
+      goal: 'Three small modules, a route that uses them, and a README note.',
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+    });
+    const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+      role: 'architect',
+      budgetUsd: 1.5,
+      task:
+        `Treat docs/spec/${specFile} as background only. Design this work instead, and write the design to docs/design/big-${s}.md following your instructions. ` +
+        `The task list is exactly five tasks, all backend_engineer. ` +
+        `T1 adds src/greet-${s}.js exporting greet(name), which returns "Hello, <name>!" and "Hello, world!" for an empty name, with a test in test/greet-${s}.test.js (paths: those two files). ` +
+        `T2 adds src/slug-${s}.js exporting slugify(text), which lowercases, turns every run of non-alphanumeric characters into one "-", and trims "-" from both ends, with a test in test/slug-${s}.test.js (paths: those two files). ` +
+        `T3 adds src/clamp-${s}.js exporting clamp(n, min, max), with a test in test/clamp-${s}.test.js (paths: those two files). ` +
+        `T4 depends on T1, T2 and T3: add GET /utils-${s} to src/server.js, answering JSON {"greeting": greet("team"), "slug": slugify("Hello World"), "clamped": clamp(15, 0, 10)}, with a test in test/server.test.js. ` +
+        `T5 depends on T4 and only adds a short section to README.md documenting that route. ` +
+        `T1, T2 and T3 must have no dependency on each other. Do not ask any questions. Commit it and change no other file.`,
+    });
+    const g1 = await waitFor(
+      'the design review',
+      () => openFor(cara, designRun.id, ['review']),
+      600_000,
+    );
+    await call(cara, 'POST', `/api/interactions/${g1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Build it.',
+    });
+    const started = Date.now();
+    const getPlan = async () =>
+      (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan as any;
+    const plan0 = await waitFor(
+      'the build plan',
+      async () => (await getPlan()) ?? null,
+      420_000,
+      3000,
+    );
+    const shape = plan0.tasks.map(
+      (t: any) => `${t.key}${t.dependsOn.length ? '<-' + t.dependsOn.join('+') : ''}`,
+    );
+    say(`the plan: ${shape.join('  ')}`);
+    check(
+      plan0.tasks.length === 5 &&
+        plan0.tasks.filter((t: any) => t.dependsOn.length === 0).length >= 3,
+      `P  the design became a plan with five tasks, three of them free to run together (${shape.join(' ')})`,
+    );
+
+    // Keep going until the plan ends: approve the engineers' pull requests, answer questions, and watch the plan.
+    let maxRunning = 0;
+    let caught = 0;
+    const seen = new Map<string, string>();
+    const timeline: string[] = [];
+    const approved = new Set<string>([g1.id]);
+    const final = await waitFor(
+      'the plan ends',
+      async () => {
+        const p = await getPlan();
+        const running = p.tasks.filter((t: any) => t.state === 'running').length;
+        maxRunning = Math.max(maxRunning, running);
+        for (const t of p.tasks) {
+          if (seen.get(t.key) !== t.state) {
+            seen.set(t.key, t.state);
+            timeline.push(`${Math.round((Date.now() - started) / 1000)}s ${t.key}:${t.state}`);
+          }
+        }
+        if (p.tasks.some((t: any) => t.state === 'failed'))
+          throw new Error(
+            `a task failed: ${JSON.stringify(p.tasks.map((t: any) => [t.key, t.state, t.detail]))}`,
+          );
+        const queue: any[] = await call(bob, 'GET', '/api/interactions');
+        for (const q of queue) {
+          if (q.initiativeId !== init.id || approved.has(q.id)) continue;
+          if (q.type === 'review') {
+            approved.add(q.id);
+            await call(bob, 'POST', `/api/interactions/${q.id}/answer`, {
+              decision: 'approved',
+              answer: 'Fine.',
+            }).catch(() => approved.delete(q.id));
+          } else if (['question', 'decision'].includes(q.type)) {
+            const options = Array.isArray(q.options) ? q.options : [];
+            const choice = q.recommendation ?? options[0]?.id;
+            if (choice) {
+              approved.add(q.id);
+              say(`answering "${q.title}" with "${choice}"`);
+              await call(bob, 'POST', `/api/interactions/${q.id}/answer`, { answer: choice }).catch(
+                () => approved.delete(q.id),
+              );
+            }
+          }
+        }
+        return p.state === 'done' || p.state === 'invalid' || p.state === 'cancelled' ? p : null;
+      },
+      1_500_000,
+      2500,
+    );
+    caught = (
+      await db.query(
+        "select count(*)::int n from activity_event where action = 'gate.caught_up' and initiative_id = $1",
+        [init.id],
+      )
+    ).rows[0].n;
+    say(`timeline: ${timeline.join(' | ')}`);
+    check(final.state === 'done', `P  the plan finished (${final.state})`);
+    check(
+      final.tasks.every((t: any) => t.state === 'merged'),
+      `P  every task merged (${final.tasks.map((t: any) => t.key + ':' + t.state).join(' ')})`,
+    );
+    check(maxRunning >= 2, `P  tasks ran at the same time (most at once: ${maxRunning})`);
+    check(maxRunning <= 4, `P  never more than the limit of 4 at once (${maxRunning})`);
+    const times = (key: string, state: string) =>
+      Number(timeline.find((l) => l.includes(` ${key}:${state}`))?.split('s ')[0] ?? NaN);
+    check(
+      times('T4', 'running') >=
+        Math.max(times('T1', 'merged'), times('T2', 'merged'), times('T3', 'merged')),
+      'P  T4 started only after T1, T2 and T3 were all merged',
+    );
+    check(
+      times('T5', 'running') >= times('T4', 'merged'),
+      'P  T5 started only after T4 was merged',
+    );
+    say(`gate catch-ups during the plan: ${caught}`);
+    const served = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/src/server.js`)).content,
+      'base64',
+    ).toString('utf8');
+    check(served.includes(`/utils-${s}`), `P  main now serves /utils-${s}`);
+    const cost = await db.query(
+      'select agent_role, count(*)::int n, coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1 group by agent_role',
+      [init.id],
+    );
+    const total = cost.rows.reduce((a: number, r: any) => a + r.c, 0);
+    say(
+      `cost: ${cost.rows.map((r: any) => `${r.agent_role} x${r.n} $${(r.c / 1e6).toFixed(3)}`).join(', ')}; total $${(total / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - started) / 1000)}s after approval`,
     );
   }
 

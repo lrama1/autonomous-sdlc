@@ -630,8 +630,21 @@ Decided with the owner: in guided mode a person clicks "Start the build"; in bal
 - **The map.** The build stage waits on a person when a plan awaits its start, shows blocked for an invalid plan or a failed task, and shows how many tasks are merged. The Map page has a Build plan panel with the buttons.
 - **A fix the plan needed: the Gate catches a branch up.** The first live run stopped because main moved while the design's pull request waited (repository protection requires branches to be up to date), and the Gate failed on the refused merge. With parallel tasks that happens all the time. Now, when the merge is refused and the pull request is behind, the Gate has GitHub merge the base branch into the pull request's branch, checks that the only new commit is that merge (a commit with the reviewed commit and the base as parents; anything else is "commits pushed after the review", as before), waits for the check on the new commit, approves again, and merges. It gives up after 5 catch-ups. A conflict makes the review `failed`, with the reason. Proven live with two pull requests approved at once (`accept.ts catchup docker`): the second was brought up to date and both merged.
 - **Proven live** (`accept.ts build docker`, balanced initiative, the design had two tasks, T2 after T1): approving the design made a plan with two tasks and started T1 with nobody clicking; T2 waited while T1 was in review; after the Gate merged T1, T2 started; T2 (a README change) merged by rule; the plan was done; the map showed build done; main served the new route; both runs were sponsored by the Architect who approved; the design and both builds cost about $0.25. API tests cover plan creation (once per design, none for an unmerged one, guided, old, invalid, unstaffed), ordering, the limit, the budget, each way a task fails, retry, skip, cancel, and the routes and their roles. A browser test covers the panel and the start button.
+- **A five-task plan with parallel tasks, on both engines** (`ACCEPT_ENGINE=<engine> accept.ts bigbuild docker`; the Architect was told the exact five tasks: three independent modules with tests, a route that uses all three, then a README note; balanced mode; every pull request approved by a person except the README one, which merged by rule). Both engines did the whole chain unattended, once each:
+
+  | | Claude Code | Copilot CLI |
+  |---|---|---|
+  | Plan | T1, T2, T3, T4 after all three, T5 after T4 | the same |
+  | Most tasks running at once | 3 | 3 |
+  | Gate catch-ups | 2 | 2 |
+  | Time from design approval to done | 246 s | 227 s |
+  | Cost: design | $0.164 | $0.079 |
+  | Cost: five builds | $0.497 | $0.262 |
+  | Total | $0.660 | $0.341 |
+
+  T4 started only after T1, T2 and T3 were merged, and T5 only after T4. Every task merged and main served the new route. This is one run each, on small tasks. On the single task compared earlier the two were level ($0.113 for Claude Code, $0.091 for Copilot after the caching fix), and Claude Code's cost moved by about 30% between identical runs, so the gap here may be noise. I would not read it as one engine being cheaper.
 - **Not proven or not built.**
-  - Only two-task and one-task plans were run live, and the tasks were small. The limit of 4 and tasks running in parallel were tested against the database, not live (the catch-up test shows two parallel pull requests, not two parallel runs from one plan).
+  - Plans larger than five tasks, tasks that touch the same files in parallel (they would conflict when the second one is brought up to date, and the Gate would report that as a failure), and a run that fails midway in a live plan were not tried. Failure paths are covered by API tests.
   - Guided start was tested in the API and the browser, not live.
   - Only the Backend Engineer has an agent, so a design with frontend tasks is `invalid`. No frontend agent exists.
   - The plan does not check that a finished task did what its `done_when` said; the pull request review and the repository's checks do that.
