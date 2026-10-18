@@ -144,8 +144,8 @@ Never automatic, never defaulted: production deploys, changes to protected paths
 ### 6.5 Repository Registry and agent git access
 - **Predetermined repositories only.** Agents read or write only repositories in the registry, maintained by an admin. An Initiative selects a registered repository instead of typing a URL.
 - **Registry entry:** `repo`, `access` (`read-write` | `read-only`), `write_mode` (`direct` | `branch_pr`), `integration_branch` (default `main`), `protected_paths`, `model_policy` (`any` | `own-account`, §12.3), optional `allowed_paths`. Default protected paths: `.github/workflows/**`, `CODEOWNERS`, agent configuration (for example `.claude/**`), verification scripts, platform rules.
-- **Write modes.** `direct`: agents commit to the integration branch (fine for scratch repositories). `branch_pr`: agents push only to `agent/<run-id>/**` and open PRs. Merges are done by the Gate identity.
-- **Direct access from the sandbox.** Each run gets a short-lived GitHub App installation token (1 hour at most) scoped to one repository and the minimum permissions. The agent clones, commits, and pushes itself.
+- **Write modes.** `direct`: agents commit to the integration branch (fine for scratch repositories). `branch_pr`: agents push only to `agent/<run-id>/**` and open PRs. **The Gate App's approving review is what allows a merge** (verified 2026-10-17, `spikes/README.md`, spike 4). GitHub cannot stop an App that holds `contents` and `pull_requests` write from merging, so protection must require the `verify` check, **one approving review**, and **dismissal of stale approvals**. The Gate App approves only after the platform's conditions are met.
+- **Direct access from the sandbox.** Each run gets a short-lived GitHub App installation token (1 hour at most) scoped to one repository and the minimum permissions. The **runner** clones and pushes with it. The engine commits locally and never holds the token (built and verified 2026-10-17).
 - **Integration branch.** PRs target only the registry entry's `integration_branch`. Baselines are plain tags (`spec-approved-N`, `release-X.Y.Z`) on that branch. Release branches are post-MVP.
 - **Protected paths** are checked by the runner before every push, and by branch protection where the repository's GitHub plan supports it.
 
@@ -154,7 +154,7 @@ Never automatic, never defaulted: production deploys, changes to protected paths
 - **Two Apps** (decided 2026-10-16). An **Agent App** (contents and pull-request write) and a **Gate App** (checks, merge, branch protection). The Gate App's private key lives only in the Git Integration service, never in a sandbox.
 - **Sign-in is OIDC SSO. GitHub is linked, not used to log in** (decided 2026-10-16). Each person can link their GitHub account once (identity only, stored as the numeric GitHub user ID) so the platform can tell who wrote or reviewed a commit. The link is required only when the independent-review rule is on. A PR with an unlinked human's commit is held for the team lead to map the identity.
 - **Webhooks.** A public HTTPS endpoint on AWS. For local development, use a webhook proxy such as smee.io, or polling.
-- **GitHub plan limits** (checked against GitHub's documentation). Protected branches and required reviewers in **private** repositories need GitHub Pro (personal account) or GitHub Team (organization). On a personal account, the Gate App cannot be added to a bypass list, so it merges only when its own required check passes. With free private repositories, use `direct` mode on scratch repositories, or use public test repositories, or upgrade, to try protected branches.
+- **GitHub plan limits** (checked against GitHub's documentation). Protected branches and required reviewers in **private** repositories need GitHub Pro (personal account) or GitHub Team (organization). On a personal account, the Gate App cannot be added to a bypass list. The account used here supports protected branches on private repositories (verified 2026-10-17), and the Gate App's approving review counts toward the required review. With free private repositories, use `direct` mode on scratch repositories, or use public test repositories, or upgrade, to try protected branches.
 
 ### 6.7 Integration Register (second- and third-party APIs)
 - **Purpose.** Tells the platform and agents which external systems an Initiative may call, where to learn them, and how to test them. *Second-party* means another system the team owns. *Third-party* means a vendor or public API.
@@ -266,9 +266,8 @@ flowchart LR
 - Agents work in the Initiative's registered repository and update platform state after significant actions.
 - **Verify before proposing.** Before a PR, an Engineer Agent runs the verification contract in its sandbox, including starting the app. A PR opens only on a pass. After repeated failure the agent escalates to its sponsor with the report instead of opening a failing PR.
 - **Verification report.** Commands, results, and commit SHA are attached to the PR. This is the agent's own report and is advisory. CI re-runs the contract on the PR head and that result is what gates the merge.
-- **Verification environment.** In the sandbox, dependent services (for example PostgreSQL) run as sidecars. CI runs the same contract in a fuller ephemeral environment. Agents run targeted browser tests. CI runs the full suite.
-- Agents attach story links to every change, declare assumptions, and never claim verification they did not perform.
-- **Preview environments** per PR where the stack allows.
+- **Verification environment.** In the sandbox, dependent services (for example PostgreSQL) run as sidecars. CI runs the same contract in a fuller ephemeral environment. Agents run targeted browser tests. CI runs the full suite. How a repository declares its sidecars is open (§19).- Agents attach story links to every change, declare assumptions, and never claim verification they did not perform.
+- **Preview environments** per PR where the stack allows. How they are provisioned is open (§19).
 
 ### 10.4 Artifacts
 Git is the source of truth for code and text artifacts. The platform database holds workflow, interactions, and run state, and indexes artifacts for linking.
@@ -293,6 +292,13 @@ The platform runs an MCP server that each run connects to, so any engine that su
 - `ask_human` (question or decision request, with options, recommendation, default, deadline)
 - `request_checkpoint`, `declare_assumption`, `search_standing_decisions`
 - `report_progress`, `register_artifact`, `get_integration_docs`
+- `check_answers` (state of the interactions this run opened)
+
+**Verified in spike 2** (`spikes/README.md`) with headless Claude Code:
+- `ask_human` with `blocking=true` holds the tool call open until a person answers (tested to 142 s), or until its default applies, which is reported as `source: "default"`.
+- With `blocking=false` the agent keeps working and collects the answer with `check_answers`.
+- For long waits the run **parks**: the process ends and the platform **resumes** the same session with the answer (`--resume`). The session store must be saved and restored, with the same working directory path. This also avoids paying for an idle sandbox.
+- Steering: a message sent over stream-json stdin is acted on at the next step. It is not preemptive. A hard stop is kill and resume.
 
 ### 11.3 Adapters
 - **Claude Code** (headless): primary. Connects to the Model Gateway through its Anthropic-compatible settings. Its hooks can add in-engine guards (for example, block edits to protected paths), but the platform does not rely on them.
@@ -329,7 +335,8 @@ The platform runs an MCP server that each run connects to, so any engine that su
 - **No silent fallback across providers.** If the provider is down, the run pauses and can resume.
 - **OpenRouter is the default** in development (local, hybrid, and AWS-sandbox). Use two API keys with credit limits (agent runs, platform services). Claude Code uses OpenRouter's Anthropic-compatible endpoint with `ANTHROPIC_AUTH_TOKEN` set and `ANTHROPIC_API_KEY` blank, and Anthropic first-party as the top provider, because OpenRouter documents Claude Code as guaranteed only with it. Platform LLM services may use any OpenRouter model per alias, through its OpenAI-compatible endpoint. Environment variables for Claude Code must be real process environment or its settings file, because it does not read a project `.env`.
 - **Bedrock and Vertex** are optional adapters for repositories with `model_policy: own-account`, which never use a third-party gateway such as OpenRouter.
-- **Spike questions** are in §19.
+- **Verified in spike 1** (`spikes/README.md`): streaming and tool use pass through a thin gateway unchanged. Aliases work with Claude Code. Per-request provider preferences are accepted and honored on the Anthropic-compatible endpoint. **Without preferences, OpenRouter routed to Bedrock**, so the gateway always injects `provider.order=["anthropic"]`, `allow_fallbacks=false`, and `data_collection="deny"` for agent runs. Token counts come from the stream. Cost does not, so the gateway keeps a price table.
+- **Gateway details learned:** drop hop-by-hop headers (`expect`, `keep-alive`, `transfer-encoding`), answer `HEAD /`, and expect a baseline of about 30k to 40k input tokens per run for Claude Code's own prompt and tools.
 
 ### 12.4 Environments: local and AWS
 One codebase and one set of container images. Infrastructure dependencies sit behind ports with two adapter sets, chosen by configuration.
@@ -341,7 +348,7 @@ One codebase and one set of container images. Infrastructure dependencies sit be
 | Object storage | MinIO (S3 API) | Amazon S3 |
 | Identity | Dex with static personas | Amazon Cognito |
 | Secrets | Git-ignored local file | AWS Secrets Manager |
-| Agent runner | Docker container per run, with sidecars and an egress proxy | ECS Fargate task per run, with sidecar containers, a task role, and an egress proxy |
+| Agent runner | Docker container per run, with sidecars and an egress proxy | ECS Fargate task per run in an isolated subnet, with sidecar containers and **no task role**. Egress goes only to a shared allowlist proxy (§12.4) |
 | Model Gateway | Container. OpenRouter by default, Bedrock through the AWS profile as an opt-in | Fargate service. OpenRouter by default in dev, Bedrock through the task role where needed |
 | Notifications | Log sink and mail catcher | SES, Slack, Teams |
 | GitHub webhooks | Webhook proxy or polling | Public HTTPS endpoint |
@@ -349,8 +356,9 @@ One codebase and one set of container images. Infrastructure dependencies sit be
 - **Modes:** `local`, `hybrid` (local app with real Bedrock through your AWS profile), `aws-sandbox` (Terraform stack in your AWS account).
 - **Parity.** Each port has contract tests that run against both adapter sets.
 - **Fargate constraints** (checked against AWS documentation). No privileged containers and no Docker-in-Docker. A task can hold sidecar containers that share localhost, so the runner uses sidecars and never needs a Docker socket.
-- **One AWS account.** Use a single-AZ development stack, an account budget alert, and destroy or stop it when idle. The always-on parts (NAT gateway, load balancer, database) dominate idle cost.
-- **Windows** development uses Docker Desktop with WSL 2.
+- **Runner network (verified in spike 3, `spikes/README.md`).** A proxy sidecar inside the runner task is advisory only: the agent shares the task's network, can ignore the proxy settings, and Fargate does not allow `NET_ADMIN`. Enforced egress uses: an **isolated subnet with no internet route**; a runner security group that allows only a **shared allowlist proxy**, the VPC endpoints for image pulls and logs, and S3; an **S3 endpoint policy** limited to the ECR layer bucket; and a **Route 53 Resolver DNS Firewall** allowlist, because the default VPC resolver is an exfiltration channel. Runners need no NAT gateway. The runner task has **no task role**, so the container holds no AWS credentials.- **One AWS account.** Use a single-AZ development stack, an account budget alert, and destroy or stop it when idle. The always-on parts (NAT gateway, load balancer, database) dominate idle cost.
+- **Windows** development uses Docker Desktop with WSL 2 (enabled 2026-10-17: virtualization in the firmware, then WSL 2).
+- **Local sandbox** (built and verified 2026-10-17, `mvp-contract.md` section 11). Each run is an unprivileged, read-only container on its own internal network, and the only way out is a small egress proxy that forwards two fixed ports to the platform and tunnels HTTPS to an allowlist. This closes the gap the process adapter left.
 
 ---
 
@@ -400,6 +408,9 @@ Agents never approve. Each agent definition (prompt, tools, model alias) is vers
 
 ## 17. Build Plan and Success Measures
 
+**Spikes done (2026-10-17):** Claude Code through a gateway to OpenRouter, `ask_human` over MCP, and a Fargate runner with a sidecar and enforced egress. All passed. Results are in `spikes/README.md`. Still unspiked: Copilot and Codex adapters.
+
+**Interfaces to code against** (stack, repository layout, data model, state machines, run spec, event schema, MCP tool schemas, gateway and runner contracts, API, and per-step acceptance tests) are in [mvp-contract.md](./mvp-contract.md).
 **Build order (cheapest feedback first):**
 0. **Walking skeleton on both targets (first week or two).** The empty web, API, and database stack runs under Docker Compose and deploys to your AWS account with Terraform, behind OIDC sign-in.
 1. **One engine, one loop.** Model Gateway with OpenRouter, Claude Code adapter, platform MCP server with `ask_human`, GitHub App, Repository Registry, one Initiative from goal to merged PR with verify-before-PR.
@@ -439,13 +450,25 @@ Agents never approve. Each agent definition (prompt, tools, model alias) is vers
 ## 19. Open Decisions
 
 - **Engines:** can Copilot and Codex run headless with MCP and a configurable model endpoint? Which to add second? Is a Copilot adapter possible without the Model Gateway?
-- **Model Gateway spike:** (a) whether Claude Code's Anthropic-compatible endpoint accepts per-request provider preferences, or they must be set in the OpenRouter account. (b) whether Anthropic first-party stays eligible with `data_collection: "deny"`. (c) whether a thin proxy passes streaming and tool use through unchanged. (d) per-run OpenRouter keys, or gateway-side budget metering.
+- **Gateway price table and key limits:** the gateway meters tokens, but OpenRouter's stream carries no cost, so it needs a price table per model. The OpenRouter keys are now limited (two keys in the `autonomous-sdlc` workspace, $85 per day each, verified 2026-10-17).
+- **Long waits in runs:** blocking `ask_human` was proven to 2.5 minutes. Decide the cut-off after which a run parks and resumes with the answer, and where the Claude Code session store is kept between runs (spike 2).
+- **DNS and proxy logging:** the allowlist DNS firewall is in the spike design. Confirm the proxy's own allow and deny logging and how its allowlist is generated from the Integration Register.
 - **Workflow engine:** a small state machine on PostgreSQL vs Temporal or AWS Step Functions.
 - **Rules format:** plain YAML first. When does a policy engine become worth it?
 - **Chat answers:** which interaction types may be approved from Slack or Teams, and how are replies authenticated?
 - **Default-after-timeout:** per-team defaults for deadlines and quiet hours.
 - **GitHub plan:** test repositories are private repositories on a personal account (decided 2026-10-16). Trying protected branches needs GitHub Pro, a free organization with public test repositories, or a paid organization.
-- **Egress enforcement on Fargate:** a proxy sidecar in each runner task vs a shared network firewall. Decide after the runner spike.
+- **Sidecar manifest:** how a repository declares the services its `verify` contract needs (PostgreSQL, MinIO or LocalStack, mocks), so the Fargate runner and the local Docker runner start the same set. Fargate has no Docker-in-Docker, so a Compose file cannot run as-is.
+  - *Leading option:* a small repo-level file (for example `.sdlc/services.yaml`) listing, per service, the image, environment, ports, health check, and an optional seed step. The Fargate runner turns each entry into a sidecar container. The local runner turns the same entries into Compose services. Repositories that already use Compose can generate the file from it.
+  - *Open points:* whether to accept a Compose subset directly, how images are pinned and allowed (registry allowlist, §6.7), and per-service CPU and memory limits against the per-run cap.
+  - *Protection:* the manifest is a protected path like the verification scripts (§7), so an agent cannot weaken its own test environment without a trigger.
+  - *Decide:* during the runner spike, using one real repository with a database and one with an object store.
+- **Preview environments:** how a per-PR preview environment is provisioned, and for which stacks. Agents have no AWS credentials (§12.4), so the repository's pipeline provisions it, not the agent.
+  - *Option A:* an ephemeral Terraform stack per PR, created by the CI workflow on PR open and destroyed on merge or close. Most faithful, slowest, highest cost.
+  - *Option B:* a shared preview cluster or namespace with one service and one schema per PR. Faster and cheaper, with weaker isolation.
+  - *Option C:* no preview in the MVP. The review pack links the CI test run and recorded browser results instead.
+  - *Open points:* who owns the pipeline role that may create resources, a TTL sweeper for orphaned stacks, a per-repository cost cap, and how the link reaches the review pack (§10.1).
+  - *Leaning:* start with Option C, add Option B for web stacks, and keep Option A for repositories that need real infrastructure.
 - **Cognito vs IAM Identity Center** as the AWS identity default.
 - **Registry:** one active Initiative per repository vs several in a monorepo. Whether `direct` mode may target non-integration branches.
 - **Earned autonomy:** when to try automatic tuning, and on what signals.
@@ -467,6 +490,16 @@ Agents never approve. Each agent definition (prompt, tools, model alias) is vers
 | 2026-10-16 | **OpenRouter is the default model provider in development** for all agents and all platform LLM processes, through one Model Gateway. Sandboxes get per-run tokens, never provider keys (§12.3). |
 | 2026-10-16 | **Direction:** return to the original idea, a semi-autonomous, human-in-the-loop SDLC platform. Regulated features are parked (Appendix A). Purpose: a tool for the author's own team and projects. |
 | 2026-10-16 | **Differentiators to pursue:** human-injection engine, engine-agnostic design, role-mirrored agents across the lifecycle, and the visual SDLC map. Earned autonomy is post-MVP (§3). |
+| 2026-10-17 | **Gateway spike results:** streaming, tool use, aliases, per-request provider preferences, and first-party Anthropic with `data_collection: "deny"` all work. The gateway always sets provider preferences. Budgets are metered in the gateway, with no per-run OpenRouter keys at first (§12.3, `spikes/`). |
+| 2026-10-17 | **Human-injection over MCP works headless:** blocking, default-after-timeout, non-blocking, park and resume, and mid-run guidance were all demonstrated (§11.2, `spikes/`). |
+| 2026-10-17 | **Egress enforcement on Fargate:** isolated subnet, shared allowlist proxy, security groups, S3 endpoint policy, and DNS Firewall. No proxy sidecar as the control. Runner has no task role (§12.4, `spikes/`). |
+| 2026-10-17 | **The Gate is an approving review by the Gate App.** An agent can merge its own PR when only a status check protects the branch, so protection also requires one approving review and dismisses stale approvals. Agents cannot approve their own PRs. Agents cannot change workflows or push to the protected branch (§6.5, `spikes/`). |
+| 2026-10-17 | **GitHub Apps registered** through the manifest flow on `lrama1` and installed on `lrama1/sdlc-scratch` only. A local platform declares no webhook, because GitHub rejects a localhost hook URL even when inactive. The platform polls (§6.6). |
+| 2026-10-17 | **Step 1 passed live** (real engine, gateway, OpenRouter, GitHub Apps): goal, question answered by a person, verification, push, pull request, independent human review, Gate approval and merge, activity log, cost records. See mvp-contract.md section 16. |
+| 2026-10-17 | **A run lost while a person is being asked parks on that question** and resumes with its session when answered. It is not failed (pps/api/src/run-worker.ts). |
+| 2026-10-17 | **The Gate merges only after a person approves and the required check is green**, on the commit that was reviewed. Automatic merge of pre-approved types is not built yet. |
+| 2026-10-17 | **Runs execute in an isolated Docker sandbox** (`RUNNER_ADAPTER=docker`). One container, internal network, and volume per run. Egress only through a shared proxy to two fixed platform ports and an HTTPS allowlist. The sandbox is given the proxy's address, not its name (`mvp-contract.md` section 11). The full Step 1 acceptance passes inside it. |
+| 2026-10-17 | **Step 2 built (human-injection engine).** Asks are handed to the holder of the role and escalate holder, deputy, then admins, skipping people who are away and anyone who may not review the run. A reminder never approves. Defaults apply after the deadline and are flagged. A standing decision answers a repeated question before anyone is asked or notified. Quiet hours and a daily digest hold low-priority messages, never hard stops. Chat answers need a signed request, a Slack user an admin linked to a person, an open ask, and a type the team allows in chat (questions and decisions by default; checkpoints and hard stops never). Attention queue, assumptions, standing decisions, and interruption measures are in the Workspace. Proven live with a real agent for routing and standing decisions. **Slack itself is proven only against a fake Slack.** See `mvp-contract.md` section 16. |
 | 2026-10-16 | **Agent models:** Claude Code uses Claude models through OpenRouter's Anthropic-compatible endpoint. Other engines use their own model families through the gateway (§11.3, §12.3). |
 
 ---

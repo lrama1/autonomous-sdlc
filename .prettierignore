@@ -1,0 +1,14 @@
+node_modules
+dist
+.terraform
+pnpm-lock.yaml
+spikes
+designs
+demo
+spec*.md
+mvp-contract.md
+*.sql
+packages/db/migrations
+test-results
+playwright-report
+.dev-data

@@ -1,0 +1,23 @@
+{
+  "name": "@sdlc/runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/run.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --import tsx src/main.ts",
+    "bundle": "node build.mjs",
+    "image": "node build.mjs && docker build -t sdlc-runner:dev ."
+  },
+  "dependencies": {
+    "@sdlc/core": "workspace:^",
+    "@sdlc/schemas": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@sdlc/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@sdlc/core": "workspace:^",
+    "@sdlc/schemas": "workspace:^",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
+  }
+}

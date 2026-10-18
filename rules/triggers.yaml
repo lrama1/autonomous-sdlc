@@ -1,0 +1,35 @@
+version: 1
+triggers:
+  - id: protected-path
+    description: The change touches a protected path
+    when: { touches_protected_path: true }
+    action: hard_stop
+  - id: auth-code
+    description: Changes to authentication or authorization code
+    when: { paths_any: ['**/auth/**', '**/*session*', '**/*permission*'] }
+    action: require_review
+  - id: db-migration
+    description: Database migration or schema change
+    when: { paths_any: ['**/migrations/**', '**/*.sql'] }
+    action: require_review
+  - id: new-dependency
+    description: A dependency was added
+    when: { dependency_added: true }
+    action: require_review
+  - id: tests-removed
+    description: A test was deleted or skipped
+    when: { tests_deleted_or_skipped: true }
+    action: require_review
+  - id: large-diff
+    description: More than 800 lines changed
+    when: { lines_changed_over: 800 }
+    action: require_review
+  - id: infra-change
+    description: Infrastructure change
+    when: { paths_any: ['infra/**', '**/*.tf'] }
+    action: require_review
+pre_approved_change_types:
+  - id: docs-only
+    owner: team-lead
+    review_by: 2027-01-15
+    when: { paths_all: ['**/*.md', 'docs/**'] }

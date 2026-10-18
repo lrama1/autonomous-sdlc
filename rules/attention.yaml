@@ -1,0 +1,24 @@
+version: 1
+
+# How people are reached (spec 5.4 to 5.6). A reminder never approves anything.
+# An ask goes to the holder of the role. If they do not answer it moves to their deputy,
+# then to the platform admins.
+reminder_after_minutes: 120
+escalate_after_minutes: 240
+max_reminders_per_level: 3
+
+timezone: UTC
+
+# Uncomment to send low-priority asks (not blocking anything, and notices) once a day.
+# digest_at: '17:00'
+
+# Uncomment to keep chat quiet outside working hours. Hard stops always get through.
+# A hat can set its own hours, which replace these.
+# working_hours:
+#   days: [1, 2, 3, 4, 5]
+#   start: '08:00'
+#   end: '20:00'
+
+# What may be answered from chat. Checkpoints, hard stops and reviews where a trigger fired
+# always open the Workspace. Add 'review' to let low-risk reviews be approved from chat.
+chat_approve: [question, decision]

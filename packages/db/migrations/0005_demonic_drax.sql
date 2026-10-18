@@ -1,0 +1,1 @@
+ALTER TABLE "repository_entry" ADD COLUMN "required_check" text DEFAULT 'verify' NOT NULL;

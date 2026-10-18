@@ -1,0 +1,22 @@
+﻿# Slack app for the human-injection engine (mvp-contract section 16, step 2).
+# Create it at https://api.slack.com/apps > "Create New App" > "From a manifest" and paste this in.
+# Slack must be able to reach the request URL, so it cannot be localhost. Use your load balancer, or a tunnel while testing.
+display_information:
+  name: Autonomous SDLC
+  description: Asks from your agents, answered where you already are.
+features:
+  bot_user:
+    display_name: SDLC
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - im:write
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://REPLACE-WITH-YOUR-PUBLIC-URL/slack/interactions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

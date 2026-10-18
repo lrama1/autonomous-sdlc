@@ -1,0 +1,23 @@
+{
+  "name": "@sdlc/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --import tsx src/main.ts"
+  },
+  "dependencies": {
+    "@sdlc/core": "workspace:^",
+    "@sdlc/db": "workspace:^",
+    "@sdlc/schemas": "workspace:^",
+    "drizzle-orm": "^0.45.4"
+  },
+  "devDependencies": {
+    "@sdlc/dev-db": "workspace:^",
+    "@types/node": "^22.20.5"
+  }
+}

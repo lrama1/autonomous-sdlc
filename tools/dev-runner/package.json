@@ -1,0 +1,33 @@
+{
+  "name": "@sdlc/dev-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --import tsx src/main.ts",
+    "demo": "node --import tsx src/main.ts --demo",
+    "check": "node --import tsx src/check.ts",
+    "check:gateway-live": "node --import tsx src/gateway-live.ts",
+    "accept": "node --import tsx src/accept.ts"
+  },
+  "dependencies": {
+    "@sdlc/api": "workspace:^",
+    "@sdlc/core": "workspace:^",
+    "@sdlc/db": "workspace:^",
+    "@sdlc/dev-db": "workspace:^",
+    "@sdlc/dev-idp": "workspace:^",
+    "@sdlc/gateway": "workspace:^",
+    "@sdlc/schemas": "workspace:^",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
+    "vite": "^8.3.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1"
+  }
+}

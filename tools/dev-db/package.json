@@ -1,0 +1,21 @@
+{
+  "name": "@sdlc/dev-db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node --import tsx src/main.ts"
+  },
+  "dependencies": {
+    "embedded-postgres": "16.14.0-beta.17",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1"
+  }
+}

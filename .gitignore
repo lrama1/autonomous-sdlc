@@ -91,3 +91,18 @@ pgdata/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Spikes: scratch output
+spikes/*/work/
+spikes/*/*.pid
+spikes/*/*.sid
+spikes/*/*.arn
+
+# Local dev data (embedded PostgreSQL, uploads)
+.dev-data/
+.dev-demo/
+test-results/
+playwright-report/
+
+# Bundled runner for the sandbox image
+apps/runner/dist/
