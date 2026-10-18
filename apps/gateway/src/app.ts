@@ -12,6 +12,7 @@ import type { Db, RunContext } from '@sdlc/db';
 import { costMicros } from '@sdlc/core';
 import { healthSchema } from '@sdlc/schemas';
 import type { GatewayConfig } from '@sdlc/schemas';
+import { addCacheBreakpoints } from './cache.js';
 import { SseMeter, usageFromJson } from './metering.js';
 import { loadSettings } from './settings.js';
 import type { Settings } from './settings.js';
@@ -196,8 +197,10 @@ export function createGatewayServer(deps: GatewayDeps): http.Server {
     }
 
     body.model = model;
-    if (path === '/v1/messages') body.provider = settings.provider;
-    else delete body.provider;
+    if (path === '/v1/messages') {
+      body.provider = settings.provider;
+      addCacheBreakpoints(body);
+    } else delete body.provider;
 
     const headers: Record<string, string> = {
       authorization: `Bearer ${config.OPENROUTER_KEY_AGENTS}`,

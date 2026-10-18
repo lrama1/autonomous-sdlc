@@ -28,6 +28,12 @@ const sse = (usageStart: object, usageEnd: object) => [
   `event: message_stop\ndata: {"type":"message_stop"}\n\n`,
 ];
 
+interface Sent {
+  tools: { cache_control?: unknown }[];
+  system: { cache_control?: unknown }[];
+  messages: { content: unknown }[];
+}
+
 let devDb: DevDb;
 let dataDir: string;
 let db: Db;
@@ -220,6 +226,43 @@ describe('forwarding', () => {
     expect(up.headers['anthropic-beta']).toBe('tools-2026');
     expect(up.headers.cookie).toBeUndefined();
     expect(JSON.stringify(up.headers)).not.toContain(f.token);
+  });
+
+  it('marks the prompt for caching when the client sent no markers, and leaves a marked prompt alone', async () => {
+    const f = await createRunFixture(db);
+    const plain = {
+      model: 'agent-default',
+      max_tokens: 10,
+      stream: true,
+      system: 'be careful',
+      tools: [
+        { name: 'a', input_schema: {} },
+        { name: 'b', input_schema: {} },
+      ],
+      messages: [{ role: 'user', content: 'hello' }],
+    };
+    await (await post(f.token, plain)).text();
+    const sent = received[0]!.body as unknown as Sent;
+    expect(sent.tools[1]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(sent.system).toEqual([
+      { type: 'text', text: 'be careful', cache_control: { type: 'ephemeral' } },
+    ]);
+    expect(sent.messages[0]!.content).toEqual([
+      { type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } },
+    ]);
+
+    received = [];
+    const marked = {
+      ...plain,
+      system: [
+        { type: 'text', text: 'be careful', cache_control: { type: 'ephemeral', ttl: '1h' } },
+      ],
+    };
+    await (await post(f.token, marked)).text();
+    const kept = received[0]!.body as unknown as Sent;
+    expect(kept.system[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(kept.tools[1]!.cache_control).toBeUndefined();
+    expect(kept.messages[0]!.content).toBe('hello');
   });
 
   it('streams the response through byte for byte', async () => {

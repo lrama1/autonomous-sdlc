@@ -308,6 +308,7 @@ Proven in spike 1. Production requirements on top of `spikes/s1-claude-openroute
 | Auth | `Authorization: Bearer <runToken>` or `x-api-key`. Look up `run_token` by hash. Unknown, expired, or revoked gives 401. |
 | Aliases | `agent-fast`, `agent-default`, `agent-strong`, `svc-default`. Mapped in configuration, per deployment. A disallowed alias gives 403. |
 | Provider preferences | For agent runs always inject `provider: { order: ['anthropic'], allow_fallbacks: false, data_collection: 'deny' }` (spike 1). Platform services use their own preference set per alias. |
+| Prompt caching | If a `/v1/messages` request carries no `cache_control` anywhere, add it to the end of the tools, the system prompt and the last message (at most three markers). A client that marks its own prompt is left alone. Needed for the Copilot CLI, which sends none (step 4). |
 | Headers | Drop `expect`, `keep-alive`, `upgrade`, `te`, `transfer-encoding`, `connection`, `host`, `content-length`. |
 | Streaming | Pass through unchanged. Meter from `message_start` (input) and `message_delta` (output) events. |
 | Cost | Price table in configuration, per provider model, per million tokens. Write one `cost_record` per call. |
@@ -580,11 +581,19 @@ Not built, or only partly:
   | Result | succeeded, verify passed first time | succeeded, verify passed first time |
   | Time | 65 s | 59 s |
   | Model calls | 12 | 11 |
-  | Input tokens recorded | 16 k | 234 k |
+  | Uncached input tokens | 16 k | 234 k |
   | Cost | $0.148 | $0.266 |
   | Diff | 3 files, about 370 lines added | 3 files, about 350 lines added |
 
-  I read both diffs. Both did what was asked, with similar validation and tests. The Copilot run cost about 1.8 times as much. The input token gap suggests Claude Code's prompt is cached and the Copilot CLI's is not through this route (about 21 k tokens sent on every call), but I did not check that. If it holds, a long Copilot run costs more per step as the context grows.
+  I read both diffs. Both did what was asked, with similar validation and tests. The Copilot run cost about 1.8 times as much, and the reason was found: the Copilot CLI sends no prompt-cache markers (a capture of its requests showed none on the tools, the system prompt or the messages), so every call paid full price for the same 13 k-token prefix. **The gateway now adds the markers** when a request has none (`apps/gateway/src/cache.ts`: the end of the tools, of the system prompt and of the last message; a client that marks its own prompt, like Claude Code, is left alone). Per call, the cost went from about $0.014 to about $0.002 after the first. The same task re-run on the same day:
+
+  | | Claude Code | Copilot CLI, before | Copilot CLI, after |
+  |---|---|---|---|
+  | Cost | $0.113 (earlier run $0.148) | $0.266 | $0.091 |
+  | Model calls | 10 | 11 | 13 |
+  | Time | 52 s | 59 s | 51 s |
+
+  Claude Code's cost varied by about 30% between two identical runs, so the two engines are now level on cost for this task. That is two runs each at most, not a benchmark.
 - **Not proven or not done.**
   - Only the default alias (`agent-default`) was used, on small tasks and one medium one. Larger tasks, other models and the cost of long runs were not measured.
   - The CLI is a pre-release version (1.0.100-1 is the build the spike used; the stable tag is 1.0.98). GitHub's terms for automated use of the CLI against a self-chosen model endpoint were not checked.
