@@ -263,6 +263,40 @@ test('a step before the build waits for a person to start it', async ({ page }) 
   await expect(page.getByTestId('step-spec')).toHaveCount(0, { timeout: 20_000 });
 });
 
+test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  // Guided, so the fix waits for a click.
+  await db
+    .update(initiative)
+    .set({ autonomyMode: 'guided', autoStages: true })
+    .where(eq(initiative.id, f.initiativeId));
+  const title = `Total is wrong ${randomUUID().slice(0, 6)}`;
+  const [init] = await db.select().from(initiative).where(eq(initiative.id, f.initiativeId));
+
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-bugs').click();
+  const form = page.getByTestId('bug-form');
+  await form.getByLabel('Initiative').selectOption(init!.id);
+  await form.getByLabel('Title').fill(title);
+  await form
+    .getByLabel('What happens, and what should happen')
+    .fill('The total adds tax twice. It should add it once.');
+  await form.getByLabel('Severity').selectOption('high');
+  await form.getByRole('button', { name: 'Report' }).click();
+  await expect(page.getByTestId('note')).toContainText('The report is recorded');
+
+  const bug = page.getByTestId('bug').filter({ hasText: title });
+  await expect(bug).toHaveAttribute('data-state', 'open');
+  await expect(bug).toContainText('High');
+  await bug.getByRole('button', { name: 'Start the fix' }).click();
+  await expect(page.getByTestId('note')).toContainText('The fix is starting');
+  // The worker starts the run, and the report moves on.
+  await expect(bug).toHaveAttribute('data-state', 'fixing', { timeout: 20_000 });
+  await expect(bug).toContainText('The agent is working on it');
+});
+
 test('assumptions are accepted or rejected, and a rejection asks the sponsor what to redo', async ({
   page,
 }) => {

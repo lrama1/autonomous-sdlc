@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { agentRun, initiative, interaction, stageStart } from '@sdlc/db';
+import { agentRun, bugReport, initiative, interaction, stageStart } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
@@ -43,6 +43,137 @@ export const designTask = (specPath: string) => {
     `Design the approved spec ${specPath}. Write the design to docs/design/${slug}.md following your instructions.`,
   ].join('\n');
 };
+
+export interface BugInput {
+  title: string;
+  description: string;
+  steps?: string | null;
+  severity: string;
+}
+
+/** What the Bug Agent is told. The first line becomes the pull request title. */
+export const bugTask = (b: BugInput, reporter: string) =>
+  [
+    `Fix bug: ${b.title}`.slice(0, 100),
+    '',
+    `A bug was reported (severity ${b.severity}, reported by ${reporter}). Reproduce it, find the cause, and fix it, following your instructions.`,
+    '',
+    `What happens, and what should happen:`,
+    b.description,
+    ...(b.steps ? ['', 'Steps to reproduce:', b.steps] : []),
+  ].join('\n');
+
+/**
+ * Records a bug report and the step that starts its fix. The fix starts by itself in balanced and autopilot mode when
+ * the initiative's steps are on, and otherwise waits for an engineer or admin to click start.
+ */
+export async function reportBug(
+  db: Db,
+  agents: Map<string, LoadedAgent>,
+  init: typeof initiative.$inferSelect,
+  reporter: { id: string; displayName: string },
+  input: BugInput,
+): Promise<typeof bugReport.$inferSelect> {
+  const [bug] = await db
+    .insert(bugReport)
+    .values({
+      initiativeId: init.id,
+      title: input.title,
+      description: input.description,
+      steps: input.steps ?? null,
+      severity: input.severity,
+      reportedBy: reporter.id,
+    })
+    .returning();
+  const noAgent = !agents.has('bug');
+  const auto = init.autoStages && init.autonomyMode !== 'guided';
+  const [step] = await db
+    .insert(stageStart)
+    .values({
+      initiativeId: init.id,
+      key: `bug:${bug!.id}`,
+      stage: 'bug',
+      role: 'bug',
+      task: bugTask(input, reporter.displayName),
+      state: noAgent ? 'invalid' : auto ? 'pending' : 'awaiting_start',
+      detail: noAgent
+        ? 'No agent fixes bugs.'
+        : auto
+          ? 'The fix starts by itself.'
+          : 'A person starts the fix.',
+      startedBy: reporter.id,
+    })
+    .returning();
+  const [row] = await db
+    .update(bugReport)
+    .set({ stageStartId: step!.id, detail: step!.detail })
+    .where(eq(bugReport.id, bug!.id))
+    .returning();
+  await recordActivity(db, {
+    actorType: 'person',
+    actorId: reporter.id,
+    initiativeId: init.id,
+    action: 'bug.reported',
+    detail: { bugId: bug!.id, title: input.title, severity: input.severity, state: step!.state },
+  });
+  return row!;
+}
+
+/** Keeps each bug's state in line with its fix: started, merged, or in need of a person. */
+export async function syncBugs(db: Db): Promise<void> {
+  const open = await db
+    .select({ bug: bugReport, step: stageStart })
+    .from(bugReport)
+    .innerJoin(stageStart, eq(stageStart.id, bugReport.stageStartId))
+    .where(inArray(bugReport.state, ['open', 'fixing']));
+  for (const { bug, step } of open) {
+    let state = bug.state;
+    let detail = bug.detail;
+    if (step.state === 'cancelled' || step.state === 'invalid') {
+      state = 'needs_attention';
+      detail = step.detail ?? 'The fix was not started.';
+    } else if (step.state === 'started' && step.runId) {
+      const [run] = await db.select().from(agentRun).where(eq(agentRun.id, step.runId));
+      const [review] = await db
+        .select()
+        .from(interaction)
+        .where(and(eq(interaction.runId, step.runId), eq(interaction.type, 'review')))
+        .orderBy(sql`${interaction.createdAt} desc`)
+        .limit(1);
+      const gate = (review?.contextCard as { gate?: { state?: string } } | undefined)?.gate?.state;
+      const decision = (review?.answer as { decision?: string } | null)?.decision;
+      if (gate === 'merged') {
+        state = 'fixed';
+        detail = 'The fix was reviewed and merged.';
+      } else if (
+        run &&
+        ['failed', 'cancelled', 'budget_exceeded', 'timed_out'].includes(run.state)
+      ) {
+        state = 'needs_attention';
+        detail = `The fix run ended as ${run.state}.`;
+      } else if (run?.state === 'succeeded' && !review) {
+        state = 'needs_attention';
+        detail =
+          'The agent finished without a fix to review. It may not have reproduced the bug. See its summary.';
+      } else if (review?.state === 'answered' && decision && decision !== 'approved') {
+        state = 'needs_attention';
+        detail = `The reviewer chose "${decision}".`;
+      } else if (
+        gate &&
+        ['ci_failed', 'failed', 'stale', 'closed', 'timed_out', 'conflict'].includes(gate)
+      ) {
+        state = 'needs_attention';
+        detail = `The merge stopped (${gate}).`;
+      } else {
+        state = 'fixing';
+        detail = review ? 'The fix is in review.' : 'The agent is working on it.';
+      }
+    }
+    if (state !== bug.state || detail !== bug.detail) {
+      await db.update(bugReport).set({ state, detail }).where(eq(bugReport.id, bug.id));
+    }
+  }
+}
 
 /** What a revision run is told: the file, the reviewer's words, and that it starts from the current main branch. */
 export function reviseTask(
@@ -350,6 +481,7 @@ export async function stageTick(deps: StageDeps): Promise<void> {
   await ensureRevisions(deps);
   await ensureDesignStarts(deps);
   await startDueStages(deps);
+  await syncBugs(deps.db);
 }
 
 // ---- What a person can do ----

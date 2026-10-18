@@ -2,6 +2,7 @@ import {
   assumptionSchema,
   attentionProfileSchema,
   autopilotSchema,
+  bugSchema,
   buildPlanSchema,
   healthSchema,
   integrationSchema,
@@ -18,6 +19,8 @@ import type {
   AssumptionDto,
   AutopilotDto,
   AttentionProfile,
+  BugCreate,
+  BugDto,
   BuildPlanDto,
   Health,
   IntegrationDto,
@@ -250,3 +253,7 @@ export const startStageStep = (id: string) =>
   call(`/api/stages/${id}/start`, stageStartSchema, { method: 'POST' });
 export const skipStageStep = (id: string) =>
   call(`/api/stages/${id}/skip`, stageStartSchema, { method: 'POST' });
+
+export const getBugs = (): Promise<BugDto[]> => call('/api/bugs', z.array(bugSchema));
+export const reportBug = (initiativeId: string, body: BugCreate): Promise<BugDto> =>
+  call(`/api/initiatives/${initiativeId}/bugs`, bugSchema, { method: 'POST', body });

@@ -410,3 +410,28 @@ export const stageStart = pgTable(
   },
   (t) => [unique('stage_start_initiative_key').on(t.initiativeId, t.key)],
 );
+
+// A bug report (spec 9, step 7). The Bug Agent reproduces it, finds the cause, and proposes a fix.
+export const bugReport = pgTable(
+  'bug_report',
+  {
+    id: id(),
+    initiativeId: uuid('initiative_id')
+      .notNull()
+      .references(() => initiative.id),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    steps: text('steps'),
+    severity: text('severity').notNull().default('medium'), // low | medium | high
+    reportedBy: uuid('reported_by')
+      .notNull()
+      .references(() => person.id),
+    // open | fixing | fixed | needs_attention. Kept up to date by the worker from the fix run and its review.
+    state: text('state').notNull().default('open'),
+    detail: text('detail'),
+    stageStartId: uuid('stage_start_id').references(() => stageStart.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('bug_report_initiative_idx').on(t.initiativeId)],
+);

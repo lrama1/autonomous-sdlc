@@ -357,7 +357,7 @@ export type BuildTaskDto = z.infer<typeof buildTaskSchema>;
 export const stageStartSchema = z.object({
   id: z.string(),
   initiativeId: z.string(),
-  stage: z.enum(['spec', 'design']),
+  stage: z.enum(['spec', 'design', 'bug']),
   state: z.enum(['pending', 'awaiting_start', 'started', 'cancelled', 'invalid']),
   detail: z.string().nullable(),
   runId: z.string().nullable(),
@@ -366,3 +366,32 @@ export const stageStartSchema = z.object({
   createdAt: z.string(),
 });
 export type StageStartDto = z.infer<typeof stageStartSchema>;
+
+export const bugCreateSchema = z.object({
+  title: z.string().trim().min(3).max(200),
+  description: z.string().trim().min(10).max(4000),
+  steps: z.string().trim().max(4000).optional(),
+  severity: z.enum(['low', 'medium', 'high']).default('medium'),
+});
+export type BugCreate = z.infer<typeof bugCreateSchema>;
+
+export const bugSchema = z.object({
+  id: z.string(),
+  initiativeId: z.string(),
+  initiativeTitle: z.string(),
+  title: z.string(),
+  description: z.string(),
+  steps: z.string().nullable(),
+  severity: z.enum(['low', 'medium', 'high']),
+  reportedBy: z.string(),
+  state: z.enum(['open', 'fixing', 'fixed', 'needs_attention']),
+  detail: z.string().nullable(),
+  /** The fix run, once there is one. */
+  runId: z.string().nullable(),
+  prNumber: z.number().nullable(),
+  /** The step that starts the fix, while it waits for a click. */
+  stageStartId: z.string().nullable(),
+  stageState: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type BugDto = z.infer<typeof bugSchema>;

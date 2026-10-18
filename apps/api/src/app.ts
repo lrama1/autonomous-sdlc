@@ -33,6 +33,7 @@ import { registerPreviewRoutes } from './preview-routes.js';
 import { buildTick } from './build.js';
 import { registerBuildRoutes } from './build-routes.js';
 import { registerStageRoutes } from './stage-routes.js';
+import { registerBugRoutes } from './bug-routes.js';
 import { stageTick } from './stages.js';
 import { applyReleaseDecision } from './releases.js';
 import { registerIntegrationRoutes, refreshAllDocs } from './integration-routes.js';
@@ -181,6 +182,7 @@ export async function buildApp({
   registerPreviewRoutes(app, db, ghService);
   registerBuildRoutes(app, db);
   registerStageRoutes(app, db);
+  registerBugRoutes(app, db, loadedAgents);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,

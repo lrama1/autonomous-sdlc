@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -1621,6 +1621,162 @@ try {
       [init.id],
     );
     check(clicks.rows[0].n === 0, 'S  nobody clicked Start on any step');
+  }
+
+  // ---------------- Bug: a reported bug is reproduced, explained, fixed, reviewed, and merged ----------------
+  if (phase === 'bug') {
+    say(
+      '--- bug: the Bug Agent reproduces a planted bug with a failing test, finds the cause, and fixes it ---',
+    );
+    if (!ghToken) throw new Error('GH_TOKEN is needed to plant a bug in the scratch repository');
+    const s = stamp;
+    const auth = { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' };
+    const put = async (file: string, text: string, message: string) => {
+      const r = await fetch(`https://api.github.com/repos/${REPO}/contents/${file}`, {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({
+          message,
+          content: Buffer.from(text).toString('base64'),
+          branch: 'main',
+        }),
+      });
+      if (!r.ok)
+        throw new Error(`could not plant ${file}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+    };
+    // The bug: the discount is subtracted as if it were a flat amount. The one existing test happens to pass.
+    await put(
+      `src/discount-${s}.js`,
+      `// Applies a percentage discount to a price.\nexport function applyDiscount(price, percent) {\n  return price - percent;\n}\n`,
+      `plant a bug (${s})`,
+    );
+    await put(
+      `test/discount-${s}.test.js`,
+      `import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { applyDiscount } from '../src/discount-${s}.js';\n\ntest('no discount leaves the price alone', () => {\n  assert.equal(applyDiscount(50, 0), 50);\n});\n`,
+      `plant its only test (${s})`,
+    );
+    say('planted src/discount and its passing test on main');
+    // Wait for main to be green before the agent starts from it.
+    await waitFor(
+      'main is green',
+      async () => {
+        const head = await gh(`/repos/${REPO}/commits/main`);
+        const runs = await gh(`/repos/${REPO}/commits/${head.sha}/check-runs`);
+        const v = runs.check_runs.find((c: any) => c.name === 'verify');
+        return v?.status === 'completed' ? v : null;
+      },
+      300_000,
+      5000,
+    );
+
+    // The steps are on only after creation, so the spec step does not start. This is a maintenance initiative.
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Maintenance ${s}`,
+      goal: 'Keep the scratch app working.',
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+      autoStages: false,
+    });
+    await db.query('update initiative set auto_stages = true where id = $1', [init.id]);
+
+    const t0 = Date.now();
+    const bug = await call(alice, 'POST', `/api/initiatives/${init.id}/bugs`, {
+      title: `applyDiscount subtracts the percentage instead of taking it off (${s})`,
+      description:
+        `applyDiscount(200, 25) in src/discount-${s}.js returns 175. A 25 percent discount on 200 should give 150. ` +
+        `applyDiscount(100, 10) returns 90 only by luck of the numbers; applyDiscount(80, 50) returns 30 but should be 40.`,
+      steps: `import { applyDiscount } from './src/discount-${s}.js'; applyDiscount(200, 25)`,
+      severity: 'high',
+    });
+    check(
+      bug.stageState === 'pending' && bug.state === 'open',
+      `B  the report was recorded and the fix is starting by itself (${bug.state}, step ${bug.stageState})`,
+    );
+    const started = await waitFor(
+      'the fix run starts',
+      async () => {
+        const all: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+        return all[0]?.runId ? all[0] : null;
+      },
+      60_000,
+      2000,
+    );
+    const run = await call(bob, 'GET', `/api/runs/${started.runId}`);
+    check(
+      run.role === 'bug' && run.definition.startsWith('bug-agent'),
+      `B  the Bug Agent took it (${run.definition}, ${Math.round((Date.now() - t0) / 1000)}s after the report)`,
+    );
+
+    const review = await waitFor(
+      'the fix review',
+      async () => {
+        const q: any[] = await call(bob, 'GET', '/api/interactions');
+        return q.find((i) => i.runId === started.runId && i.type === 'review') ?? null;
+      },
+      600_000,
+      3000,
+    );
+    const paths: string[] = review.contextCard.diff.changedPaths;
+    check(
+      paths.includes(`src/discount-${s}.js`) && paths.some((p) => p.startsWith('test/')),
+      `B  the pull request changes the code and a test (${paths.join(', ')})`,
+    );
+    check(review.title.includes('Fix bug:'), `B  titled from the report: "${review.title}"`);
+    const summary = String(review.contextCard.summary ?? '');
+    for (const h of ['Reproduction', 'Cause', 'Fix', 'Risk'])
+      check(summary.includes(h), `B  the summary has a "${h}" section`);
+    say(`summary: ${summary.replace(/\s+/g, ' ').slice(0, 700)}`);
+    const mid: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+    check(
+      mid[0].state === 'fixing' && mid[0].prNumber !== null,
+      `B  the report shows the fix in review (PR #${mid[0].prNumber})`,
+    );
+
+    await call(bob, 'POST', `/api/interactions/${review.id}/answer`, {
+      decision: 'approved',
+      answer: 'Fine.',
+    });
+    const fixed = await waitFor(
+      'the report is fixed',
+      async () => {
+        const all: any[] = await call(bob, 'GET', `/api/bugs?initiativeId=${init.id}`);
+        if (all[0].state === 'needs_attention')
+          throw new Error(`needs attention: ${all[0].detail}`);
+        return all[0].state === 'fixed' ? all[0] : null;
+      },
+      420_000,
+      4000,
+    );
+    check(
+      fixed.state === 'fixed',
+      `B  once the Gate merged it, the report is fixed ("${fixed.detail}")`,
+    );
+
+    // Does the merged code do the right thing?
+    const code = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/src/discount-${s}.js`)).content,
+      'base64',
+    ).toString('utf8');
+    const file = path.join(os.tmpdir(), `discount-${s}.mjs`);
+    await writeFile(file, code);
+    const mod = await import(`file:///${file.replace(/\\/g, '/')}`);
+    const results = [
+      mod.applyDiscount(200, 25),
+      mod.applyDiscount(80, 50),
+      mod.applyDiscount(100, 10),
+      mod.applyDiscount(50, 0),
+    ];
+    check(
+      JSON.stringify(results) === JSON.stringify([150, 40, 90, 50]),
+      `B  the merged function gives the right answers (${results.join(', ')})`,
+    );
+    const cost = await db.query(
+      'select coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1',
+      [init.id],
+    );
+    say(
+      `the fix cost $${(cost.rows[0].c / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - t0) / 1000)}s`,
+    );
   }
 
   // ---------------- Pipeline, harder: a vague goal, questions from the agents, and a spec that is sent back ----------------

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Health, Me, Ready } from '@sdlc/schemas';
 import { Assumptions } from './Assumptions';
 import { Autopilot } from './Autopilot';
+import { Bugs } from './Bugs';
 import { Integrations } from './Integrations';
 import { MapPage } from './MapPage';
 import { Interruptions } from './Interruptions';
@@ -21,6 +22,7 @@ type Route =
   | { page: 'interruptions' }
   | { page: 'autopilot' }
   | { page: 'integrations' }
+  | { page: 'bugs' }
   | { page: 'map'; initiativeId: string | null };
 
 function parseRoute(hash: string): Route {
@@ -30,6 +32,7 @@ function parseRoute(hash: string): Route {
   if (page === 'interruptions') return { page: 'interruptions' };
   if (page === 'autopilot') return { page: 'autopilot' };
   if (page === 'integrations') return { page: 'integrations' };
+  if (page === 'bugs') return { page: 'bugs' };
   if (page === 'map') return { page: 'map', initiativeId: id ?? null };
   return { page: 'home' };
 }
@@ -51,6 +54,7 @@ const NAV: Array<{ page: Route['page']; href: string; label: string }> = [
   { page: 'assumptions', href: '#/assumptions', label: 'Assumptions and decisions' },
   { page: 'autopilot', href: '#/autopilot', label: 'Autopilot' },
   { page: 'interruptions', href: '#/interruptions', label: 'Interruptions' },
+  { page: 'bugs', href: '#/bugs', label: 'Bugs' },
   { page: 'integrations', href: '#/integrations', label: 'Integrations' },
 ];
 
@@ -104,6 +108,7 @@ export function App() {
       {state.phase === 'ready' && state.me && route.page === 'interruptions' && <Interruptions />}
       {state.phase === 'ready' && state.me && route.page === 'autopilot' && <Autopilot />}
       {state.phase === 'ready' && state.me && route.page === 'integrations' && <Integrations />}
+      {state.phase === 'ready' && state.me && route.page === 'bugs' && <Bugs me={state.me} />}
       {state.phase === 'ready' && state.me && route.page === 'map' && (
         <MapPage initiativeId={route.initiativeId} me={state.me} />
       )}

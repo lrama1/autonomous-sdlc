@@ -123,6 +123,7 @@ describe('defaultRoleForAgent', () => {
     expect(defaultRoleForAgent('tester')).toBe('qa');
     expect(defaultRoleForAgent('backend_engineer')).toBe('backend_engineer');
     expect(defaultRoleForAgent('frontend_engineer')).toBe('frontend_engineer');
+    expect(defaultRoleForAgent('bug')).toBe('backend_engineer');
   });
 });
 

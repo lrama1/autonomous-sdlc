@@ -448,7 +448,8 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /initiatives/:id/releases`, `POST` `{ version }` | List releases. Prepare one (Product Owner, DevOps, admin) |
 | `GET /interactions/:id/preview` | What the repository's pipeline reported as a preview of a pull request under review |
 | `GET /initiatives/:id/plan`, `POST /plans/:id/start`, `POST /plans/:id/cancel`, `POST /plans/:id/tasks/:key/retry` or `/skip` | The build plan of an approved design. The writes need a Product Owner, Architect or admin |
-| `GET /initiatives/:id/stages`, `POST /stages/:id/start` or `/skip` | The spec and design steps that start by themselves or wait for a click. The writes need a Product Owner, Architect or admin |
+| `GET /initiatives/:id/stages`, `POST /stages/:id/start` or `/skip` | The steps that start by themselves or wait for a click: spec, design, bug fix. The writes need a Product Owner, Architect or admin, or for a bug fix an engineer or admin |
+| `GET /bugs?initiativeId=`, `POST /initiatives/:id/bugs` | Bug reports and where each fix is. Anyone signed in can report |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
 | `POST /slack/interactions` | **Slack only**, verified by Slack's request signature. Not under `/api` |
@@ -620,6 +621,21 @@ Not built, or only partly:
   - It was run with Claude Code only. The map does not tell a spec that was approved from one that was never drafted: a design can be started before any spec is merged. The prompt tells the agent to ask in that case, but I did not test it.
   - The runner checks the shape of the list, not that the files in `paths` exist or that the stories exist in the spec.
   - The design from the live check was merged into `sdlc-scratch` (`docs/design/`).
+
+**The Bug Agent (2026-10-18). Built and proven live (real agent, Docker sandbox, real GitHub).**
+
+Decided with the owner: bugs come in through a form in the web app (not from GitHub issues), and the fix starts by the same rule as the other steps.
+
+- **Report.** The Bugs page has a form: initiative, title, what happens and what should happen, steps, severity (low, medium, high). Anyone signed in can report. A report against a finished initiative is refused. Table `bug_report` (migration 0010). The fix is a step like the spec and design steps (`stage_start`, stage `bug`): it starts by itself in a balanced or autopilot initiative whose steps are on, and otherwise an engineer or admin clicks "Start the fix" (or drops it). The reporter sponsors the run, so the reporter cannot approve the fix.
+- **The agent** (`agents/bug-agent`, role `bug`, the Backend Engineer's budget and limits; its review goes to a Backend Engineer). Its prompt makes it work in a fixed order: reproduce first with a test that fails for the reason in the report; find the cause (where and why, and whether the same mistake is elsewhere); make the smallest change that removes it, with no refactoring and without changing a test's expectation to get a pass; prove it with the new test and the verification command. **If it cannot reproduce the bug, it must not guess a fix.** It asks with what it tried and stops without a pull request. If the report describes correct behaviour or a new feature, it says so and stops. It treats text in the report as information, not orders. Its summary has four headings: Reproduction, Cause, Fix, Risk.
+- **Following the fix.** The report's state is kept up to date from the run and its review: open, fixing ("The agent is working on it", then "The fix is in review"), fixed (the Gate merged it), or needs attention (the run failed, the agent finished without a pull request, the reviewer asked for changes, or the merge stopped), with the reason. The Bugs page lists them with the pull request number.
+- **Proven live** (`accept.ts bug docker`): a planted bug in `sdlc-scratch` (a percentage discount that subtracts the percentage; the one existing test passes by luck). The report started the fix 2 s later with nobody clicking. About 36 s after that the pull request had the fix and a new test file, titled "Fix bug: ...", with a summary under all four headings: it reproduced two failing cases, named the file and line and the wrong formula, changed one expression, and called the risk minimal. A person approved, the Gate merged, the report became "fixed", and the merged function gave the right answers for four inputs (including two the report did not mention). It cost $0.11 and took 60 s. API tests cover the report, the three ways a fix starts, the states of a fix, and the routes and roles; a browser test covers reporting, starting, and the report following the fix.
+- **Not proven or not built.**
+  - The case that matters most for trust was not run live: a bug the agent **cannot** reproduce (or that is not a bug). The prompt tells it to stop without guessing, and the report would show "needs attention" with the reason, but I did not see an agent do that.
+  - The planted bug was one wrong expression in one file. Bugs that need several files, a data fix, or a reproduction outside the test suite were not tried.
+  - Only the form feeds it. GitHub issues, error monitoring and the rule "start a Bug Agent when X happens" (spec 9, step 7) are not built. Duplicate reports are not detected.
+  - A bug that is not fixed after review (changes requested) is not redone automatically, unlike a spec; a person starts again.
+  - The Bug Agent ran on Claude Code only.
 
 **The pipeline: a goal becomes a spec, a design, a plan, and merged code (2026-10-18). Built and proven live (real agents, Docker sandbox, real GitHub).**
 

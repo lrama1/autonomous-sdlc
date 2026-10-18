@@ -49,7 +49,10 @@ function NextSteps({
   mayControl: boolean;
   act: (fn: () => Promise<unknown>, done: string) => Promise<void>;
 }) {
-  const shown = steps.filter((s) => ['pending', 'awaiting_start', 'invalid'].includes(s.state));
+  // Bug fixes are on the Bugs page.
+  const shown = steps.filter(
+    (s) => s.stage !== 'bug' && ['pending', 'awaiting_start', 'invalid'].includes(s.state),
+  );
   if (shown.length === 0) return null;
   return (
     <div className="card" data-testid="next-steps">

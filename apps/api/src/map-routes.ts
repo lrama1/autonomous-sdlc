@@ -56,6 +56,8 @@ export function registerMapRoutes(
       .select({ stage: stageStart.stage, state: stageStart.state })
       .from(stageStart)
       .where(eq(stageStart.initiativeId, id));
+    // Bug fixes are not part of the spec and design stage.
+    const specAndDesign = starts.filter((s) => s.stage === 'spec' || s.stage === 'design');
     let plan: MapPlan | undefined;
     if (planRow) {
       const tasks = await db.select().from(buildTask).where(eq(buildTask.planId, planRow.id));
@@ -77,7 +79,7 @@ export function registerMapRoutes(
         runs: runs.map((r) => ({ id: r.id, agentRole: r.agentRole, state: r.state })),
         asks: mapAsks,
         plan,
-        starts: starts as MapStageStart[],
+        starts: specAndDesign as MapStageStart[],
       }),
     };
   });
