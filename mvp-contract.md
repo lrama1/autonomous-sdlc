@@ -566,8 +566,19 @@ Not built, or only partly:
 - The egress proxy is shared, so the allowlist is the union across initiatives, and a change restarts it (tunnels in other running sandboxes drop).
 - A pull request from an agent takes its title from the task text, which makes long release notes. The pre-approved rules are edited by hand in `rules/triggers.yaml`, with no editor screen.
 - The release publishes a tag and notes. It does not deploy anything. The repository's own CI does that on the tag, as the spec says.
-- **Step 4** (a second engine) is not started.
 
+**Step 4, a second engine: the GitHub Copilot CLI (2026-10-18). Built and proven live in the Docker sandbox.**
+
+- **How an agent picks its engine.** `engine:` in its `agent.yaml` (`claude-code` or `copilot-cli`). The run spec carries it, and the runner starts the matching adapter. An engine the runner does not know ends the run with an error that names it. Nothing else in the platform changes: same gateway, same MCP tools, same events, same park and resume.
+- **Adapter** (`apps/runner/src/copilot.ts`). Runs `copilot -p ... --output-format json` in its bring-your-own-key mode against the Model Gateway, with the run token as the bearer token and no GitHub sign-in. It reads the CLI's JSON lines into the same platform events (message, tool call, tool result, file changed, result), counts model calls to enforce `max_turns` (the CLI has no limit of its own), puts the system prompt in front of the first message, loads the platform tools through `--additional-mcp-config`, and turns off the CLI's own question tool, the built-in GitHub tools, telemetry and updates. Web tools are excluded and `git push` is denied. The session id is chosen by the runner (`--session-id`) and resumed with `--resume`.
+- **Image.** `@github/copilot@1.0.100-1` is installed next to Claude Code. The image grew from 826 MB to 1.15 GB.
+- **Proven live** (`ACCEPT_ENGINE=copilot-cli node --import tsx src/accept.ts <phase> docker`): the full loop to a merged pull request (A: question, assumption, verify, review, Gate merge, cost records add up); a runner killed during a question, then resumed with the same session and the codename remembered (B); a standing decision answering the agent with nobody asked (C). Claude Code was re-run on phase A after the refactor of the shared process code and passed.
+- **Not proven or not done.**
+  - Phases D and E (autopilot and release) were not run with this engine. They use the same Gate and the same tools, but I did not run them.
+  - Only the default alias (gent-default) was used, on small tasks. Quality against Claude Code on real tasks was not measured, and the cost comparison is not done (phase A cost $0.22 with Copilot).
+  - The CLI is a pre-release version (1.0.100-1 is the build the spike used; the stable tag is 1.0.98). GitHub's terms for automated use of the CLI against a self-chosen model endpoint were not checked.
+  - Local (non-Docker) runs on Windows need `COPILOT_BIN` to point at something `spawn` can run, because the npm shim is a `.ps1` file.
+  - The phase B and C scripts had drifted since Step 3: balanced mode merged their docs-only change by rule, so they waited for a review that never came. They now start their initiatives in guided mode.
 ## 17. Test strategy
 
 - **Unit** (`packages/core`): state machines, rules evaluation, ranking, routing. No I/O.
@@ -585,7 +596,7 @@ Not built, or only partly:
 | Preview environments | Not built. A per-PR environment needs a place to run the app (the sandbox cannot be reached from outside). Decide when a repository with a running app is first used |
 | Cut-off between blocking and parking (120 s) | Step 1, tune with real use |
 | ~~Where Slack and Teams replies are authenticated~~ | Done in step 2 for Slack: signed request plus an admin-made link between a Slack user and a person. Teams is not built |
-| Copilot and Codex adapters | Step 4 |
+| ~~Copilot adapter~~ | Done in step 4 (see section 16). The Codex adapter is not started |
 | Cognito versus IAM Identity Center | Step 0, AWS part |
 | GitHub plan for protected branches | Before step 1 acceptance item 7 (the Gate merge) |
 | ~~Credit limits on the OpenRouter keys~~ | Done 2026-10-17: two keys in the `autonomous-sdlc` workspace, $85 per day each, verified |

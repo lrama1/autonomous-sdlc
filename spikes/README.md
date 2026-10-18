@@ -82,7 +82,7 @@ Design consequences (resolves the §19 "egress enforcement" question):
 
 ## Spike 5: the GitHub Copilot CLI as a second engine (2026-10-18)
 
-**Question.** Can the Copilot CLI (version 1.0.100 here) sit behind the same engine port as Claude Code, with the same gateway, the same MCP tools, and the same resume? **Answer: yes, on this machine, and more cheaply than Claude Code.** Scripts: `tools/dev-runner/src/copilot-spike.ts` and `copilot-spike2.ts` (throwaway). They start the dev stack, create a run with a run token, and drive the CLI.
+**Question.** Can the Copilot CLI (version 1.0.100-1 here, a pre-release build; the stable npm tag was 1.0.98) sit behind the same engine port as Claude Code, with the same gateway, the same MCP tools, and the same resume? **Answer: yes, on this machine, and more cheaply than Claude Code.** Scripts: `tools/dev-runner/src/copilot-spike.ts` and `copilot-spike2.ts` (throwaway). They start the dev stack, create a run with a run token, and drive the CLI.
 
 **The key finding: bring your own key (BYOK).** With `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=<gateway>`, `COPILOT_PROVIDER_BEARER_TOKEN=<run token>` and `COPILOT_MODEL=<alias>`, the CLI uses **our gateway as its model provider**. It needs **no GitHub sign-in and no Copilot subscription**, bills **no premium requests** (`usage.premiumRequests` is 0), and every call is metered and budgeted by the gateway like Claude Code's. This removes the two unknowns I expected (billing and routing).
 

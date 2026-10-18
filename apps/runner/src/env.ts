@@ -18,6 +18,7 @@ export function runnerEnvFrom(
     runToken,
     workDir,
     claudeBin: e.CLAUDE_BIN ?? 'claude',
+    copilotBin: e.COPILOT_BIN ?? 'copilot',
     gatewayUrl: e.SDLC_GATEWAY_URL || undefined,
     mcpUrl: e.SDLC_MCP_URL || undefined,
   };

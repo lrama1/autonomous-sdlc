@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { execFile } from 'node:child_process';
+import { cp, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import pg from 'pg';
 import type { CookieJar } from './signin.js';
@@ -9,6 +12,7 @@ import { startStack } from './stack.js';
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
 //   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|all] [docker]
+// Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
 const docker = process.argv.includes('docker');
@@ -38,12 +42,30 @@ async function waitFor<T>(
   }
 }
 
+const engine = process.env.ACCEPT_ENGINE;
+let agentsDir: string | undefined;
+if (engine) {
+  agentsDir = await mkdtemp(path.join(os.tmpdir(), 'sdlc-agents-'));
+  await cp(path.resolve(import.meta.dirname, '..', '..', '..', 'agents'), agentsDir, {
+    recursive: true,
+  });
+  for (const id of await readdir(agentsDir)) {
+    const file = path.join(agentsDir, id, 'agent.yaml');
+    const text = await readFile(file, 'utf8');
+    await writeFile(file, text.replace(/^engine: .*$/m, `engine: ${engine}`));
+  }
+}
+
 const stack = await startStack({
   log: (l) =>
     l.startsWith('[api]')
       ? l.includes('"level":50') && say(l.slice(0, 1500))
       : !l.startsWith('[gateway]') && say(l),
-  apiEnv: { BLOCKING_MAX_S: '600', ...(docker ? { RUNNER_ADAPTER: 'docker' } : {}) },
+  apiEnv: {
+    BLOCKING_MAX_S: '600',
+    ...(docker ? { RUNNER_ADAPTER: 'docker' } : {}),
+    ...(agentsDir ? { AGENTS_DIR: agentsDir } : {}),
+  },
 });
 const db = new pg.Client(stack.databaseUrl);
 await db.connect();
@@ -140,6 +162,8 @@ try {
       title,
       goal: title,
       repositoryId: repo.id,
+      // Balanced mode merges a docs-only change by rule (phase D). These phases are about a person's review.
+      autonomyMode: 'guided',
     });
     const run = await call(alice, 'POST', `/api/initiatives/${init.id}/runs`, {
       task,
@@ -183,6 +207,13 @@ try {
       check(
         boxes.length === 1 && boxes[0] === `sdlc-run-${run.id}`,
         `D  the agent is running in a Docker sandbox: ${boxes.join(', ') || 'none found'}`,
+      );
+    }
+    if (engine) {
+      const started = (await events(run.id)).find((e) => e.type === 'engine.started');
+      check(
+        started?.payload.engine === engine,
+        `E  the run used the ${engine} engine (${String(started?.payload.engine)})`,
       );
     }
     check(

@@ -10,6 +10,7 @@ describe('runnerEnvFrom', () => {
       runToken: 'tok',
       workDir: '/work',
       claudeBin: 'claude',
+      copilotBin: 'copilot',
       gatewayUrl: undefined,
       mcpUrl: undefined,
     });
@@ -36,6 +37,12 @@ describe('runnerEnvFrom', () => {
   it('allows another engine binary', () => {
     expect(runnerEnvFrom({ ...base, CLAUDE_BIN: '/opt/claude' })).toMatchObject({
       claudeBin: '/opt/claude',
+    });
+  });
+
+  it('allows another Copilot CLI binary', () => {
+    expect(runnerEnvFrom({ ...base, COPILOT_BIN: '/opt/copilot' })).toMatchObject({
+      copilotBin: '/opt/copilot',
     });
   });
 

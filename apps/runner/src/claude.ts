@@ -10,6 +10,8 @@ export interface MappedLine {
   events: EngineEvent[];
   sessionId?: string;
   result?: { text: string; isError: boolean; subtype: string };
+  /** Set by an engine that has no turn limit of its own, once the runner's limit is passed. */
+  exceeded?: 'max_turns';
 }
 
 const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
@@ -175,7 +177,7 @@ export interface EngineRun {
 export const PROXY_VARS = ['HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy'];
 
 // What the engine inherits. No platform secrets, no provider keys, no GitHub token.
-const INHERITED = [
+export const INHERITED = [
   'PATH',
   'Path',
   'PATHEXT',
@@ -264,10 +266,23 @@ export function killTree(child: ChildProcess): void {
   }
 }
 
-export function runClaude(o: EngineOptions): EngineRun {
-  const child = spawn(o.bin, [...(o.binArgs ?? []), ...engineArgs(o)], {
-    cwd: o.cwd,
-    env: engineEnv(o),
+export interface EngineProcess {
+  bin: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string;
+  maxWallSeconds: number;
+  /** Turns one line of the engine's output into platform events. Called in order, so it may keep state. */
+  mapLine: (line: string) => MappedLine;
+  onEvents: (events: EngineEvent[]) => void;
+  onSession?: (sessionId: string) => void;
+}
+
+/** Starts an engine process, reads its output line by line, and enforces the wall-clock limit. */
+export function runEngineProcess(p: EngineProcess): EngineRun {
+  const child = spawn(p.bin, p.args, {
+    cwd: p.cwd,
+    env: p.env,
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: false,
     detached: process.platform !== 'win32',
@@ -277,16 +292,21 @@ export function runClaude(o: EngineOptions): EngineRun {
   let result: MappedLine['result'];
   let stderr = '';
   let killedBy: EngineResult['killedBy'] = null;
+  let exceeded: MappedLine['exceeded'];
 
   const line = (l: string) => {
     if (!l.trim()) return;
-    const m = mapStreamLine(l);
+    const m = p.mapLine(l);
     if (m.sessionId && m.sessionId !== sessionId) {
       sessionId = m.sessionId;
-      o.onSession?.(sessionId);
+      p.onSession?.(sessionId);
     }
     if (m.result) result = m.result;
-    if (m.events.length) o.onEvents(m.events);
+    if (m.events.length) p.onEvents(m.events);
+    if (m.exceeded && !exceeded) {
+      exceeded = m.exceeded;
+      killTree(child);
+    }
   };
   child.stdout?.on('data', (d: Buffer) => {
     buf += d.toString('utf8');
@@ -303,7 +323,7 @@ export function runClaude(o: EngineOptions): EngineRun {
   const timer = setTimeout(() => {
     killedBy = 'timeout';
     killTree(child);
-  }, o.maxWallSeconds * 1000);
+  }, p.maxWallSeconds * 1000);
 
   const done = new Promise<EngineResult>((resolve) => {
     const finish = (code: number | null) => {
@@ -312,8 +332,8 @@ export function runClaude(o: EngineOptions): EngineRun {
       resolve({
         sessionId,
         finalText: result?.text ?? '',
-        isError: result ? result.isError : true,
-        subtype: result?.subtype ?? 'no_result',
+        isError: exceeded ? true : result ? result.isError : true,
+        subtype: exceeded ? `error_${exceeded}` : (result?.subtype ?? 'no_result'),
         killedBy,
         exitCode: code,
         stderrTail: stderr,
@@ -333,4 +353,17 @@ export function runClaude(o: EngineOptions): EngineRun {
       killTree(child);
     },
   };
+}
+
+export function runClaude(o: EngineOptions): EngineRun {
+  return runEngineProcess({
+    bin: o.bin,
+    args: [...(o.binArgs ?? []), ...engineArgs(o)],
+    env: engineEnv(o),
+    cwd: o.cwd,
+    maxWallSeconds: o.maxWallSeconds,
+    mapLine: mapStreamLine,
+    onEvents: o.onEvents,
+    onSession: o.onSession,
+  });
 }

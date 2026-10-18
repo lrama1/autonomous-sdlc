@@ -352,6 +352,17 @@ describe('engine failures', () => {
     expect(fake.prs).toHaveLength(0);
   });
 
+  it('refuses an engine it does not know', async () => {
+    fake.specOverrides = { engine: 'mystery-engine' };
+    const r = await runWith({ do: 'write-good' });
+    expect(r.reason).toBe('error');
+    expect(lastFinished()).toMatchObject({
+      exitReason: 'error',
+      summary: expect.stringContaining('mystery-engine'),
+    });
+    expect(fake.prs).toHaveLength(0);
+  });
+
   it('reports an engine that cannot start', async () => {
     const workDir = await mkdtemp(path.join(root, 'work-'));
     await writeFile(path.join(workDir, 'scenario.json'), '{}');

@@ -6,6 +6,7 @@ import type { ExitReason, RunSpec } from '@sdlc/schemas';
 import { RunInactiveError, RunnerApi } from './api.js';
 import { PROXY_VARS, killTree, runClaude } from './claude.js';
 import type { EngineEvent, EngineRun } from './claude.js';
+import { COPILOT_ENGINE, runCopilot } from './copilot.js';
 import { summarizeDiff } from './diff.js';
 import {
   checkoutWorkBranch,
@@ -23,6 +24,8 @@ export interface RunnerEnv {
   workDir: string;
   claudeBin: string;
   claudeArgs?: string[];
+  copilotBin?: string;
+  copilotArgs?: string[];
   /** Where the engine reaches the Model Gateway and the platform tools from here. Inside a sandbox these differ from the spec. */
   gatewayUrl?: string;
   mcpUrl?: string;
@@ -167,6 +170,10 @@ export async function runOnce(env: RunnerEnv): Promise<ExitReason> {
   try {
     await mkdir(homeDir, { recursive: true });
     await api.running();
+    if (spec.engine !== COPILOT_ENGINE && spec.engine !== 'claude-code') {
+      await api.finished('error', `The runner has no engine called "${spec.engine}".`);
+      return 'error';
+    }
     events.start();
     poller = setInterval(() => {
       api
@@ -198,6 +205,7 @@ export async function runOnce(env: RunnerEnv): Promise<ExitReason> {
             type: 'http',
             url: env.mcpUrl ?? spec.mcp.url,
             headers: { Authorization: `Bearer ${env.runToken}` },
+            ...(spec.engine === COPILOT_ENGINE ? { tools: ['*'] } : {}),
           },
         },
       }),
@@ -210,9 +218,10 @@ export async function runOnce(env: RunnerEnv): Promise<ExitReason> {
     let attempts = 0;
 
     for (;;) {
-      engine = runClaude({
-        bin: env.claudeBin,
-        binArgs: env.claudeArgs,
+      const useCopilot = spec.engine === COPILOT_ENGINE;
+      engine = (useCopilot ? runCopilot : runClaude)({
+        bin: useCopilot ? (env.copilotBin ?? 'copilot') : env.claudeBin,
+        binArgs: useCopilot ? env.copilotArgs : env.claudeArgs,
         cwd: repoDir,
         homeDir,
         prompt,
