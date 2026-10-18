@@ -18,6 +18,9 @@ export function createDb(connectionString: string, opts: DbOptions = {}) {
       ? { ca: readFileSync(opts.caFile, 'utf8'), rejectUnauthorized: true }
       : undefined,
   });
+  // A pooled connection that the database drops while idle (a restart, a shutdown) must not crash the process.
+  // The pool discards it and the next query opens a new one.
+  pool.on('error', (e) => console.error(`database connection dropped: ${e.message}`));
   const db = drizzle(pool, { schema });
   return { db, pool };
 }
