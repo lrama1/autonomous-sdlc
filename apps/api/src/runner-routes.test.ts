@@ -15,6 +15,7 @@ import {
   createDb,
   createRunFixture,
   githubApp,
+  initiative,
   interaction,
   repositoryEntry,
   runEvent,
@@ -508,6 +509,100 @@ describe('POST /runner/pull-request', () => {
     });
     const [run] = await db.select().from(agentRun).where(eq(agentRun.id, f.runId));
     expect(run!.prNumber).toBe(7);
+  });
+
+  describe('by autonomy mode', () => {
+    async function open(mode: string, d = diff()) {
+      const f = await setup({ state: 'running' });
+      await db
+        .update(agentRun)
+        .set({ branch: `agent/${f.runId}/x` })
+        .where(eq(agentRun.id, f.runId));
+      await db
+        .update(initiative)
+        .set({ autonomyMode: mode })
+        .where(eq(initiative.id, f.initiativeId));
+      const body = await j(await post(f.token, '/runner/pull-request', pr(d)));
+      const [review] = await db
+        .select()
+        .from(interaction)
+        .where(eq(interaction.id, body.interactionId));
+      return { body, review: review!, f };
+    }
+    const docsOnly = diff({ changedPaths: ['README.md', 'docs/guide.md'] });
+
+    it('balanced: a pre-approved type is approved by rule, with nobody asked', async () => {
+      const { body, review } = await open('balanced', docsOnly);
+      expect(body.autoMerge).toBe(true);
+      expect(review).toMatchObject({ state: 'answered', answeredVia: 'auto', answeredBy: null });
+      expect(review.answer).toMatchObject({
+        decision: 'approved',
+        source: 'policy',
+        rule: 'docs-only',
+      });
+      expect(review.contextCard).toMatchObject({
+        autoMerge: { mode: 'balanced', auto: true, rule: 'docs-only' },
+      });
+    });
+
+    it('balanced: other changes wait for a person, and the review says why', async () => {
+      const { body, review } = await open('balanced');
+      expect(body.autoMerge).toBe(false);
+      expect(review.state).toBe('open');
+      expect(review.contextCard).toMatchObject({
+        autoMerge: { auto: false, reason: expect.stringContaining('only pre-approved') },
+      });
+    });
+
+    it('guided: everything waits for a person, even a pre-approved type', async () => {
+      const { review } = await open('guided', docsOnly);
+      expect(review.state).toBe('open');
+    });
+
+    it('autopilot: any change no trigger fired on is approved by rule', async () => {
+      const { review } = await open('autopilot');
+      expect(review).toMatchObject({ state: 'answered', answeredVia: 'auto' });
+      expect(review.answer).toMatchObject({ rule: null });
+    });
+
+    it('autopilot: a fired trigger still goes to a person', async () => {
+      const { body, review } = await open('autopilot', diff({ dependencyAdded: true }));
+      expect(body.autoMerge).toBe(false);
+      expect(review.state).toBe('open');
+    });
+
+    it('a spec from the Product agent is always decided by a person (G1), even in autopilot', async () => {
+      const f = await setup({ state: 'running' });
+      await db
+        .update(agentRun)
+        .set({ branch: `agent/${f.runId}/x`, agentRole: 'product' })
+        .where(eq(agentRun.id, f.runId));
+      await db
+        .update(initiative)
+        .set({ autonomyMode: 'autopilot' })
+        .where(eq(initiative.id, f.initiativeId));
+      const body = await j(await post(f.token, '/runner/pull-request', pr(docsOnly)));
+      const [review] = await db
+        .select()
+        .from(interaction)
+        .where(eq(interaction.id, body.interactionId));
+      expect(body.autoMerge).toBe(false);
+      expect(review).toMatchObject({
+        checkpointId: 'G1',
+        state: 'open',
+        roleNeeded: 'product_owner',
+      });
+      expect(review!.contextCard).toMatchObject({
+        autoMerge: { auto: false, reason: expect.stringContaining('checkpoint G1') },
+      });
+    });
+
+    it('a failure at GitHub does not undo the pull request or the report', async () => {
+      // The fake GitHub has no review or merge endpoints, so the Gate cannot finish. The run's report still succeeds.
+      const { body, review } = await open('balanced', docsOnly);
+      expect(body.number).toBe(7);
+      expect((review.contextCard as { gate?: { state?: string } }).gate?.state).toBe('failed');
+    });
   });
 
   it('shows the triggers that fired on the review', async () => {

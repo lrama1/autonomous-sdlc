@@ -4,12 +4,14 @@ import { agentRun, appendRunEvent, initiative, repositoryEntry } from '@sdlc/db'
 import type { Db, RunContext, interaction } from '@sdlc/db';
 import { authenticateRunToken, bearerFrom } from '@sdlc/db';
 import {
+  decideMerge,
   defaultRoleForAgent,
   evaluateTriggers,
   matchPreApproved,
   strongestAction,
 } from '@sdlc/core';
-import type { RuleSet } from '@sdlc/core';
+import type { AutonomyMode, RuleSet } from '@sdlc/core';
+import type { Gate } from './gate.js';
 import {
   runSpecSchema,
   runnerEventsSchema,
@@ -86,6 +88,8 @@ export interface RunnerDeps {
   rules: RuleSet;
   github: GitHubService;
   apiUrl: string;
+  /** Approves pull requests that the autonomy rules allow. Without it every review waits for a person. */
+  gate?: Gate;
 }
 
 export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): void {
@@ -329,6 +333,21 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       });
     }
     const preApproved = matchPreApproved(rules, body.diff, fired);
+    const [init] = await db
+      .select({ mode: initiative.autonomyMode })
+      .from(initiative)
+      .where(eq(initiative.id, ctx.initiativeId));
+    const mode = (init?.mode ?? 'balanced') as AutonomyMode;
+    // A spec or a design is always decided by a person (checkpoint G1), in every mode (spec 6.1, 8.2).
+    const isSpec = run!.agentRole === 'product' || run!.agentRole === 'architect';
+    const merge = isSpec
+      ? {
+          auto: false,
+          reason:
+            'A spec and design need a person to approve them (checkpoint G1). They never merge on their own.',
+          rule: null,
+        }
+      : decideMerge(mode, fired, preApproved);
 
     const pr = await github.openPullRequest(repo.fullName, {
       title: body.title,
@@ -342,7 +361,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       initiativeId: ctx.initiativeId,
       runId: ctx.runId,
       type: 'review',
-      checkpointId: 'G3',
+      checkpointId: isSpec ? 'G1' : 'G3',
       title: `Review PR #${pr.number}: ${body.title}`.slice(0, 200),
       contextCard: {
         kind: 'pull_request',
@@ -355,6 +374,8 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         diff: body.diff,
         triggers: fired,
         preApprovedType: preApproved?.id ?? null,
+        // Why this will merge on its own, or why a person is asked. Shown on the review and on the Autopilot page.
+        autoMerge: { mode, auto: merge.auto, reason: merge.reason, rule: merge.rule },
       },
       blocks: [],
       roleNeeded: defaultRoleForAgent(run!.agentRole),
@@ -374,6 +395,19 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       action: 'pull_request.opened',
       detail: { number: pr.number, url: pr.url, triggers: fired.map((f) => f.id) },
     });
-    return { number: pr.number, url: pr.url, interactionId: review.id, triggers: fired };
+    // A change the rules allow is approved by the platform. The Gate still waits for the checks, and a GitHub
+    // problem here must not fail the run's report: the Gate's own worker retries it.
+    if (merge.auto && deps.gate) {
+      await deps.gate
+        .autoApprove(review, { reason: merge.reason, rule: merge.rule })
+        .catch((e) => request.log.error({ err: e }, 'automatic approval failed'));
+    }
+    return {
+      number: pr.number,
+      url: pr.url,
+      interactionId: review.id,
+      triggers: fired,
+      autoMerge: merge.auto,
+    };
   });
 }

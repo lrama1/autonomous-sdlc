@@ -30,6 +30,12 @@ export const apiConfigSchema = z.object({
   RULES_FILE: z.string().default('rules/triggers.yaml'),
   // How people are reached: reminders, escalation, working hours, what chat may settle.
   ATTENTION_FILE: z.string().default('rules/attention.yaml'),
+  // Who approves a release (spec 8.1: Product Owner or DevOps). One hat, because an ask goes to one role.
+  RELEASE_APPROVER_ROLE: z
+    .enum(['product_owner', 'devops_release', 'platform_admin'])
+    .default('product_owner'),
+  // How often the saved copies of integration documentation are fetched again, in hours. 0 turns it off.
+  INTEGRATION_DOCS_INTERVAL_H: z.coerce.number().min(0).default(24),
   ATTENTION_TICK_MS: z.coerce.number().int().positive().default(2000),
   // Slack. Both are needed to answer from chat. Only the bot token is needed to send.
   SLACK_BOT_TOKEN: z.string().min(1).optional(),

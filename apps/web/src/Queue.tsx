@@ -32,6 +32,7 @@ const card = (i: InteractionDto) =>
     prUrl?: string;
     prNumber?: number;
     triggers?: Array<{ id: string; description?: string }>;
+    autoMerge?: { auto: boolean; reason: string };
     verify?: { passed?: boolean; attempts?: number };
     diff?: { files?: number; additions?: number; deletions?: number };
   };
@@ -160,6 +161,12 @@ function Ask({
             <div>
               <b>Why it needs you</b>
               {c.triggers.map((t) => t.description ?? t.id).join('; ')}
+            </div>
+          )}
+          {c.autoMerge && !c.autoMerge.auto && (
+            <div>
+              <b>Why a person reviews it</b>
+              {c.autoMerge.reason}
             </div>
           )}
           {c.verify && (

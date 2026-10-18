@@ -6,6 +6,7 @@ import {
   assumption,
   createDb,
   createRunFixture,
+  initiative,
   interaction,
   standingDecision,
 } from '../packages/db/src/index.ts';
@@ -193,4 +194,131 @@ test('a hard stop cannot be snoozed', async ({ page }) => {
   await expect(ask.getByText('Hard stop')).toBeVisible();
   await expect(ask.getByRole('button', { name: /Snooze/ })).toHaveCount(0);
   await expect(ask.getByText(/If nobody answers/)).toHaveCount(0);
+});
+
+test('the autopilot page shows what merged by rule and what was held, and changes the mode', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const tag = randomUUID().slice(0, 8);
+  const card = (n: number, auto: boolean, reason: string) => ({
+    kind: 'pull_request',
+    prNumber: n,
+    prUrl: `https://example.test/pull/${n}`,
+    autoMerge: { mode: 'balanced', auto, reason, rule: auto ? 'docs-only' : null },
+    gate: auto ? { state: 'merged' } : undefined,
+  });
+  await db.insert(interaction).values([
+    {
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G3',
+      title: `Review PR #901: docs ${tag}`,
+      roleNeeded: 'product_owner',
+      state: 'answered',
+      answeredVia: 'auto',
+      answer: { decision: 'approved', source: 'policy', rule: 'docs-only' },
+      contextCard: card(901, true, `It fits docs-only ${tag}.`),
+    },
+    {
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G3',
+      title: `Review PR #902: code ${tag}`,
+      roleNeeded: 'product_owner',
+      contextCard: card(902, false, `A trigger fired ${tag}.`),
+    },
+  ]);
+
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-autopilot').click();
+  const recent = page.getByTestId('recent');
+  const merged = recent.getByRole('row').filter({ hasText: `docs ${tag}` });
+  await expect(merged).toContainText('Approved by rule');
+  await expect(merged).toContainText(`It fits docs-only ${tag}.`);
+  await expect(merged).toContainText('merged');
+  const held = recent.getByRole('row').filter({ hasText: `code ${tag}` });
+  await expect(held).toContainText('Held for a person');
+  await expect(held).toContainText(`A trigger fired ${tag}.`);
+  await expect(page.getByTestId('rules')).toContainText('docs-only');
+
+  // Alice is a Product Owner, so she may change how the initiative runs.
+  const select = page.getByLabel(/Autonomy mode for Initiative/).first();
+  await expect(select).toBeVisible();
+  const initTitle = (
+    await db.select().from(initiative).where(eq(initiative.id, f.initiativeId))
+  )[0]!.title;
+  const mine = page.getByLabel(`Autonomy mode for ${initTitle}`);
+  await mine.selectOption('guided');
+  await expect
+    .poll(
+      async () =>
+        (await db.select().from(initiative).where(eq(initiative.id, f.initiativeId)))[0]!
+          .autonomyMode,
+    )
+    .toBe('guided');
+});
+
+test('an architect adds an external system, sees it confirmed, and retires it', async ({
+  page,
+}) => {
+  const name = `Weather ${randomUUID().slice(0, 6)}`;
+  const host = `api-${randomUUID().slice(0, 6)}.weather.example.com`;
+  await signInAs(page, /Cara Okafor/);
+  await page.getByTestId('nav-integrations').click();
+  await expect(page.getByRole('heading', { name: 'Integrations' })).toBeVisible();
+
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('Hosts').fill(`*.${host}`);
+  await page.getByRole('button', { name: 'Add and confirm' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+
+  await page.getByLabel('Hosts').fill(host);
+  await page.getByRole('button', { name: 'Add and confirm' }).click();
+  const row = page.getByTestId('integrations').getByRole('row').filter({ hasText: name });
+  await expect(row).toContainText(host);
+  await expect(row).toContainText('Confirmed');
+
+  await row.getByRole('button', { name: 'Retire' }).click();
+  await expect(row).toContainText('Retired');
+});
+
+test('the map shows each stage, who it waits on, and links to the ask', async ({ page }) => {
+  const f = await createRunFixture(db);
+  const title = `Review PR #77: spec ${randomUUID().slice(0, 6)}`;
+  const [g1] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G1',
+      title,
+      roleNeeded: 'product_owner',
+      contextCard: { kind: 'pull_request', prNumber: 77 },
+    })
+    .returning();
+  const init = (await db.select().from(initiative).where(eq(initiative.id, f.initiativeId)))[0]!;
+
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  await expect(page.getByTestId('flow')).toBeVisible();
+  await expect(page.locator('p b', { hasText: init.title })).toBeVisible();
+  const spec = page.getByTestId('stage-spec');
+  await expect(spec).toHaveAttribute('data-status', 'waiting_human');
+  await expect(spec).toContainText('Waiting on Product Owner');
+  await expect(page.getByTestId('stage-build')).toHaveAttribute('data-status', 'working');
+  await expect(page.getByTestId('stage-release')).toHaveAttribute('data-status', 'not_started');
+
+  // The product owner may prepare a release. There is nothing merged yet, so the platform says why not.
+  await page.getByLabel('Version').fill('0.1.0');
+  await page.getByRole('button', { name: 'Prepare a release' }).click();
+  await expect(page.getByRole('alert')).toContainText('Nothing has merged');
+
+  await spec.getByRole('link', { name: title }).click();
+  await expect(page).toHaveURL(new RegExp(`#/queue/${g1!.id}`));
+  await expect(page.getByRole('heading', { name: title })).toBeVisible();
 });

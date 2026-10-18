@@ -50,6 +50,13 @@
       "when": 1792284946162,
       "tag": "0006_eager_shriek",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792290121985,
+      "tag": "0007_funny_richard_fisk",
+      "breakpoints": true
     }
   ]
 }

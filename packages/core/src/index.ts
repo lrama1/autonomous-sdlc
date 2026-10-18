@@ -4,4 +4,6 @@ export * from './pricing.js';
 export * from './interaction.js';
 export * from './attention.js';
 export * from './metrics.js';
+export * from './autonomy.js';
+export * from './map.js';
 export * from './triggers.js';

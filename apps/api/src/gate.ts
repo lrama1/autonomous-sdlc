@@ -3,6 +3,7 @@ import { appendRunEvent, interaction, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
 import type { GitHubService } from './github-service.js';
+import { settleByPolicy } from './interactions.js';
 import type { InteractionRow } from './interactions.js';
 
 interface PrCard {
@@ -162,10 +163,13 @@ export function createGate({
       }
 
       const a = answerOf(row);
+      const byRule = (row.answer as { source?: string } | null)?.source === 'policy';
       await github.gateApprove(
         card.repository,
         card.prNumber,
-        `Approved by the platform: a person approved this change${a.text ? ` ("${a.text.slice(0, 200)}")` : ''} and "${required}" passed. Review ${row.id}.`,
+        byRule
+          ? `Approved by the platform's rules, not by a person. ${a.text ?? ''} "${required}" passed. Review ${row.id}.`
+          : `Approved by the platform: a person approved this change${a.text ? ` ("${a.text.slice(0, 200)}")` : ''} and "${required}" passed. Review ${row.id}.`,
       );
       const merged = await github.gateMerge(
         card.repository,
@@ -187,6 +191,27 @@ export function createGate({
 
   return {
     evaluate,
+
+    /**
+     * The platform approves a pull request by rule (spec 6.1, 6.2), then the same checks as for a person apply:
+     * the required check must be green and the commit must be the one that was reviewed.
+     * Returns null if the review was no longer open.
+     */
+    async autoApprove(
+      row: InteractionRow,
+      why: { reason: string; rule: string | null },
+    ): Promise<GateState | null> {
+      if (row.type !== 'review' || !isPr(row)) return null;
+      const settled = await settleByPolicy(db, row.id, {
+        decision: 'approved',
+        reason: why.reason,
+        rule: why.rule,
+      });
+      if (!settled) return null;
+      await setGate(settled, { state: 'waiting_ci', since: new Date().toISOString() });
+      const [fresh] = await db.select().from(interaction).where(eq(interaction.id, row.id));
+      return evaluate(fresh!);
+    },
 
     /** Called after a person settles any interaction. Only pull request reviews matter here. */
     async afterDecision(row: InteractionRow): Promise<GateState | 'ignored' | null> {

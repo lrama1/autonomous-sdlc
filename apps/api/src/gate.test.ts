@@ -307,6 +307,103 @@ describe('approval', () => {
   });
 });
 
+describe('approval by rule', () => {
+  async function openReview(f: Awaited<ReturnType<typeof setup>>) {
+    const [row] = await db
+      .insert(interaction)
+      .values({
+        initiativeId: f.initiativeId,
+        runId: f.runId,
+        type: 'review',
+        checkpointId: 'G3',
+        title: 'Review PR #7: Fix typo in the README',
+        roleNeeded: 'backend_engineer',
+        contextCard: {
+          kind: 'pull_request',
+          repository: f.repo.fullName,
+          prNumber: 7,
+          prUrl: 'https://github.com/o/r/pull/7',
+          headSha: 'sha-reviewed',
+        },
+      })
+      .returning();
+    return row!;
+  }
+  const why = {
+    reason: 'It fits the pre-approved type "docs-only" and no trigger fired.',
+    rule: 'docs-only',
+  };
+
+  it('approves in its own name, says so, and merges once the check is green', async () => {
+    const f = await setup();
+    const row = await openReview(f);
+    expect(await gate().autoApprove(row, why)).toBe('merged');
+
+    const [after] = await db.select().from(interaction).where(eq(interaction.id, row.id));
+    expect(after).toMatchObject({ state: 'answered', answeredVia: 'auto', answeredBy: null });
+    expect(after!.answer).toMatchObject({
+      decision: 'approved',
+      source: 'policy',
+      rule: 'docs-only',
+    });
+    const review = world.calls.find((c) => c.url.endsWith('/reviews'))!;
+    expect(review.body.body).toContain('not by a person');
+    expect(review.body.body).toContain('docs-only');
+    expect(calledPaths()).toContain('PUT /pulls/7/merge');
+    const log = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.interactionId, row.id));
+    expect(log.map((l) => l.action)).toEqual(
+      expect.arrayContaining(['pull_request.auto_approved', 'pull_request.merged']),
+    );
+  });
+
+  it('still waits for the check, and does not merge when it fails', async () => {
+    const f = await setup();
+    const waiting = await openReview(f);
+    world.ci = 'in_progress';
+    expect(await gate().autoApprove(waiting, why)).toBe('waiting_ci');
+    expect(calledPaths()).not.toContain('PUT /pulls/7/merge');
+    world.ci = 'success';
+    const [fresh] = await db.select().from(interaction).where(eq(interaction.id, waiting.id));
+    expect(await gate().evaluate(fresh!)).toBe('merged');
+
+    reset();
+    const failing = await openReview(await setup());
+    world.ci = 'failure';
+    expect(await gate().autoApprove(failing, why)).toBe('ci_failed');
+    expect(calledPaths()).not.toContain('PUT /pulls/7/merge');
+  });
+
+  it('does not merge commits that were pushed after the platform looked', async () => {
+    const f = await setup();
+    const row = await openReview(f);
+    world.pr.sha = 'sha-later';
+    expect(await gate().autoApprove(row, why)).toBe('stale');
+    expect(calledPaths()).not.toContain('PUT /pulls/7/merge');
+  });
+
+  it('does nothing to a review that someone already settled, or to something that is not a pull request', async () => {
+    const f = await setup();
+    const taken = await approvedReview(f);
+    expect(await gate().autoApprove(taken, why)).toBeNull();
+    expect(world.calls.filter((c) => c.url.endsWith('/reviews'))).toHaveLength(0);
+
+    const [note] = await db
+      .insert(interaction)
+      .values({
+        initiativeId: f.initiativeId,
+        type: 'review',
+        title: 'not a PR',
+        roleNeeded: 'backend_engineer',
+        contextCard: {},
+      })
+      .returning();
+    expect(await gate().autoApprove(note!, why)).toBeNull();
+  });
+});
+
 describe('other decisions', () => {
   it('changes requested only leaves a comment', async () => {
     const f = await setup();

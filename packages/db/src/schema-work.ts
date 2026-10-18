@@ -254,6 +254,52 @@ export const standingDecision = pgTable('standing_decision', {
   updatedAt: updatedAt(),
 });
 
+// The Integration Register (spec 6.7): which external systems agents may call, and how to test them.
+export const integrationEntry = pgTable('integration_entry', {
+  id: id(),
+  name: text('name').notNull().unique(),
+  kind: text('kind').notNull().default('third_party'), // second_party | third_party
+  owner: text('owner'),
+  // Empty means every initiative. Otherwise only that initiative may call it.
+  initiativeId: uuid('initiative_id').references(() => initiative.id),
+  docs: jsonb('docs').$type<string[]>().notNull().default([]),
+  // Hostnames a sandbox may open HTTPS tunnels to once the entry is confirmed.
+  hosts: jsonb('hosts').$type<string[]>().notNull().default([]),
+  authType: text('auth_type').notNull().default('none'), // none | api_key | oauth | basic
+  // A name in the secrets store. The secret itself never lives here.
+  credentialRef: text('credential_ref'),
+  dataSent: text('data_sent'),
+  dataReceived: text('data_received'),
+  testStrategy: text('test_strategy').notNull().default('none'), // vendor_sandbox | mock | recorded | none
+  limitsAndCost: text('limits_and_cost'),
+  terms: text('terms'),
+  failureBehavior: text('failure_behavior'),
+  status: text('status').notNull().default('proposed'), // proposed | confirmed | rejected | retired
+  proposedBy: text('proposed_by'), // a person id or "agent:<run id>"
+  confirmedBy: uuid('confirmed_by').references(() => person.id),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+// A hashed copy of a documentation link, fetched by the platform outside any sandbox. Untrusted input.
+export const docSnapshot = pgTable(
+  'doc_snapshot',
+  {
+    id: id(),
+    integrationId: uuid('integration_id')
+      .notNull()
+      .references(() => integrationEntry.id, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    sha256: text('sha256').notNull(),
+    // The text agents read, cut to a size limit. Null if the fetch failed.
+    content: text('content'),
+    error: text('error'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('doc_snapshot_integration_idx').on(t.integrationId, t.url, t.fetchedAt)],
+);
+
 export const artifact = pgTable('artifact', {
   id: id(),
   initiativeId: uuid('initiative_id')

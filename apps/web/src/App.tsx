@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Health, Me, Ready } from '@sdlc/schemas';
 import { Assumptions } from './Assumptions';
+import { Autopilot } from './Autopilot';
+import { Integrations } from './Integrations';
+import { MapPage } from './MapPage';
 import { Interruptions } from './Interruptions';
 import { Queue } from './Queue';
 import { getHealth, getMe, getReady, signOut } from './api';
@@ -15,13 +18,19 @@ type Route =
   | { page: 'home' }
   | { page: 'queue'; openId: string | null }
   | { page: 'assumptions' }
-  | { page: 'interruptions' };
+  | { page: 'interruptions' }
+  | { page: 'autopilot' }
+  | { page: 'integrations' }
+  | { page: 'map'; initiativeId: string | null };
 
 function parseRoute(hash: string): Route {
   const [, page, id] = hash.replace(/^#/, '').split('/');
   if (page === 'queue') return { page: 'queue', openId: id ?? null };
   if (page === 'assumptions') return { page: 'assumptions' };
   if (page === 'interruptions') return { page: 'interruptions' };
+  if (page === 'autopilot') return { page: 'autopilot' };
+  if (page === 'integrations') return { page: 'integrations' };
+  if (page === 'map') return { page: 'map', initiativeId: id ?? null };
   return { page: 'home' };
 }
 
@@ -37,9 +46,12 @@ function useRoute(): Route {
 
 const NAV: Array<{ page: Route['page']; href: string; label: string }> = [
   { page: 'home', href: '#/', label: 'Home' },
+  { page: 'map', href: '#/map', label: 'Map' },
   { page: 'queue', href: '#/queue', label: 'Attention queue' },
   { page: 'assumptions', href: '#/assumptions', label: 'Assumptions and decisions' },
+  { page: 'autopilot', href: '#/autopilot', label: 'Autopilot' },
   { page: 'interruptions', href: '#/interruptions', label: 'Interruptions' },
+  { page: 'integrations', href: '#/integrations', label: 'Integrations' },
 ];
 
 export function App() {
@@ -90,6 +102,11 @@ export function App() {
       )}
       {state.phase === 'ready' && state.me && route.page === 'assumptions' && <Assumptions />}
       {state.phase === 'ready' && state.me && route.page === 'interruptions' && <Interruptions />}
+      {state.phase === 'ready' && state.me && route.page === 'autopilot' && <Autopilot />}
+      {state.phase === 'ready' && state.me && route.page === 'integrations' && <Integrations />}
+      {state.phase === 'ready' && state.me && route.page === 'map' && (
+        <MapPage initiativeId={route.initiativeId} me={state.me} />
+      )}
       {state.phase === 'ready' && (!state.me || route.page === 'home') && (
         <>
           <section aria-label="Status">

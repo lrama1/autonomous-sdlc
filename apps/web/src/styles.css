@@ -414,3 +414,54 @@ dl.kv dd {
 dl.kv .kv-row {
   display: contents;
 }
+
+.tiles.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin: 12px 0 16px;
+  flex-wrap: wrap;
+}
+.flow-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+.flow-item .arrow {
+  color: var(--muted);
+  font-size: 22px;
+}
+.stage {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-top: 4px solid #c4ccd8;
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-height: 150px;
+}
+.stage h3 {
+  margin: 2px 0 6px;
+}
+.stage.working {
+  border-top-color: var(--primary);
+}
+.stage.waiting_human {
+  border-top-color: var(--warn);
+}
+.stage.blocked {
+  border-top-color: var(--stop);
+}
+.stage.done {
+  border-top-color: var(--ok);
+}
+.pill.info {
+  background: #e8eefc;
+  color: var(--primary);
+}

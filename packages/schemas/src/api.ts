@@ -195,3 +195,109 @@ export const interruptionMetricsSchema = z.object({
   ),
 });
 export type InterruptionMetricsDto = z.infer<typeof interruptionMetricsSchema>;
+
+export const autonomyModeSchema = z.enum(['guided', 'balanced', 'autopilot']);
+
+export const autopilotSchema = z.object({
+  rules: z.array(
+    z.object({
+      id: z.string(),
+      owner: z.string().nullable(),
+      reviewBy: z.string().nullable(),
+      expired: z.boolean(),
+      paths: z.string(),
+    }),
+  ),
+  initiatives: z.array(
+    z.object({ id: z.string().uuid(), title: z.string(), autonomyMode: autonomyModeSchema }),
+  ),
+  recent: z.array(
+    z.object({
+      interactionId: z.string().uuid(),
+      title: z.string(),
+      prNumber: z.number().nullable(),
+      prUrl: z.string().nullable(),
+      initiativeTitle: z.string(),
+      decidedBy: z.enum(['rule', 'person', 'waiting']),
+      reason: z.string(),
+      rule: z.string().nullable(),
+      outcome: z.string(),
+      at: z.string(),
+    }),
+  ),
+  counts: z.object({ byRule: z.number(), byPerson: z.number(), waiting: z.number() }),
+});
+export type AutopilotDto = z.infer<typeof autopilotSchema>;
+
+const httpUrl = z
+  .string()
+  .max(500)
+  .refine((u) => {
+    try {
+      return ['http:', 'https:'].includes(new URL(u).protocol);
+    } catch {
+      return false;
+    }
+  }, 'a web link');
+const hostname = z
+  .string()
+  .max(253)
+  .regex(
+    /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i,
+    'a plain hostname, with no wildcard, address, or path',
+  );
+
+export const integrationFields = z.object({
+  kind: z.enum(['second_party', 'third_party']).default('third_party'),
+  owner: z.string().max(120).optional(),
+  // Leave out for every initiative.
+  initiativeId: z.string().uuid().optional(),
+  docs: z.array(httpUrl).max(10).default([]),
+  hosts: z.array(hostname).max(20).default([]),
+  authType: z.enum(['none', 'api_key', 'oauth', 'basic']).default('none'),
+  credentialRef: z
+    .string()
+    .regex(/^[A-Za-z0-9/_+=.@-]{1,200}$/)
+    .optional(),
+  dataSent: z.string().max(1000).optional(),
+  dataReceived: z.string().max(1000).optional(),
+  testStrategy: z.enum(['vendor_sandbox', 'mock', 'recorded', 'none']).default('none'),
+  limitsAndCost: z.string().max(1000).optional(),
+  terms: z.string().max(1000).optional(),
+  failureBehavior: z.string().max(1000).optional(),
+});
+export const integrationCreateSchema = integrationFields.extend({
+  name: z.string().min(1).max(80),
+});
+export const integrationPatchSchema = integrationFields.partial();
+
+export const integrationSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  kind: z.enum(['second_party', 'third_party']),
+  owner: z.string().nullable(),
+  initiativeId: z.string().uuid().nullable(),
+  docs: z.array(z.string()),
+  hosts: z.array(z.string()),
+  authType: z.string(),
+  credentialRef: z.string().nullable(),
+  dataSent: z.string().nullable(),
+  dataReceived: z.string().nullable(),
+  testStrategy: z.enum(['vendor_sandbox', 'mock', 'recorded', 'none']),
+  limitsAndCost: z.string().nullable(),
+  terms: z.string().nullable(),
+  failureBehavior: z.string().nullable(),
+  status: z.enum(['proposed', 'confirmed', 'rejected', 'retired']),
+  proposedBy: z.string().nullable(),
+  confirmedAt: z.string().nullable(),
+  snapshots: z.array(
+    z.object({
+      url: z.string(),
+      fetchedAt: z.string(),
+      ok: z.boolean(),
+      error: z.string().nullable(),
+      sha256: z.string(),
+    }),
+  ),
+});
+export type IntegrationDto = z.infer<typeof integrationSchema>;

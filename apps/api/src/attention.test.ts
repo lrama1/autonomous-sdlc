@@ -85,6 +85,10 @@ async function ask(
   return row;
 }
 
+const actionsFor = async (initiativeId: string) =>
+  (await db.select().from(activityEvent).where(eq(activityEvent.initiativeId, initiativeId))).map(
+    (a) => a.action,
+  );
 const reload = async (id: string) =>
   (await db.select().from(interaction).where(eq(interaction.id, id)))[0]!;
 const actions = async (id: string) =>
@@ -798,6 +802,104 @@ describe('people, hats and chat links', () => {
       reminderAfterMin: 120,
       escalateAfterMin: 240,
     });
+  });
+});
+
+describe('autopilot', () => {
+  it('lists the rules, how each initiative runs, and what merged by rule or was held', async () => {
+    const f = await createRunFixture(db);
+    const bob = await newPerson(['backend_engineer']);
+    const mk = (title: string, o: Record<string, unknown>) =>
+      db.insert(interaction).values({
+        initiativeId: f.initiativeId,
+        runId: f.runId,
+        type: 'review',
+        checkpointId: 'G3',
+        title,
+        roleNeeded: 'backend_engineer',
+        ...o,
+      });
+    await mk('Review PR #1: docs', {
+      state: 'answered',
+      answeredVia: 'auto',
+      answer: { decision: 'approved', source: 'policy', rule: 'docs-only' },
+      contextCard: {
+        kind: 'pull_request',
+        prNumber: 1,
+        prUrl: 'https://x/1',
+        autoMerge: {
+          mode: 'balanced',
+          auto: true,
+          reason: 'It fits docs-only.',
+          rule: 'docs-only',
+        },
+        gate: { state: 'merged' },
+      },
+    });
+    await mk('Review PR #2: dependency', {
+      contextCard: {
+        kind: 'pull_request',
+        prNumber: 2,
+        prUrl: 'https://x/2',
+        autoMerge: {
+          mode: 'balanced',
+          auto: false,
+          reason: 'A trigger fired (new-dependency).',
+          rule: null,
+        },
+      },
+    });
+    const res = await app.inject({ url: '/api/autopilot', headers: bob.headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.rules).toEqual([
+      expect.objectContaining({ id: 'docs-only', owner: 'team-lead', expired: false }),
+    ]);
+    expect(body.initiatives.find((i: { id: string }) => i.id === f.initiativeId)).toMatchObject({
+      autonomyMode: 'balanced',
+    });
+    const byTitle = Object.fromEntries(
+      body.recent.map((r: { title: string }) => [r.title.slice(0, 12), r]),
+    );
+    expect(byTitle['Review PR #1']).toMatchObject({
+      decidedBy: 'rule',
+      rule: 'docs-only',
+      outcome: 'merged',
+      reason: 'It fits docs-only.',
+    });
+    expect(byTitle['Review PR #2']).toMatchObject({
+      decidedBy: 'waiting',
+      outcome: 'waiting for a person',
+      reason: 'A trigger fired (new-dependency).',
+    });
+    expect(body.counts.byRule).toBeGreaterThanOrEqual(1);
+    expect(body.counts.waiting).toBeGreaterThanOrEqual(1);
+  });
+
+  it('lets a Product Owner or an admin change the autonomy mode, and records it', async () => {
+    const f = await createRunFixture(db);
+    const bob = await newPerson(['backend_engineer']);
+    const alice = await newPerson(['product_owner']);
+    const patch = (headers: Record<string, string>, autonomyMode: string) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/initiatives/${f.initiativeId}`,
+        headers,
+        payload: { autonomyMode },
+      });
+    expect((await patch(bob.headers, 'autopilot')).statusCode).toBe(403);
+    expect((await patch(alice.headers, 'turbo')).statusCode).toBe(400);
+    expect((await patch(alice.headers, 'autopilot')).json()).toMatchObject({
+      autonomyMode: 'autopilot',
+    });
+    expect(await actionsFor(f.initiativeId)).toContain('initiative.autonomy_changed');
+    const missing = await app.inject({
+      method: 'PATCH',
+      url: '/api/initiatives/00000000-0000-4000-8000-000000000000',
+      headers: alice.headers,
+      payload: { autonomyMode: 'guided' },
+    });
+    expect(missing.statusCode).toBe(404);
   });
 });
 

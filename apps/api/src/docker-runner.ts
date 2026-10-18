@@ -10,8 +10,11 @@ export interface DockerRunnerOptions {
   /** Host port of the platform API and of the Model Gateway. The sandbox reaches them only through the egress proxy. */
   apiPort: number;
   gatewayPort: number;
-  /** Hostnames the sandbox may open HTTPS tunnels to. */
-  allowHosts: string[];
+  /**
+   * Hostnames the sandbox may open HTTPS tunnels to. A function is asked at every launch, so hosts of newly confirmed
+   * integrations apply to the next run (the shared proxy is restarted when the list changes).
+   */
+  allowHosts: string[] | (() => Promise<string[]>);
   memory?: string;
   cpus?: string;
   /** Name of the shared proxy container. Tests use their own so they do not disturb a running dev stack. */
@@ -90,9 +93,9 @@ export class DockerRunner implements RunnerAdapter {
     (this.opts.log ?? ((l) => console.log(l)))(line);
   }
 
-  private egressConfig() {
+  private egressConfig(hosts: string[]) {
     const forwards = `${this.opts.apiPort}=host.docker.internal:${this.opts.apiPort},${this.opts.gatewayPort}=host.docker.internal:${this.opts.gatewayPort}`;
-    const allow = this.opts.allowHosts.join(',');
+    const allow = [...new Set(hosts)].sort().join(',');
     // A change to the allowlist or ports replaces the proxy, which is found by this label.
     const hash = createHash('sha256')
       .update(`${this.opts.image}|${forwards}|${allow}`)
@@ -104,7 +107,11 @@ export class DockerRunner implements RunnerAdapter {
   /** Starts the shared egress proxy if it is not running with the current settings. One start at a time. */
   private ensureEgress(): Promise<void> {
     this.egressReady ??= (async () => {
-      const cfg = this.egressConfig();
+      const hosts =
+        typeof this.opts.allowHosts === 'function'
+          ? await this.opts.allowHosts()
+          : this.opts.allowHosts;
+      const cfg = this.egressConfig(hosts);
       const cur = await inspect(this.egress);
       if (cur?.State?.Running && cur.Config?.Labels?.['sdlc.egress'] === cfg.hash) return;
       await docker(['rm', '-f', this.egress], { allowFail: true });

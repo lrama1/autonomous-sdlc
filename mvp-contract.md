@@ -109,6 +109,8 @@ Only the columns needed for steps 0 to 2. `*` marks a required column. Add the r
 
 **`cost_record`** `id*, run_id?, initiative_id?, source* (agent|service), alias*, provider_model*, input_tokens*, output_tokens*, cached_tokens*, cost_micros*`
 
+**`integration_entry`** (§6.7) `id*, name* (unique), kind* (second_party|third_party), owner?, initiative_id? (empty: every initiative), docs[] (links), hosts[] (hostnames), auth_type*, credential_ref? (a name in the secrets store), data_sent?, data_received?, test_strategy* (vendor_sandbox|mock|recorded|none), limits_and_cost?, terms?, failure_behavior?, status* (proposed|confirmed|rejected|retired), proposed_by?, confirmed_by?, confirmed_at?`. **`doc_snapshot`** `id*, integration_id*, url*, sha256*, content? (untrusted text, cut to 100 KB), error?, fetched_at*`.
+
 **`artifact`** `id*, initiative_id*, run_id?, kind* (spec|adr|diagram|code|test|result|release_notes), git_ref? (repo, sha, path), object_key?`
 
 **`activity_event`** (append-only, §10.6) `id*, ts*, actor_type* (person|agent|system), actor_id?, initiative_id?, run_id?, interaction_id?, action*, detail* (jsonb)`
@@ -283,6 +285,7 @@ model_alias: agent-default          # agent-fast | agent-default | agent-strong
 prompt_file: prompt.md              # system prompt appended to the engine's own
 tools:
   platform: [ask_human, check_answers, declare_assumption, search_standing_decisions,
+             list_integrations, read_integration_docs, propose_integration,
              request_checkpoint, report_progress, register_artifact]
   engine_builtin: [read, edit, write, bash, grep, glob]
   denied: [web_fetch]               # docs come from the snapshot (§6.7)
@@ -437,6 +440,10 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /people`, `PUT /people/:id/slack` | Admin links a Slack user to a person. One Slack user, one person |
 | `POST /people/:id/hats` `{ role }`, `DELETE /people/:id/hats/:role` | Admin only. The last platform admin cannot be removed |
 | `PATCH /people/:id/hats/:role` | `{ deputyPersonId?, hours?, outOfOffice? }`. Own hats, or any for an admin |
+| `GET /autopilot`, `PATCH /initiatives/:id` `{ autonomyMode }` | Pre-approved rules, what merged by rule or was held and why. Changing the mode needs a Product Owner or admin |
+| `GET /integrations`, `POST`, `PATCH /integrations/:id`, `POST .../retire`, `POST .../refresh-docs`, `GET .../docs` | The Integration Register. Writes need an Architect, Engineer or admin |
+| `GET /initiatives/:id/map` | Stages with status and who each waits on |
+| `GET /initiatives/:id/releases`, `POST` `{ version }` | List releases. Prepare one (Product Owner, DevOps, admin) |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
 | `POST /slack/interactions` | **Slack only**, verified by Slack's request signature. Not under `/api` |
@@ -465,6 +472,8 @@ One `config` module reads environment variables and validates them with `zod` at
 | `BOOTSTRAP_ADMIN_EMAIL` | | Whoever signs in with this verified email gets the admin hat |
 | `SECRETS_BACKEND`, `SECRETS_PREFIX` | `aws`, `sdlc-dev/runtime/` | `file` locally, Secrets Manager on AWS |
 | `DATABASE_CA_FILE` | `/etc/ssl/rds-global-bundle.pem` | Turns on verified TLS to the database |
+| `RELEASE_APPROVER_ROLE` | `product_owner` | Who approves a release (checkpoint G6) |
+| `INTEGRATION_DOCS_INTERVAL_H` | `24` | How often saved integration documentation is fetched again. 0 turns it off |
 | `ATTENTION_FILE` | `rules/attention.yaml` | How people are reached (§5): reminder and escalation timing, working hours, the digest, what chat may settle |
 | `ATTENTION_TICK_MS` | `2000` | How often the engine hands out, reminds, escalates, applies defaults and delivers |
 | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | | The token sends. The secret is needed to accept answers. Without the token the notifier only logs. `SLACK_API_URL` is for tests |
@@ -541,6 +550,24 @@ Not proven, or not built:
 - Rejecting an assumption raises a question for the person who started the run. It does not restart the run or edit a story.
 - The assumptions list has no "risk" column (the agent does not rate it) and no story link, since stories are not built.
 - A single worker process does all of this. Running two API processes would double notifications (the updates are guarded, so asks are not handed out twice, but a message could be sent twice).
+**Step 3, map and checkpoints (2026-10-18): built in part.** The spec says "G1, G3, G6, pre-approved change types, Integration Register, previews". Built and proven live (real agent, Docker sandbox, real GitHub) except where noted:
+
+- **Autonomy modes and pre-approved change types (G3).** `decideMerge` (packages/core) decides per pull request: a fired trigger always goes to a person; guided mode reviews everything; balanced merges the pre-approved types (`rules/triggers.yaml`, with an owner and a review date, and an expired rule no longer applies); autopilot merges anything no trigger fired on. A change the rules allow is approved by the platform (`answered_via: auto`, `answer.source: policy`, with the rule and the reason), and the Gate then does what it does for a person's approval: waits for the required check, and merges only the commit it looked at. The Gate App's approving review says it was by rule and not by a person. Every review records why it merges or why a person is asked (`contextCard.autoMerge`). The Autopilot page lists the rules, how each initiative runs (a Product Owner or admin can change it), and what merged by rule or was held. Live: a docs-only change merged with nobody asked, and the same change was held in guided mode.
+- **Integration Register** (`integration_entry`, `doc_snapshot`, `/api/integrations`). An Architect, Engineer or admin adds an entry (that is the confirmation), or an agent proposes one with `propose_integration`, which raises a **hard stop** for the Architect. Only the hosts of confirmed entries are added to the sandbox's egress allowlist (the shared proxy is restarted when the list changes, tested with real Docker). Documentation links are fetched by the platform, never by a sandbox, with an SSRF guard (https only, no private, loopback or link-local address, checked on the connected address and on literal addresses, 512 KB, 10 s, 3 redirects), hashed, and saved. A changed document asks the Architect to check the impact. Agents read the saved copy with `read_integration_docs`, which marks it untrusted. A test found that literal IP addresses bypassed the lookup guard; fixed.
+- **G1, spec and design.** `agents/product-agent` drafts `docs/spec/<slug>.md` and opens a pull request. A pull request from a spec agent is always checkpoint G1 for a person, in every mode (live: an autopilot initiative did not auto-approve it).
+- **The map** (`GET /api/initiatives/:id/map`, the Map page). Three stages drawn from the active checkpoints (spec and design, build and review, release), each with a status, who it waits on, and links to the asks. It is derived from runs and asks, with no stored stage state. Starting an initiative and runs is on the same page.
+- **G6, release** (`POST /api/initiatives/:id/releases`). A Product Owner, DevOps or admin prepares a version. The platform lists what merged since the last release, pins the tip of the integration branch, and requires the required check to be green on it. The checkpoint is a hard stop for `RELEASE_APPROVER_ROLE` (default Product Owner), never defaulted, never answered in chat. On approval the **Gate App** creates the tag and the release with the notes, but only if the branch has not moved. Live: published on `sdlc-scratch`, then removed.
+
+Not built, or only partly:
+- **Previews** (an open decision, section 18). **Design and the Architect agent** (only the Product agent exists, so G1 covers the spec). **Stories as records**: they live inside the spec document.
+- **Nothing starts the next stage for you.** The map shows where work is. A person starts the spec run, the engineer runs, and the release.
+- The map is boxes and arrows, not xyflow, and there is no portfolio view, release calendar or freeze, hotfix path, or scope-change re-opening.
+- A new external host in a code diff is not detected (agents are told to propose it, and the sandbox cannot reach it anyway). A `none` test strategy is shown as a warning, not enforced as a trigger. Credentials from the register are not put into sandboxes.
+- The egress proxy is shared, so the allowlist is the union across initiatives, and a change restarts it (tunnels in other running sandboxes drop).
+- A pull request from an agent takes its title from the task text, which makes long release notes. The pre-approved rules are edited by hand in `rules/triggers.yaml`, with no editor screen.
+- The release publishes a tag and notes. It does not deploy anything. The repository's own CI does that on the tag, as the spec says.
+- **Step 4** (a second engine) is not started.
+
 ## 17. Test strategy
 
 - **Unit** (`packages/core`): state machines, rules evaluation, ranking, routing. No I/O.
@@ -555,7 +582,7 @@ Not proven, or not built:
 | Item | Needed by |
 |---|---|
 | Sidecar manifest format | When a repository with services is first used |
-| Preview environments | Step 3 |
+| Preview environments | Not built. A per-PR environment needs a place to run the app (the sandbox cannot be reached from outside). Decide when a repository with a running app is first used |
 | Cut-off between blocking and parking (120 s) | Step 1, tune with real use |
 | ~~Where Slack and Teams replies are authenticated~~ | Done in step 2 for Slack: signed request plus an admin-made link between a Slack user and a person. Teams is not built |
 | Copilot and Codex adapters | Step 4 |

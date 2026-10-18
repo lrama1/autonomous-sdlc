@@ -282,6 +282,43 @@ export async function settleWithAnswer(
   return settled;
 }
 
+/**
+ * The platform approves a review by rule (an autonomy mode or a pre-approved change type). Nobody is asked.
+ * Returns null if somebody settled it first.
+ */
+export async function settleByPolicy(
+  db: Db,
+  id: string,
+  input: { decision: Decision; reason: string; rule: string | null },
+): Promise<InteractionRow | null> {
+  const [row] = await db
+    .update(interaction)
+    .set({
+      state: 'answered',
+      answer: {
+        text: input.reason,
+        decision: input.decision,
+        choice: null,
+        source: 'policy',
+        rule: input.rule,
+      },
+      answeredVia: 'auto',
+      answeredAt: new Date(),
+    })
+    .where(and(eq(interaction.id, id), eq(interaction.state, 'open')))
+    .returning();
+  if (!row) return null;
+  await recordActivity(db, {
+    actorType: 'system',
+    initiativeId: row.initiativeId,
+    runId: row.runId,
+    interactionId: row.id,
+    action: 'pull_request.auto_approved',
+    detail: { reason: input.reason, rule: input.rule },
+  });
+  return row;
+}
+
 /** Applies the default if this interaction is due. Mirrors defaultApplies() in packages/core. */
 export async function settleDefaultIfDue(
   db: Db,

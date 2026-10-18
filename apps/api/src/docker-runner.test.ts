@@ -197,6 +197,44 @@ describe.skipIf(!haveDocker)('the Docker sandbox', () => {
     await bystander.done;
   }, 240_000);
 
+  it('applies the hosts of newly confirmed integrations to the next run', async () => {
+    const tunnel = `
+const http = require('http');
+const px = new URL(process.env.HTTPS_PROXY);
+const req = http.request({ host: px.hostname, port: Number(px.port), method: 'CONNECT', path: 'example.com:443', timeout: 6000 });
+req.on('connect', (r) => { console.log('TUNNEL HTTP ' + r.statusCode); req.destroy(); });
+req.on('timeout', () => { console.log('TUNNEL FAIL timeout'); req.destroy(); });
+req.on('error', (e) => console.log('TUNNEL FAIL ' + e.code));
+req.end();`;
+    let hosts = ['github.com'];
+    const dynamic = () =>
+      new DockerRunner({
+        image: IMAGE,
+        apiPort,
+        gatewayPort: gwPort,
+        allowHosts: async () => hosts,
+        egressName: PROXY,
+        command: ['node', '-e', tunnel],
+        memory: '512m',
+        cpus: '1',
+        log: (l) => lines.push(l),
+      });
+    const lines: string[] = [];
+    const result = async () => {
+      lines.length = 0;
+      const id = newRun();
+      const launched = await dynamic().launch({ runId: id, token: 't', apiUrl: 'x' });
+      await launched.done;
+      return lines.find((l) => l.includes('TUNNEL '))?.split('TUNNEL ')[1];
+    };
+
+    expect(await result()).toBe('HTTP 403');
+    hosts = ['github.com', 'example.com'];
+    expect(['HTTP 200', 'HTTP 502']).toContain(await result());
+    hosts = ['github.com'];
+    expect(await result()).toBe('HTTP 403');
+  }, 240_000);
+
   it('keeps the checkout between runs of the same id, so a parked run resumes in place', async () => {
     const id = newRun();
     const first = await adapter(['sh', '-c', 'echo kept > /work/marker']).launch({

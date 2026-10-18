@@ -106,6 +106,36 @@ export class GitHubService {
     return { sha: r.sha };
   }
 
+  /** The commit a branch points at now. */
+  async branchHead(repo: string, branch: string): Promise<string> {
+    const { token } = await this.tokenFor('gate', repo);
+    const r = await this.client.call<{ object: { sha: string } }>(
+      'GET',
+      `/repos/${repo}/git/ref/heads/${branch}`,
+      token,
+    );
+    return r.object.sha;
+  }
+
+  /** Publishes a release: a tag on the given commit and a release page with the notes. The Gate App does this, never an agent. */
+  async publishRelease(
+    repo: string,
+    r: { tag: string; sha: string; name: string; notes: string },
+  ): Promise<{ url: string }> {
+    const { token } = await this.tokenFor('gate', repo, { contents: 'write' });
+    await this.client.call('POST', `/repos/${repo}/git/refs`, token, {
+      ref: `refs/tags/${r.tag}`,
+      sha: r.sha,
+    });
+    const rel = await this.client.call<{ html_url: string }>(
+      'POST',
+      `/repos/${repo}/releases`,
+      token,
+      { tag_name: r.tag, name: r.name, body: r.notes, draft: false, prerelease: false },
+    );
+    return { url: rel.html_url };
+  }
+
   async closePullRequest(repo: string, number: number): Promise<void> {
     const { token } = await this.tokenFor('gate', repo, { pull_requests: 'write' });
     await this.client.call('PATCH', `/repos/${repo}/pulls/${number}`, token, { state: 'closed' });

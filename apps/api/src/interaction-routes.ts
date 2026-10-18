@@ -75,6 +75,7 @@ export function registerInteractionRoutes(
   rules: { independentReview: boolean },
   gate?: Gate,
   policy?: AttentionPolicy,
+  afterAnswer?: (row: InteractionRow) => Promise<void>,
 ): void {
   // The attention queue: what is waiting on me, ranked.
   app.get('/api/interactions', async (request, reply) => {
@@ -139,6 +140,7 @@ export function registerInteractionRoutes(
         db,
         rules,
         gate,
+        afterAnswer,
         onGateError: (e) => request.log.error({ err: e }, 'gate failed after a decision'),
       },
       id,

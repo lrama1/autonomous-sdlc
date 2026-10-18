@@ -1,0 +1,25 @@
+﻿id: product-agent
+version: 1
+role: product
+engine: claude-code
+model_alias: agent-default
+prompt_file: prompt.md
+tools:
+  platform:
+    - ask_human
+    - check_answers
+    - declare_assumption
+    - search_standing_decisions
+    - list_integrations
+    - read_integration_docs
+    - propose_integration
+    - request_checkpoint
+    - report_progress
+    - register_artifact
+  engine_builtin: [read, edit, write, bash, grep, glob]
+  denied: [web_fetch]
+limits:
+  max_turns: 40
+  max_wall_seconds: 1500
+  budget_usd: 1.50
+asks: [product_owner]

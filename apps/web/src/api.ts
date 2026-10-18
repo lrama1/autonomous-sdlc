@@ -1,7 +1,9 @@
 import {
   assumptionSchema,
   attentionProfileSchema,
+  autopilotSchema,
   healthSchema,
+  integrationSchema,
   interactionSchema,
   interruptionMetricsSchema,
   meSchema,
@@ -11,8 +13,10 @@ import {
 import type {
   AnswerRequest,
   AssumptionDto,
+  AutopilotDto,
   AttentionProfile,
   Health,
+  IntegrationDto,
   InteractionDto,
   InterruptionMetricsDto,
   Me,
@@ -119,3 +123,102 @@ export const getInitiatives = () => call('/api/initiatives', initiatives);
 
 export const getInterruptions = (days: number): Promise<InterruptionMetricsDto> =>
   call(`/api/metrics/interruptions?days=${days}`, interruptionMetricsSchema);
+
+export const getAutopilot = (): Promise<AutopilotDto> => call('/api/autopilot', autopilotSchema);
+
+export const setAutonomyMode = (id: string, autonomyMode: 'guided' | 'balanced' | 'autopilot') =>
+  call(`/api/initiatives/${id}`, ok, { method: 'PATCH', body: { autonomyMode } });
+
+export const getIntegrations = (): Promise<IntegrationDto[]> =>
+  call('/api/integrations', z.array(integrationSchema));
+
+export interface NewIntegration {
+  name: string;
+  kind: 'second_party' | 'third_party';
+  docs: string[];
+  hosts: string[];
+  authType: 'none' | 'api_key' | 'oauth' | 'basic';
+  credentialRef?: string;
+  testStrategy: 'vendor_sandbox' | 'mock' | 'recorded' | 'none';
+  owner?: string;
+  failureBehavior?: string;
+}
+
+export const createIntegration = (body: NewIntegration): Promise<IntegrationDto> =>
+  call('/api/integrations', integrationSchema, { method: 'POST', body });
+
+export const retireIntegration = (id: string) =>
+  call(`/api/integrations/${id}/retire`, ok, { method: 'POST' });
+
+export const refreshIntegrationDocs = (id: string) =>
+  call(`/api/integrations/${id}/refresh-docs`, ok, { method: 'POST' });
+
+const stageSchema = z.object({
+  id: z.enum(['spec', 'build', 'release']),
+  title: z.string(),
+  checkpoint: z.string(),
+  status: z.enum(['not_started', 'working', 'waiting_human', 'blocked', 'done']),
+  waitingOn: z.array(z.string()),
+  detail: z.string(),
+  items: z.array(
+    z.object({
+      kind: z.enum(['run', 'ask']),
+      id: z.string(),
+      title: z.string(),
+      state: z.string(),
+    }),
+  ),
+});
+export type Stage = z.infer<typeof stageSchema>;
+
+const mapSchema = z.object({
+  initiative: z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    goal: z.string(),
+    autonomyMode: z.string(),
+  }),
+  stages: z.array(stageSchema),
+});
+export type InitiativeMap = z.infer<typeof mapSchema>;
+
+export const getMap = (id: string): Promise<InitiativeMap> =>
+  call(`/api/initiatives/${id}/map`, mapSchema);
+
+const releaseSchema = z.array(
+  z.object({
+    interactionId: z.string().uuid(),
+    version: z.string(),
+    tag: z.string(),
+    notes: z.string(),
+    state: z.string(),
+    url: z.string().nullable(),
+    detail: z.string().nullable(),
+    createdAt: z.string(),
+  }),
+);
+export const getReleases = (id: string) => call(`/api/initiatives/${id}/releases`, releaseSchema);
+export const prepareRelease = (id: string, version: string) =>
+  call(`/api/initiatives/${id}/releases`, ok, { method: 'POST', body: { version } });
+
+const repositories = z.array(
+  z.object({ id: z.string().uuid(), fullName: z.string() }).passthrough(),
+);
+export const getRepositories = () => call('/api/repositories', repositories);
+
+export const createInitiative = (body: {
+  title: string;
+  goal: string;
+  repositoryId: string;
+  autonomyMode: 'guided' | 'balanced' | 'autopilot';
+}) =>
+  call('/api/initiatives', z.object({ id: z.string().uuid() }).passthrough(), {
+    method: 'POST',
+    body,
+  });
+
+export const startRun = (id: string, body: { role: string; task: string; budgetUsd?: number }) =>
+  call(`/api/initiatives/${id}/runs`, z.object({ id: z.string().uuid() }).passthrough(), {
+    method: 'POST',
+    body,
+  });

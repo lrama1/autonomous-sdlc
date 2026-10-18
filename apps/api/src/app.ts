@@ -27,6 +27,12 @@ import { registerInteractionRoutes } from './interaction-routes.js';
 import { attentionTick } from './attention.js';
 import { loadAttentionPolicy } from './attention-policy.js';
 import { registerAttentionRoutes } from './attention-routes.js';
+import { registerAutopilotRoutes } from './autopilot-routes.js';
+import { registerMapRoutes } from './map-routes.js';
+import { applyReleaseDecision } from './releases.js';
+import { registerIntegrationRoutes, refreshAllDocs } from './integration-routes.js';
+import { applyIntegrationDecision, confirmedHosts, createDocFetcher } from './integrations.js';
+import type { DocFetcher } from './integrations.js';
 import { LogNotifier } from './notifier.js';
 import type { Notifier } from './notifier.js';
 import { SlackClient, SlackNotifier, registerSlackRoutes } from './slack.js';
@@ -52,6 +58,8 @@ export interface BuildOptions {
   notifier?: Notifier;
   policy?: AttentionPolicy;
   slack?: SlackClient;
+  /** Fetches documentation links for the Integration Register. Tests replace it. */
+  docFetcher?: DocFetcher;
 }
 
 export async function buildApp({
@@ -65,6 +73,7 @@ export async function buildApp({
   notifier: notifierOverride,
   policy: policyOverride,
   slack: slackOverride,
+  docFetcher,
 }: BuildOptions) {
   const app = Fastify({ logger });
   const { db, pool } = deps ?? createDb(config.DATABASE_URL, { caFile: config.DATABASE_CA_FILE });
@@ -133,15 +142,18 @@ export async function buildApp({
   const ghService = new GitHubService(db, secretStore, ghClient);
   const apiUrl = `http://127.0.0.1:${config.API_PORT}`;
   registerWorkRoutes(app, db, loadedAgents);
+  const ruleSet = await loadRules(config.RULES_FILE);
+  const gate = createGate({ db, github: ghService, log: (l) => app.log.info(l) });
   registerRunnerRoutes(app, {
     db,
     config,
     agents: loadedAgents,
-    rules: await loadRules(config.RULES_FILE),
+    rules: ruleSet,
     github: ghService,
     apiUrl,
+    gate,
   });
-  const gate = createGate({ db, github: ghService, log: (l) => app.log.info(l) });
+  registerAutopilotRoutes(app, db, ruleSet);
   const policy = policyOverride ?? (await loadAttentionPolicy(config.ATTENTION_FILE));
   const slackHosts = ['hooks.slack.com'];
   if (config.SLACK_API_URL !== 'https://slack.com/api')
@@ -155,7 +167,13 @@ export async function buildApp({
     notifierOverride ??
     (slackClient ? new SlackNotifier(slackClient) : new LogNotifier((l) => app.log.info(l)));
   const rules = { independentReview: config.INDEPENDENT_REVIEW };
-  registerInteractionRoutes(app, db, rules, gate, policy);
+  const fetcher = docFetcher ?? createDocFetcher();
+  registerInteractionRoutes(app, db, rules, gate, policy, async (row) => {
+    await applyIntegrationDecision(db, row, fetcher);
+    await applyReleaseDecision(db, ghService, row);
+  });
+  registerMapRoutes(app, db, ghService, { approverRole: config.RELEASE_APPROVER_ROLE });
+  registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,
     chatConfigured: Boolean(config.SLACK_SIGNING_SECRET && slackClient),
@@ -170,6 +188,19 @@ export async function buildApp({
       gate,
       publicUrl: config.PUBLIC_URL,
     });
+  }
+  if (workers && config.INTEGRATION_DOCS_INTERVAL_H > 0) {
+    let docsTimer: NodeJS.Timeout | undefined;
+    app.addHook('onReady', async () => {
+      docsTimer = setInterval(
+        () =>
+          void refreshAllDocs(db, fetcher).catch((e) =>
+            app.log.error({ err: e }, 'refreshing integration documentation failed'),
+          ),
+        config.INTEGRATION_DOCS_INTERVAL_H * 3_600_000,
+      );
+    });
+    app.addHook('onClose', async () => clearInterval(docsTimer));
   }
   if (workers) {
     let attentionTimer: NodeJS.Timeout | undefined;
@@ -227,9 +258,13 @@ export async function buildApp({
             image: config.RUNNER_IMAGE,
             apiPort: config.API_PORT,
             gatewayPort: Number(new URL(config.GATEWAY_URL).port || 80),
-            allowHosts: config.RUNNER_EGRESS_ALLOW.split(',')
-              .map((s) => s.trim())
-              .filter(Boolean),
+            // The fixed list, plus the hosts of every confirmed entry in the Integration Register.
+            allowHosts: async () => [
+              ...config.RUNNER_EGRESS_ALLOW.split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+              ...(await confirmedHosts(db)),
+            ],
             log: (l) => app.log.info(l),
           })
         : new ProcessRunner({

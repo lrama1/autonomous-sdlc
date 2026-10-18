@@ -8,7 +8,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|all] [docker]
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
 const docker = process.argv.includes('docker');
@@ -563,6 +563,283 @@ try {
       `S  the interruption metrics count it as an ask that never reached a person (${metrics.avoidedByStanding})`,
     );
     say(`run cost $${finished.costUsd.toFixed(4)}`);
+  }
+
+  // ---------------- Phase D: pre-approved change types merge by rule, and guided mode holds them ----------------
+  if (phase === 'autopilot' || phase === 'all') {
+    say('--- phase D: a pre-approved change merges by rule; guided mode holds the same change ---');
+    const docTask = (file: string, text: string) =>
+      `Create the file ${file} containing exactly the single line "${text}" and commit it. Do not change anything else and do not ask any questions.`;
+
+    // D1. Balanced mode (the default): a documentation-only change is approved by the platform's rules.
+    const file1 = `docs/auto-${stamp}.md`;
+    const first = await startRun(`Automatic ${stamp}`, docTask(file1, `automatic ${stamp}`));
+    await waitFor(
+      'the run finishes',
+      async () => {
+        const r = await runState(first.run.id);
+        if (['failed', 'cancelled', 'budget_exceeded', 'timed_out'].includes(r.state))
+          throw new Error(`run ended as ${r.state}`);
+        return r.state === 'succeeded' ? r : null;
+      },
+      420_000,
+      3000,
+    );
+    const rev1 = await waitFor(
+      'the review is settled by rule',
+      async () => {
+        const r = await db.query(
+          "select id, state, answered_via, answered_by, answer, context_card from interaction where run_id = $1 and type = 'review'",
+          [first.run.id],
+        );
+        return r.rows[0]?.state === 'answered' ? r.rows[0] : null;
+      },
+      60_000,
+      2000,
+    );
+    check(
+      rev1.answered_via === 'auto' &&
+        rev1.answered_by === null &&
+        rev1.answer.source === 'policy' &&
+        rev1.answer.rule === 'docs-only',
+      `A  no person was asked: approved by the rule "${rev1.answer.rule}" (${rev1.context_card.autoMerge.reason})`,
+    );
+    const merged1 = await waitFor(
+      'the Gate merges it',
+      async () => {
+        const row = await db.query(
+          "select context_card -> 'gate' as gate from interaction where id = $1",
+          [rev1.id],
+        );
+        const gate = row.rows[0]?.gate;
+        if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+          throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+        return gate?.state === 'merged' ? gate : null;
+      },
+      300_000,
+      4000,
+    );
+    check(Boolean(merged1.mergedSha), 'A  the Gate merged it once the checks were green');
+    if (ghToken) {
+      const pr = await gh(`/repos/${REPO}/pulls/${rev1.context_card.prNumber}`);
+      const reviews: any[] = await gh(`/repos/${REPO}/pulls/${rev1.context_card.prNumber}/reviews`);
+      check(
+        pr.merged === true && reviews.some((r) => /not by a person/.test(r.body ?? '')),
+        'A  GitHub shows it merged, and the approval says it was by rule and not by a person',
+      );
+    }
+    const events1 = await db.query(
+      'select action from activity_event where interaction_id = $1 order by ts',
+      [rev1.id],
+    );
+    check(
+      events1.rows.some((r) => r.action === 'pull_request.auto_approved') &&
+        events1.rows.some((r) => r.action === 'pull_request.merged'),
+      'A  the activity log records the approval by rule and the merge',
+    );
+
+    // D2. Guided mode: the same kind of change waits for a person.
+    const guidedInit = await call(alice, 'POST', '/api/initiatives', {
+      title: `Guided ${stamp}`,
+      goal: `Guided ${stamp}`,
+      repositoryId: repo.id,
+      autonomyMode: 'guided',
+    });
+    const file2 = `docs/guided-${stamp}.md`;
+    const second = await call(alice, 'POST', `/api/initiatives/${guidedInit.id}/runs`, {
+      task: docTask(file2, `guided ${stamp}`),
+      budgetUsd: 1,
+    });
+    const held = await waitFor(
+      'the review waits for a person',
+      () => openFor(bob, second.id, ['review']),
+      420_000,
+    );
+    check(
+      held.state === 'open' && held.contextCard.autoMerge?.auto === false,
+      `A  guided mode held the same kind of change for a person: "${held.contextCard.autoMerge?.reason}"`,
+    );
+    const page: any = await call(bob, 'GET', '/api/autopilot');
+    check(
+      page.recent.some((r: any) => r.interactionId === rev1.id && r.decidedBy === 'rule') &&
+        page.recent.some((r: any) => r.interactionId === held.id && r.decidedBy === 'waiting'),
+      'A  the Autopilot page lists both, with the reason',
+    );
+    await call(bob, 'POST', `/api/interactions/${held.id}/answer`, {
+      decision: 'approved',
+      answer: 'Fine.',
+    });
+    await waitFor(
+      'the Gate merges the held change',
+      async () => {
+        const row = await db.query(
+          "select context_card -> 'gate' as gate from interaction where id = $1",
+          [held.id],
+        );
+        const gate = row.rows[0]?.gate;
+        if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+          throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+        return gate?.state === 'merged' ? gate : null;
+      },
+      300_000,
+      4000,
+    );
+    check(true, 'A  after a person approved, the Gate merged the held change');
+  }
+
+  // ---------------- Phase E: a spec is decided by a person even in autopilot, then a release is approved and published ----------------
+  if (phase === 'release' || phase === 'all') {
+    say('--- phase E: spec checkpoint (G1), map, and release (G6) ---');
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Version endpoint ${stamp}`,
+      goal: 'Let operators see which version is running.',
+      repositoryId: repo.id,
+      autonomyMode: 'autopilot',
+    });
+    const slug = `version-${stamp}`;
+    // Bob starts the run, so Alice (a Product Owner) may decide on it.
+    const specRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+      role: 'product',
+      budgetUsd: 1,
+      task:
+        `Draft the spec for this goal: add a GET /version endpoint to the small web app in this repository that answers {"version": <the version in package.json>}. ` +
+        `Write it to docs/spec/${slug}.md following your instructions, with at most 3 stories. Do not ask any questions. Commit it and do not change any other file.`,
+    });
+    const g1 = await waitFor(
+      'the spec review',
+      () => openFor(alice, specRun.id, ['review']),
+      420_000,
+    );
+    check(
+      g1.contextCard.kind === 'pull_request' &&
+        g1.state === 'open' &&
+        g1.contextCard.autoMerge?.auto === false,
+      `G  the spec was NOT approved by rule although the initiative is in autopilot: "${g1.contextCard.autoMerge?.reason}"`,
+    );
+    const g1row = await db.query(
+      'select checkpoint_id, role_needed from interaction where id = $1',
+      [g1.id],
+    );
+    check(
+      g1row.rows[0].checkpoint_id === 'G1' && g1row.rows[0].role_needed === 'product_owner',
+      'G  it is checkpoint G1, for the Product Owner',
+    );
+    check(
+      /docs\/spec\/.+\.md$/.test(g1.contextCard.diff.changedPaths[0]) &&
+        g1.contextCard.diff.changedPaths.length === 1,
+      `G  the change is only the spec file (${g1.contextCard.diff.changedPaths.join(', ')})`,
+    );
+    let map: any = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    const spec = map.stages.find((s: any) => s.id === 'spec');
+    check(
+      spec.status === 'waiting_human' && spec.waitingOn.includes('product_owner'),
+      `G  the map shows spec and design waiting on the Product Owner (${spec.status})`,
+    );
+
+    await call(alice, 'POST', `/api/interactions/${g1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Good enough.',
+    });
+    await waitFor(
+      'the Gate merges the spec',
+      async () => {
+        const row = await db.query(
+          "select context_card -> 'gate' as gate from interaction where id = $1",
+          [g1.id],
+        );
+        const gate = row.rows[0]?.gate;
+        if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+          throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+        return gate?.state === 'merged' ? gate : null;
+      },
+      300_000,
+      4000,
+    );
+    map = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    check(
+      map.stages.find((s: any) => s.id === 'spec').status === 'done',
+      'G  after approval and merge, the map shows spec and design done',
+    );
+
+    // G6. Main must be green before a release can be prepared, and CI on the merge commit takes a minute.
+    const version = `0.${Math.floor(Date.now() / 1000) % 900000}.0`;
+    const prepared = await waitFor(
+      'a release can be prepared (main is green)',
+      async () => {
+        try {
+          return await call(alice, 'POST', `/api/initiatives/${init.id}/releases`, { version });
+        } catch (e) {
+          if (/not_green|is not finished|pending/.test(String(e))) return null;
+          throw e;
+        }
+      },
+      300_000,
+      6000,
+    );
+    const rel = await call(alice, 'GET', `/api/interactions/${prepared.interactionId}`);
+    check(
+      rel.type === 'checkpoint' && rel.checkpointId === 'G6' && rel.hardStop === true,
+      `G  release ${version} is checkpoint G6 and a hard stop: "${rel.title}"`,
+    );
+    check(
+      rel.contextCard.notes.includes('spec') || rel.contextCard.prs.length >= 1,
+      `G  the notes list what merged: ${rel.contextCard.prs
+        .map((p: any) => p.title)
+        .join('; ')
+        .slice(0, 100)}`,
+    );
+    map = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    check(
+      map.stages.find((s: any) => s.id === 'release').status === 'waiting_human',
+      'G  the map shows the release waiting for approval',
+    );
+    if (ghToken) {
+      let tagBefore = 0;
+      try {
+        await gh(`/repos/${REPO}/git/ref/tags/release-${version}`);
+        tagBefore = 1;
+      } catch {
+        tagBefore = 0;
+      }
+      check(tagBefore === 0, 'G  nothing is published before the approval');
+    }
+    await call(alice, 'POST', `/api/interactions/${prepared.interactionId}/answer`, {
+      decision: 'approved',
+      answer: 'Ship it.',
+    });
+    const published = await waitFor(
+      'the release is published',
+      async () => {
+        const list: any[] = await call(alice, 'GET', `/api/initiatives/${init.id}/releases`);
+        const r = list.find((x) => x.version === version);
+        if (r && ['failed', 'stale', 'declined'].includes(r.state))
+          throw new Error(`release ${r.state}: ${r.detail}`);
+        return r?.state === 'released' ? r : null;
+      },
+      60_000,
+      2000,
+    );
+    check(Boolean(published.url), `G  published by the Gate App: ${published.url}`);
+    if (ghToken) {
+      const ghRel = await gh(`/repos/${REPO}/releases/tags/release-${version}`);
+      check(
+        ghRel.name === version && String(ghRel.body).includes(`## ${version}`),
+        'G  GitHub has the release with the notes',
+      );
+      // Leave the scratch repository tidy: the release and its tag were only for this check.
+      const ghDelete = async (p: string) =>
+        fetch(`https://api.github.com${p}`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' },
+        });
+      await ghDelete(`/repos/${REPO}/releases/${ghRel.id}`);
+      await ghDelete(`/repos/${REPO}/git/refs/tags/release-${version}`);
+    }
+    map = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    check(
+      map.stages.find((s: any) => s.id === 'release').status === 'done',
+      'G  the map shows the release done',
+    );
   }
 } catch (e) {
   say(`ERROR: ${e instanceof Error ? e.message : String(e)}`);

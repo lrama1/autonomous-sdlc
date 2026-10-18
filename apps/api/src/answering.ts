@@ -66,6 +66,8 @@ export async function answerAsPerson(
     rules: { independentReview: boolean };
     gate?: Gate;
     onGateError?: (e: unknown) => void;
+    /** Runs after an answer is saved, for effects that follow from it (an integration being confirmed). */
+    afterAnswer?: (row: InteractionRow) => Promise<void>;
   },
   id: string,
   me: { id: string; roles: InteractionFacts['roleNeeded'][] },
@@ -110,6 +112,7 @@ export async function answerAsPerson(
   if (deps.gate) {
     await deps.gate.afterDecision(settled).catch((e) => deps.onGateError?.(e));
   }
+  await deps.afterAnswer?.(settled).catch((e) => deps.onGateError?.(e));
   const [after] = await db.select().from(interaction).where(eq(interaction.id, settled.id));
   return { ok: true, row: after ?? settled };
 }
