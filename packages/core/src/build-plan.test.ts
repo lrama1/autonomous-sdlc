@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { planProgress, readyTasks, stuckBehind, taskPrompt } from './build-plan.js';
+import { pathsOverlap, planProgress, readyTasks, stuckBehind, taskPrompt } from './build-plan.js';
 import type { PlanTask, TaskState } from './build-plan.js';
 import type { DesignTask } from './design.js';
 
-const t = (key: string, state: TaskState, dependsOn: string[] = []): PlanTask => ({
+const t = (
+  key: string,
+  state: TaskState,
+  dependsOn: string[] = [],
+  paths?: string[],
+): PlanTask => ({
   key,
   state,
   dependsOn,
+  ...(paths ? { paths } : {}),
 });
 
 describe('readyTasks', () => {
@@ -42,6 +48,42 @@ describe('readyTasks', () => {
 
   it('does not count a task in review against the limit', () => {
     expect(readyTasks([t('T1', 'review'), t('T2', 'waiting')], 1)).toEqual(['T2']);
+  });
+});
+
+describe('tasks that share a file', () => {
+  it('runs them one after another, in plan order', () => {
+    const tasks = [
+      t('T1', 'waiting', [], ['src/server.js']),
+      t('T2', 'waiting', [], ['src/server.js', 'test/a.js']),
+      t('T3', 'waiting', [], ['src/other.js']),
+    ];
+    expect(readyTasks(tasks, 4)).toEqual(['T1', 'T3']);
+  });
+
+  it('keeps waiting while the task with the shared file is running or in review, and goes once it is merged', () => {
+    const waiting = t('T2', 'waiting', [], ['src/server.js']);
+    expect(readyTasks([t('T1', 'running', [], ['src/server.js']), waiting], 4)).toEqual([]);
+    expect(readyTasks([t('T1', 'review', [], ['src/server.js']), waiting], 4)).toEqual([]);
+    expect(readyTasks([t('T1', 'merged', [], ['src/server.js']), waiting], 4)).toEqual(['T2']);
+    expect(readyTasks([t('T1', 'failed', [], ['src/server.js']), waiting], 4)).toEqual(['T2']);
+  });
+
+  it('does not make tasks with other files wait, and treats a task with no paths as free', () => {
+    expect(
+      readyTasks(
+        [t('T1', 'running', [], ['a.js']), t('T2', 'waiting', [], ['b.js']), t('T3', 'waiting')],
+        4,
+      ),
+    ).toEqual(['T2', 'T3']);
+  });
+
+  it('counts a folder as holding the files under it', () => {
+    expect(pathsOverlap(['src/'], ['src/a.js'])).toBe(true);
+    expect(pathsOverlap(['src/a.js'], ['src/'])).toBe(true);
+    expect(pathsOverlap(['src/a.js'], ['src/b.js'])).toBe(false);
+    expect(pathsOverlap(['src'], ['src/a.js'])).toBe(false);
+    expect(pathsOverlap([], ['a.js'])).toBe(false);
   });
 });
 
@@ -99,6 +141,14 @@ describe('taskPrompt', () => {
     expect(p).toContain('- GET /x answers 200');
     expect(p).toContain('Do not do their work: T2 (Document it); T3 (Unrelated)');
     expect(p).not.toContain('Already merged');
+  });
+
+  it('says why an earlier attempt could not merge, and what to do about it', () => {
+    const p = taskPrompt({ path: 'docs/design/x.md' }, a, [a, b], 'It conflicted with main.');
+    expect(p).toContain('This is a new attempt');
+    expect(p).toContain('It conflicted with main.');
+    expect(p).toContain('Start from the current main branch');
+    expect(taskPrompt({ path: 'x' }, a, [a, b])).not.toContain('new attempt');
   });
 
   it('says what was merged before, and leaves out an empty story line', () => {

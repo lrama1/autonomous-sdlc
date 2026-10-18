@@ -44,6 +44,8 @@ interface World {
   mergeStatus: number;
   /** The base branch moved: merging answers 405 until the Gate updates the branch. */
   behind: boolean;
+  /** Another change merged first and edited the same lines. */
+  dirty: boolean;
   /** What updating the branch does: a plain merge commit, a commit that is not one, GitHub refusing, or moving again. */
   update: 'merge' | 'other' | 'refuse' | 'again';
   updates: number;
@@ -56,6 +58,7 @@ const reset = (): World =>
     ci: 'success',
     mergeStatus: 200,
     behind: false,
+    dirty: false,
     update: 'merge',
     updates: 0,
     calls: [],
@@ -156,7 +159,7 @@ beforeAll(async () => {
         number: 7,
         state: world.pr.state,
         merged: world.pr.merged,
-        mergeable_state: world.behind ? 'behind' : 'clean',
+        mergeable_state: world.dirty ? 'dirty' : world.behind ? 'behind' : 'clean',
         head: { sha: world.pr.sha, ref: 'agent/x' },
         base: { ref: 'main' },
       });
@@ -384,6 +387,22 @@ describe('when the base branch moved on', () => {
     for (let i = 0; i < 8 && (await card(row.id)).gate.state === 'waiting_ci'; i++) await g.tick();
     expect((await card(row.id)).gate).toMatchObject({ state: 'failed', catchUps: 5 });
     expect((await card(row.id)).gate.detail).toContain('moved 5 times');
+  });
+});
+
+describe('when the change conflicts with what merged meanwhile', () => {
+  it('stops at once, without waiting for checks that will never run, and says so on the pull request', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    world.dirty = true;
+    world.ci = null;
+    expect(await gate().afterDecision(row)).toBe('conflict');
+    expect((await card(row.id)).gate).toMatchObject({ state: 'conflict' });
+    expect(calledPaths()).not.toContain('GET /commits/sha-reviewed/check-runs');
+    expect(world.calls.some((c) => c.url.endsWith('/merge') || c.url.endsWith('/reviews'))).toBe(
+      false,
+    );
+    expect(world.calls.find((c) => c.url.endsWith('/comments'))!.body.body).toContain('conflicts');
   });
 });
 

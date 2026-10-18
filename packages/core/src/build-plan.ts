@@ -12,22 +12,42 @@ export interface PlanTask {
   key: string;
   state: TaskState;
   dependsOn: string[];
+  /** The files the task expects to change. Two tasks that share one are not run at the same time. */
+  paths?: string[];
 }
 
 const SETTLED = new Set<TaskState>(['merged', 'skipped']);
 
+/** Whether two lists of paths name the same file, or one names a folder (a path ending in "/") that holds the other. */
+export function pathsOverlap(a: string[], b: string[]): boolean {
+  const within = (folder: string, p: string) => folder.endsWith('/') && p.startsWith(folder);
+  return a.some((x) => b.some((y) => x === y || within(x, y) || within(y, x)));
+}
+
 /**
  * The waiting tasks to start now, in the order the plan lists them. At most `cap - running` of them, and only those
  * whose dependencies are all settled. A failed dependency keeps its dependents waiting until a person decides.
+ * A task that expects to change a file another unmerged task is changing waits for it, because two pull requests
+ * that edit the same lines cannot both merge.
  */
 export function readyTasks(tasks: PlanTask[], cap: number): string[] {
   const settled = new Set(tasks.filter((t) => SETTLED.has(t.state)).map((t) => t.key));
   const running = tasks.filter((t) => t.state === 'running').length;
   const room = Math.max(0, cap - running);
-  return tasks
-    .filter((t) => t.state === 'waiting' && t.dependsOn.every((d) => settled.has(d)))
-    .slice(0, room)
-    .map((t) => t.key);
+  // The files that tasks not yet merged are working on, including the ones chosen in this pass.
+  const busy: string[][] = tasks
+    .filter((t) => t.state === 'running' || t.state === 'review')
+    .map((t) => t.paths ?? []);
+  const chosen: string[] = [];
+  for (const t of tasks) {
+    if (chosen.length >= room) break;
+    if (t.state !== 'waiting' || !t.dependsOn.every((d) => settled.has(d))) continue;
+    const mine = t.paths ?? [];
+    if (busy.some((p) => pathsOverlap(mine, p))) continue;
+    chosen.push(t.key);
+    busy.push(mine);
+  }
+  return chosen;
 }
 
 export interface PlanProgress {
@@ -80,6 +100,8 @@ export function taskPrompt(
   design: { path: string },
   task: DesignTask,
   others: DesignTask[],
+  /** Set when an earlier attempt could not merge, and says why. */
+  redo?: string,
 ): string {
   const lines = [
     `${task.id}: ${task.title}`,
@@ -92,6 +114,12 @@ export function taskPrompt(
     'It is done when:',
     ...task.doneWhen.map((d) => `- ${d}`),
   ];
+  if (redo) {
+    lines.push(
+      '',
+      `This is a new attempt. An earlier attempt's pull request could not merge: ${redo} Start from the current main branch, which already holds the changes other tasks merged meanwhile, and do this task again on top of it. Do not undo or rewrite what is already there.`,
+    );
+  }
   const before = others.filter((o) => task.dependsOn.includes(o.id));
   const rest = others.filter((o) => o.id !== task.id && !task.dependsOn.includes(o.id));
   if (before.length > 0) {

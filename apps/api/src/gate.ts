@@ -16,7 +16,7 @@ interface PrCard {
 }
 
 export type GateState =
-  'waiting_ci' | 'merged' | 'ci_failed' | 'stale' | 'closed' | 'timed_out' | 'failed';
+  'waiting_ci' | 'merged' | 'ci_failed' | 'stale' | 'closed' | 'timed_out' | 'failed' | 'conflict';
 
 export interface GateInfo {
   state: GateState;
@@ -183,6 +183,32 @@ export function createGate({
     return 'waiting_ci';
   }
 
+  /**
+   * The pull request cannot merge because something merged meanwhile changed the same lines. GitHub does not run the
+   * checks on such a pull request, so waiting for them would never end. Nobody can fix it by merging main in, so the
+   * work has to be redone on the current main.
+   */
+  async function conflicted(row: InteractionRow, card: PrCard, since: string): Promise<GateState> {
+    await finish(
+      row,
+      {
+        state: 'conflict',
+        since,
+        detail:
+          'the branch conflicts with the base branch: something merged meanwhile changed the same lines',
+      },
+      'gate.conflict',
+    );
+    await github
+      .comment(
+        card.repository,
+        card.prNumber,
+        'The platform did not merge this: it conflicts with changes that were merged after it was written. The work has to be redone on the current main branch.',
+      )
+      .catch(() => {});
+    return 'conflict';
+  }
+
   /** Looks at one approved review and moves it forward. Safe to call repeatedly. */
   async function evaluate(row: InteractionRow): Promise<GateState | null> {
     if (!isPr(row)) return null;
@@ -231,6 +257,8 @@ export function createGate({
           .catch(() => {});
         return 'stale';
       }
+
+      if (pr.mergeable_state === 'dirty') return conflicted(row, card, since);
 
       const ci = await github.checkConclusion(card.repository, card.headSha, required);
       if (ci === 'pending') {
@@ -286,6 +314,7 @@ export function createGate({
         if (e instanceof GitHubError && (e.status === 405 || e.status === 409)) {
           const fresh = await github.getPullRequest(card.repository, card.prNumber);
           if (fresh.mergeable_state === 'behind') return catchUp(row, card, since);
+          if (fresh.mergeable_state === 'dirty') return conflicted(row, card, since);
         }
         throw e;
       }

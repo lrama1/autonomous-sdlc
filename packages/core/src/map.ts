@@ -119,7 +119,8 @@ function buildStage(runs: MapRun[], asks: MapAsk[], plan?: MapPlan): MapStage {
   const open = mine.filter((a) => a.state === 'open');
   const merged = mine.filter((a) => a.type === 'review' && a.gate === 'merged');
   const failed = mine.filter(
-    (a) => a.gate === 'ci_failed' || a.gate === 'failed' || a.gate === 'stale',
+    (a) =>
+      a.gate === 'ci_failed' || a.gate === 'failed' || a.gate === 'stale' || a.gate === 'conflict',
   );
   const active = eng.filter((r) => ACTIVE_RUN.has(r.state));
   const items: MapStage['items'] = [

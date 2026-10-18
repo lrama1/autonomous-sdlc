@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|overlap|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -176,7 +176,13 @@ try {
    * Plays the people around a build plan until it ends: approves the engineers' pull requests, answers their
    * questions with the agent's own recommendation, and records when each task changed state.
    */
-  const drivePlan = async (initiativeId: string, handled: string[], startedAt: number) => {
+  const drivePlan = async (
+    initiativeId: string,
+    handled: string[],
+    startedAt: number,
+    /** Return when the plan is stuck on a failed task, instead of stopping the script with an error. */
+    allowFailed = false,
+  ) => {
     const getPlan = async () =>
       (await call(bob, 'GET', `/api/initiatives/${initiativeId}/plan`)).plan as any;
     let maxRunning = 0;
@@ -195,7 +201,11 @@ try {
             timeline.push(`${Math.round((Date.now() - startedAt) / 1000)}s ${t.key}:${t.state}`);
           }
         }
-        if (p.tasks.some((t: any) => t.state === 'failed'))
+        const failed = p.tasks.some((t: any) => t.state === 'failed');
+        if (failed && allowFailed) {
+          const live = p.tasks.some((t: any) => t.state === 'running' || t.state === 'review');
+          if (!live) return p;
+        } else if (failed)
           throw new Error(
             `a task failed: ${JSON.stringify(p.tasks.map((t: any) => [t.key, t.state, t.detail]))}`,
           );
@@ -1478,6 +1488,105 @@ try {
     check(test.includes(`/page-${s}`), 'F  and a test for it');
     say(
       `cost: ${runs.rows.map((r: any) => `${r.agent_role} $${(r.cost_micros / 1e6).toFixed(3)}`).join(', ')}`,
+    );
+  }
+
+  // ---------------- Overlap: three parallel tasks that all edit the same file ----------------
+  if (phase === 'overlap') {
+    // OVERLAP_PATHS=hidden: the design does not say that the tasks share a file, so only the Gate can notice.
+    const hidden = process.env.OVERLAP_PATHS === 'hidden';
+    say(
+      `--- overlap (${hidden ? 'the design hides the shared file' : 'the design declares the shared file'}): three tasks that can run together all add a route to src/server.js ---`,
+    );
+    const cara = await signInAs(stack.publicUrl, 'dev-cara'); // Architect
+    const specs: any[] = await gh(`/repos/${REPO}/contents/docs/spec`);
+    const specFile: string = specs
+      .map((x) => x.name as string)
+      .sort()
+      .at(-1)!;
+    const s = stamp;
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Overlap ${s}`,
+      goal: 'Three routes in one file.',
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+    });
+    const route = (k: string) => `/${k}-${s}`;
+    const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+      role: 'architect',
+      budgetUsd: 1.5,
+      task:
+        `Treat docs/spec/${specFile} as background only. Design this work instead, and write the design to docs/design/overlap-${s}.md following your instructions. ` +
+        `The task list is exactly three tasks, all backend_engineer, with no dependency between them. ` +
+        `T1 adds GET ${route('red')} to src/server.js answering JSON {"colour": "red"}, with a test in test/server.test.js. ` +
+        `T2 adds GET ${route('green')} to src/server.js answering JSON {"colour": "green"}, with a test in test/server.test.js. ` +
+        `T3 adds GET ${route('blue')} to src/server.js answering JSON {"colour": "blue"}, with a test in test/server.test.js. ` +
+        (hidden
+          ? `Give the tasks different paths, and list no other file for them: T1 has only docs/red-${s}.md, T2 only docs/green-${s}.md, T3 only docs/blue-${s}.md. `
+          : `The paths of every task are src/server.js and test/server.test.js. `) +
+        `Do not ask any questions. Commit it and change no other file.`,
+    });
+    const g1 = await waitFor(
+      'the design review',
+      () => openFor(cara, designRun.id, ['review']),
+      600_000,
+    );
+    await call(cara, 'POST', `/api/interactions/${g1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Build it.',
+    });
+    const started = Date.now();
+    await waitFor(
+      'the build plan',
+      async () => (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan ?? null,
+      420_000,
+      3000,
+    );
+    const { final, maxRunning, timeline } = await drivePlan(init.id, [g1.id], started, true);
+    say(`timeline: ${timeline.join(' | ')}`);
+    say(`most tasks running at once: ${maxRunning}`);
+    for (const t of final.tasks)
+      say(
+        `  ${t.key} ${t.state}${t.attempt > 1 ? ` (attempt ${t.attempt})` : ''}${t.detail ? `: ${t.detail}` : ''}`,
+      );
+    check(
+      final.state === 'done',
+      `O  the plan finished without a person stepping in (${final.state})`,
+    );
+    if (!hidden)
+      check(
+        maxRunning === 1,
+        `O  tasks that declare the same file ran one at a time (most at once: ${maxRunning})`,
+      );
+    const redone = final.tasks.filter((x: any) => x.attempt > 1).length;
+    const conflicts = (
+      await db.query(
+        "select count(*)::int n from activity_event where action = 'gate.conflict' and initiative_id = $1",
+        [init.id],
+      )
+    ).rows[0].n;
+    say(`conflicts the Gate found: ${conflicts}; tasks that were redone: ${redone}`);
+    if (hidden)
+      check(
+        conflicts === redone,
+        `O  every conflict led to a redo (${conflicts} conflicts, ${redone} tasks redone)`,
+      );
+    check(
+      final.tasks.every((t: any) => t.state === 'merged'),
+      `O  every task merged (${final.tasks.map((t: any) => t.key + ':' + t.state + (t.attempt > 1 ? '#' + t.attempt : '')).join(' ')})`,
+    );
+    const server = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/src/server.js`)).content,
+      'base64',
+    ).toString('utf8');
+    for (const k of ['red', 'green', 'blue'])
+      check(server.includes(route(k)), `O  main serves ${route(k)}`);
+    const cost = await db.query(
+      'select count(*)::int n, coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1 and agent_role = $2',
+      [init.id, 'backend_engineer'],
+    );
+    say(
+      `build runs: ${cost.rows[0].n}, cost $${(cost.rows[0].c / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - started) / 1000)}s`,
     );
   }
 

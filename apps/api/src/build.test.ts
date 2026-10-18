@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
+  activityEvent,
   agentRun,
   buildPlan,
   buildTask,
@@ -36,10 +37,15 @@ let n = 0;
 
 let designText = '';
 let reads = 0;
+const closed: number[] = [];
 const github: BuildDeps['github'] = {
   readFile: async () => {
     reads++;
     return designText;
+  },
+  comment: async () => {},
+  closePullRequest: async (_repo, n) => {
+    closed.push(n);
   },
 };
 const deps = (o: Partial<BuildDeps> = {}): BuildDeps => ({
@@ -51,8 +57,11 @@ const deps = (o: Partial<BuildDeps> = {}): BuildDeps => ({
 });
 
 const block = (tasks: string) => `# Design\n\n\`\`\`sdlc-tasks\n${tasks}\`\`\`\n`;
-const task = (id: string, o: { dependsOn?: string[]; role?: string; done?: string } = {}) =>
-  `- id: ${id}\n  title: Task ${id}\n  role: ${o.role ?? 'backend_engineer'}\n  stories: [US-1]\n  depends_on: [${(o.dependsOn ?? []).join(', ')}]\n  paths: [src/${id}.js]\n  done_when:\n    - '${o.done ?? `${id} works`}'\n`;
+const task = (
+  id: string,
+  o: { dependsOn?: string[]; role?: string; done?: string; paths?: string } = {},
+) =>
+  `- id: ${id}\n  title: Task ${id}\n  role: ${o.role ?? 'backend_engineer'}\n  stories: [US-1]\n  depends_on: [${(o.dependsOn ?? []).join(', ')}]\n  paths: [${o.paths ?? `src/${id}.js`}]\n  done_when:\n    - '${o.done ?? `${id} works`}'\n`;
 const THREE = block(task('T1') + task('T2', { dependsOn: ['T1'] }) + task('T3'));
 
 /** An initiative whose architect design was approved and merged. */
@@ -107,7 +116,7 @@ async function planOf(initiativeId: string) {
 async function finishTask(
   planId: string,
   key: string,
-  how: 'merged' | 'declined' | 'no_pr' | 'run_failed' | 'review_open' | 'ci_failed',
+  how: 'merged' | 'declined' | 'no_pr' | 'run_failed' | 'review_open' | 'ci_failed' | 'conflict',
 ) {
   const [t] = await db
     .select()
@@ -143,12 +152,16 @@ async function finishTask(
           : { decision: 'approved' },
     contextCard: {
       kind: 'pull_request',
+      repository: 'o/r',
+      prNumber: 20,
       gate:
         how === 'merged'
           ? { state: 'merged' }
           : how === 'ci_failed'
             ? { state: 'ci_failed', detail: 'tests' }
-            : undefined,
+            : how === 'conflict'
+              ? { state: 'conflict' }
+              : undefined,
     },
   });
 }
@@ -426,6 +439,77 @@ describe('running the plan', () => {
       T3: 'waiting',
     });
     expect((await planOf(f.initiativeId)).plan!.detail).toContain('budget');
+  });
+});
+
+describe('tasks that touch the same files', () => {
+  it('runs tasks that declare the same file one after another', async () => {
+    designText = block(
+      task('T1', { paths: 'src/server.js' }) +
+        task('T2', { paths: 'src/server.js, test/a.js' }) +
+        task('T3', { paths: 'src/other.js' }),
+    );
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    expect((await planOf(f.initiativeId)).state).toEqual({
+      T1: 'running',
+      T2: 'waiting',
+      T3: 'running',
+    });
+    await finishTask(plan.id, 'T1', 'review_open');
+    await buildTick(deps());
+    expect((await planOf(f.initiativeId)).state).toMatchObject({ T1: 'review', T2: 'waiting' });
+    await db
+      .update(interaction)
+      .set({
+        state: 'answered',
+        answer: { decision: 'approved' },
+        contextCard: { kind: 'pull_request', gate: { state: 'merged' } },
+      })
+      .where(
+        and(
+          eq(interaction.runId, (await planOf(f.initiativeId)).tasks[0]!.runId!),
+          eq(interaction.type, 'review'),
+        ),
+      );
+    await buildTick(deps());
+    expect((await planOf(f.initiativeId)).state).toMatchObject({ T1: 'merged', T2: 'running' });
+  });
+
+  it('redoes a task on the current main when its pull request conflicted, and closes the old one', async () => {
+    designText = block(task('T1'));
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    const firstRun = (await planOf(f.initiativeId)).tasks[0]!.runId;
+    await finishTask(plan.id, 'T1', 'conflict');
+    closed.length = 0;
+    await buildTick(deps());
+    const after = (await planOf(f.initiativeId)).tasks[0]!;
+    // The same pass redoes it: closed the old pull request and started a new run.
+    expect(closed).toEqual([20]);
+    expect(after).toMatchObject({ state: 'running', attempt: 2 });
+    expect(after.runId).not.toBe(firstRun);
+    const [run] = await db.select().from(agentRun).where(eq(agentRun.id, after.runId!));
+    expect(run!.task).toContain('This is a new attempt');
+    expect(run!.task).toContain('conflicted with changes that merged in the meantime');
+    const log = await db.select().from(activityEvent).where(eq(activityEvent.runId, firstRun!));
+    expect(log.map((l) => l.action)).toContain('build_task.redo');
+  });
+
+  it('gives up and asks a person when it keeps conflicting', async () => {
+    designText = block(task('T1'));
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await finishTask(plan.id, 'T1', 'conflict');
+      await buildTick(deps());
+    }
+    const task1 = (await planOf(f.initiativeId)).tasks[0]!;
+    expect(task1.state).toBe('failed');
+    expect(task1.detail).toContain('conflicted with main on each of 3 attempts');
   });
 });
 

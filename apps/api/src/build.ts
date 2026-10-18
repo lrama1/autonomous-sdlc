@@ -16,7 +16,7 @@ export type TaskRow = typeof buildTask.$inferSelect;
 
 export interface BuildDeps {
   db: Db;
-  github: Pick<GitHubService, 'readFile'>;
+  github: Pick<GitHubService, 'readFile' | 'comment' | 'closePullRequest'>;
   agents: Map<string, LoadedAgent>;
   /** Runs one initiative may have going at once. */
   maxActive: number;
@@ -28,6 +28,9 @@ export interface BuildDeps {
 const DESIGN_FILE = /^docs\/design\/[^/]+\.md$/;
 const RUN_FAILED = new Set(['failed', 'cancelled', 'budget_exceeded', 'timed_out']);
 const GATE_STOPPED = new Set(['ci_failed', 'failed', 'stale', 'closed', 'timed_out']);
+/** How many times a task is redone on the current main after its pull request conflicted. */
+const MAX_REDO = 2;
+const REDO = 'Redoing: its pull request conflicted with changes that merged meanwhile.';
 
 interface DesignCard {
   repository?: string;
@@ -165,7 +168,7 @@ function settle(
   task: TaskRow,
   run: typeof agentRun.$inferSelect | undefined,
   review: typeof interaction.$inferSelect | undefined,
-): { state: TaskState; detail: string | null } | null {
+): { state: TaskState; detail: string | null; redo?: boolean } | null {
   if (!run) return { state: 'failed', detail: 'The run for this task is missing.' };
   if (RUN_FAILED.has(run.state)) {
     return {
@@ -182,6 +185,15 @@ function settle(
   const card = review.contextCard as { gate?: { state?: string; detail?: string } };
   const decision = (review.answer as { decision?: string } | null)?.decision;
   if (card.gate?.state === 'merged') return { state: 'merged', detail: null };
+  if (card.gate?.state === 'conflict') {
+    // Another task changed the same lines and merged first. Do this one again on top of it.
+    return task.attempt <= MAX_REDO
+      ? { state: 'waiting', detail: REDO, redo: true }
+      : {
+          state: 'failed',
+          detail: `Its pull request conflicted with main on each of ${task.attempt} attempts.`,
+        };
+  }
   if (review.state === 'answered' && decision && decision !== 'approved') {
     return { state: 'failed', detail: `The reviewer chose "${decision}".` };
   }
@@ -232,6 +244,26 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
       .where(eq(buildTask.id, task.id));
     task.state = next.state;
     task.detail = next.detail;
+    if (next.redo) {
+      const pr = review?.contextCard as { repository?: string; prNumber?: number } | undefined;
+      if (pr?.repository && pr.prNumber) {
+        await deps.github
+          .comment(
+            pr.repository,
+            pr.prNumber,
+            'Closing this: the task is being redone on the current main branch.',
+          )
+          .catch(() => {});
+        await deps.github.closePullRequest(pr.repository, pr.prNumber).catch(() => {});
+      }
+      await recordActivity(db, {
+        actorType: 'system',
+        initiativeId: plan.initiativeId,
+        runId: task.runId,
+        action: 'build_task.redo',
+        detail: { planId: plan.id, task: task.key, attempt: task.attempt },
+      });
+    }
     if (next.state === 'merged' || next.state === 'failed') {
       await recordActivity(db, {
         actorType: 'system',
@@ -275,7 +307,12 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
     doneWhen: t.doneWhen,
   }));
   const ready = readyTasks(
-    tasks.map((t) => ({ key: t.key, state: t.state as TaskState, dependsOn: t.dependsOn })),
+    tasks.map((t) => ({
+      key: t.key,
+      state: t.state as TaskState,
+      dependsOn: t.dependsOn,
+      paths: t.paths,
+    })),
     deps.maxActive,
   );
   for (const key of ready) {
@@ -298,7 +335,14 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
       const run = await createRun(db, deps.agents, {
         initiativeId: init.id,
         role: task.role,
-        task: taskPrompt({ path: plan.designPath }, def, designs),
+        task: taskPrompt(
+          { path: plan.designPath },
+          def,
+          designs,
+          task.detail === REDO
+            ? 'It conflicted with changes that merged in the meantime.'
+            : undefined,
+        ),
         sponsorPersonId: sponsor,
       });
       await db
