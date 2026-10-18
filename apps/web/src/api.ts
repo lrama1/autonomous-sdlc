@@ -4,6 +4,8 @@ import {
   autopilotSchema,
   bugSchema,
   buildPlanSchema,
+  costsSchema,
+  monthlyBudgetSchema,
   healthSchema,
   integrationSchema,
   interactionSchema,
@@ -22,11 +24,13 @@ import type {
   BugCreate,
   BugDto,
   BuildPlanDto,
+  CostsDto,
   Health,
   IntegrationDto,
   InteractionDto,
   InterruptionMetricsDto,
   Me,
+  MonthlyBudgetDto,
   PreviewDto,
   Ready,
   StageStartDto,
@@ -257,3 +261,11 @@ export const skipStageStep = (id: string) =>
 export const getBugs = (): Promise<BugDto[]> => call('/api/bugs', z.array(bugSchema));
 export const reportBug = (initiativeId: string, body: BugCreate): Promise<BugDto> =>
   call(`/api/initiatives/${initiativeId}/bugs`, bugSchema, { method: 'POST', body });
+
+export const getCosts = (days: number, initiativeId: string | null): Promise<CostsDto> =>
+  call(
+    `/api/costs?days=${days}${initiativeId ? `&initiativeId=${initiativeId}` : ''}`,
+    costsSchema,
+  );
+export const getBudget = (): Promise<MonthlyBudgetDto> =>
+  call('/api/costs/budget', monthlyBudgetSchema);

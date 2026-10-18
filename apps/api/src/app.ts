@@ -34,6 +34,8 @@ import { buildTick } from './build.js';
 import { registerBuildRoutes } from './build-routes.js';
 import { registerStageRoutes } from './stage-routes.js';
 import { registerBugRoutes } from './bug-routes.js';
+import { registerCostRoutes } from './cost-routes.js';
+import { checkBudgetAlert } from './costs.js';
 import { stageTick } from './stages.js';
 import { applyReleaseDecision } from './releases.js';
 import { registerIntegrationRoutes, refreshAllDocs } from './integration-routes.js';
@@ -183,6 +185,11 @@ export async function buildApp({
   registerBuildRoutes(app, db);
   registerStageRoutes(app, db);
   registerBugRoutes(app, db, loadedAgents);
+  const budget = {
+    monthlyBudgetUsd: config.MONTHLY_BUDGET_USD,
+    alertPercent: config.BUDGET_ALERT_PERCENT,
+  };
+  registerCostRoutes(app, db, budget);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,
@@ -273,6 +280,8 @@ export async function buildApp({
         // The spec and design steps first, then the build, so one pass can carry work from a step to the next.
         stageTick({ db, agents: loadedAgents, autoStartMinutes, github: ghService, log })
           .catch((e) => app.log.error({ err: e }, 'stage tick failed'))
+          .then(() => checkBudgetAlert(db, budget))
+          .catch((e) => app.log.error({ err: e }, 'budget check failed'))
           .then(() =>
             buildTick({
               db,

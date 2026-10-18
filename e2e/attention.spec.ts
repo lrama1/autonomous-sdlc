@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import {
   assumption,
   buildPlan,
+  costRecord,
   buildTask,
   createDb,
   createRunFixture,
@@ -295,6 +296,41 @@ test('a person reports a bug, an engineer starts the fix, and the report follows
   // The worker starts the run, and the report moves on.
   await expect(bug).toHaveAttribute('data-state', 'fixing', { timeout: 20_000 });
   await expect(bug).toContainText('The agent is working on it');
+});
+
+test('the cost page shows where the money went, and an admin is warned near the monthly budget', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [init] = await db.select().from(initiative).where(eq(initiative.id, f.initiativeId));
+  await db.insert(costRecord).values([
+    {
+      runId: f.runId,
+      initiativeId: f.initiativeId,
+      source: 'agent',
+      alias: 'agent-default',
+      providerModel: 'anthropic/claude-sonnet-4.6',
+      inputTokens: 100,
+      cachedTokens: 300,
+      outputTokens: 50,
+      costMicros: 900_000,
+    },
+  ]);
+
+  await signInAs(page, /Dev Admin/);
+  // Against a one-dollar budget, 90 cents is a warning (or more, if other tests spent too).
+  await expect(page.getByTestId('budget-banner')).toHaveAttribute('data-level', /warning|exceeded/);
+  await page.getByTestId('nav-costs').click();
+  await page.getByLabel('Initiative').selectOption(init!.id);
+  await expect(page.getByTestId('monthly')).toHaveAttribute('data-level', /warning|exceeded/);
+  await expect(page.getByTestId('totals')).toContainText('$0.900');
+  await expect(page.getByTestId('totals')).toContainText('75%');
+  await expect(page.getByTestId('by-model')).toContainText('anthropic/claude-sonnet-4.6');
+  await expect(page.getByTestId('by-role')).toContainText('backend_engineer');
+  await expect(
+    page.getByTestId('by-initiative').getByRole('link', { name: init!.title }),
+  ).toBeVisible();
+  await expect(page.getByTestId('by-day').locator('.bar')).toHaveCount(1);
 });
 
 test('assumptions are accepted or rejected, and a rejection asks the sponsor what to redo', async ({

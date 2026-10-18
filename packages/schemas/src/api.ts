@@ -395,3 +395,69 @@ export const bugSchema = z.object({
   createdAt: z.string(),
 });
 export type BugDto = z.infer<typeof bugSchema>;
+
+// Cost views (spec 6.8): what the models cost, from the gateway's cost records.
+export const monthlyBudgetSchema = z.object({
+  budgetUsd: z.number().nullable(),
+  spentUsd: z.number(),
+  percent: z.number().nullable(),
+  level: z.enum(['none', 'ok', 'warning', 'exceeded']),
+  month: z.string(),
+  alertPercent: z.number(),
+});
+const tokenFields = {
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cachedTokens: z.number(),
+  cacheWriteTokens: z.number(),
+};
+export const costsSchema = z.object({
+  days: z.number(),
+  from: z.string(),
+  initiativeId: z.string().nullable(),
+  monthly: monthlyBudgetSchema,
+  totals: z.object({
+    costUsd: z.number(),
+    calls: z.number(),
+    runs: z.number(),
+    cacheReadShare: z.number(),
+    ...tokenFields,
+  }),
+  byDay: z.array(z.object({ day: z.string(), costUsd: z.number(), calls: z.number() })),
+  byInitiative: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      costUsd: z.number(),
+      allTimeUsd: z.number(),
+      budgetUsd: z.number().nullable(),
+      percentOfBudget: z.number().nullable(),
+      runs: z.number(),
+    }),
+  ),
+  byRole: z.array(
+    z.object({ role: z.string(), costUsd: z.number(), runs: z.number(), avgPerRunUsd: z.number() }),
+  ),
+  byModel: z.array(
+    z.object({
+      alias: z.string(),
+      providerModel: z.string(),
+      costUsd: z.number(),
+      calls: z.number(),
+      ...tokenFields,
+    }),
+  ),
+  topRuns: z.array(
+    z.object({
+      id: z.string(),
+      role: z.string(),
+      initiativeId: z.string(),
+      initiativeTitle: z.string(),
+      title: z.string(),
+      state: z.string(),
+      costUsd: z.number(),
+    }),
+  ),
+});
+export type CostsDto = z.infer<typeof costsSchema>;
+export type MonthlyBudgetDto = z.infer<typeof monthlyBudgetSchema>;

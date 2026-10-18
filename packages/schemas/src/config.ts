@@ -42,6 +42,9 @@ export const apiConfigSchema = z.object({
   BUILD_MAX_ACTIVE: z.coerce.number().int().positive().default(4),
   // A design approved longer ago than this waits for a person to start its build, in every mode.
   BUILD_AUTOSTART_MIN: z.coerce.number().int().positive().default(120),
+  // The monthly model budget in dollars (0 means none), and the share of it at which admins are warned.
+  MONTHLY_BUDGET_USD: z.coerce.number().nonnegative().default(0),
+  BUDGET_ALERT_PERCENT: z.coerce.number().min(1).max(100).default(80),
   // Slack. Both are needed to answer from chat. Only the bot token is needed to send.
   SLACK_BOT_TOKEN: z.string().min(1).optional(),
   SLACK_SIGNING_SECRET: z.string().min(1).optional(),

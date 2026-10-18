@@ -21,6 +21,11 @@ export default defineConfig({
     url: 'http://localhost:5173/readyz',
     timeout: 180_000,
     reuseExistingServer: !process.env.CI,
-    env: { DEV_DATA_DIR: path.resolve('test-results', 'e2e-data'), SDLC_DEMO: '1' },
+    env: {
+      DEV_DATA_DIR: path.resolve('test-results', 'e2e-data'),
+      SDLC_DEMO: '1',
+      // A small budget, so the cost test can cross the warning line.
+      MONTHLY_BUDGET_USD: '1',
+    },
   },
 });

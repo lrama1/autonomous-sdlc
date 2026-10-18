@@ -450,6 +450,7 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /initiatives/:id/plan`, `POST /plans/:id/start`, `POST /plans/:id/cancel`, `POST /plans/:id/tasks/:key/retry` or `/skip` | The build plan of an approved design. The writes need a Product Owner, Architect or admin |
 | `GET /initiatives/:id/stages`, `POST /stages/:id/start` or `/skip` | The steps that start by themselves or wait for a click: spec, design, bug fix. The writes need a Product Owner, Architect or admin, or for a bug fix an engineer or admin |
 | `GET /bugs?initiativeId=`, `POST /initiatives/:id/bugs` | Bug reports and where each fix is. Anyone signed in can report |
+| `GET /costs?days=&initiativeId=`, `GET /costs/budget` | Spend by day, initiative, agent role and model, with the monthly budget meter. The budget call is for platform admins and returns the warning level |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
 | `POST /slack/interactions` | **Slack only**, verified by Slack's request signature. Not under `/api` |
@@ -483,6 +484,7 @@ One `config` module reads environment variables and validates them with `zod` at
 | `ATTENTION_FILE` | `rules/attention.yaml` | How people are reached (§5): reminder and escalation timing, working hours, the digest, what chat may settle |
 | `ATTENTION_TICK_MS` | `2000` | How often the engine hands out, reminds, escalates, applies defaults and delivers |
 | `BUILD_TICK_MS`, `BUILD_MAX_ACTIVE`, `BUILD_AUTOSTART_MIN` | `3000`, `4`, `120` | How often the build plan looks, how many runs one initiative may have going at once, and how long after its approval a design may still start building on its own |
+| `MONTHLY_BUDGET_USD`, `BUDGET_ALERT_PERCENT` | `0` (none), `80` | The platform-wide monthly spend that the Costs page measures against, and the percent at which a warning shows. A warning only; nothing stops |
 | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | | The token sends. The secret is needed to accept answers. Without the token the notifier only logs. `SLACK_API_URL` is for tests |
 | `GITHUB_APP_AGENT_REF`, `GITHUB_APP_GATE_REF` | | |
 
@@ -636,6 +638,13 @@ Decided with the owner: bugs come in through a form in the web app (not from Git
   - Only the form feeds it. GitHub issues, error monitoring and the rule "start a Bug Agent when X happens" (spec 9, step 7) are not built. Duplicate reports are not detected.
   - A bug that is not fixed after review (changes requested) is not redone automatically, unlike a spec; a person starts again.
   - The Bug Agent ran on Claude Code only.
+
+**Cost views (2026-10-18). Built and tested (API, browser). Not run against a real month of spend.**
+
+- **The Costs page** (nav "Costs"). It reads the `cost_record` rows the gateway already writes. Pick the last 7, 30 or 90 days, and optionally one initiative. It shows total spend, runs, tokens and the share of input read from the prompt cache, bars by day, and tables by initiative (each links to its map), by agent role, and by model.
+- **Monthly budget.** `MONTHLY_BUDGET_USD` is one platform-wide figure for the calendar month (UTC); `0` means none. The page shows a meter. At `BUDGET_ALERT_PERCENT` (80) it turns to a warning, and at 100 to "exceeded".
+- **The alert is a warning only.** The worker records one `budget.alert` activity event per month and level, and platform admins see a banner on every page. It is not sent to Slack, and nothing is stopped. The per-initiative and per-run limits that do stop work are unchanged.
+- **Tested.** Four API tests (grouping, month boundary, the alert recorded once, the admin-only budget call) and a browser test with a one-dollar budget.
 
 **The pipeline: a goal becomes a spec, a design, a plan, and merged code (2026-10-18). Built and proven live (real agents, Docker sandbox, real GitHub).**
 

@@ -3,6 +3,7 @@ import type { Health, Me, Ready } from '@sdlc/schemas';
 import { Assumptions } from './Assumptions';
 import { Autopilot } from './Autopilot';
 import { Bugs } from './Bugs';
+import { BudgetBanner, Costs } from './Costs';
 import { Integrations } from './Integrations';
 import { MapPage } from './MapPage';
 import { Interruptions } from './Interruptions';
@@ -23,6 +24,7 @@ type Route =
   | { page: 'autopilot' }
   | { page: 'integrations' }
   | { page: 'bugs' }
+  | { page: 'costs' }
   | { page: 'map'; initiativeId: string | null };
 
 function parseRoute(hash: string): Route {
@@ -33,6 +35,7 @@ function parseRoute(hash: string): Route {
   if (page === 'autopilot') return { page: 'autopilot' };
   if (page === 'integrations') return { page: 'integrations' };
   if (page === 'bugs') return { page: 'bugs' };
+  if (page === 'costs') return { page: 'costs' };
   if (page === 'map') return { page: 'map', initiativeId: id ?? null };
   return { page: 'home' };
 }
@@ -55,6 +58,7 @@ const NAV: Array<{ page: Route['page']; href: string; label: string }> = [
   { page: 'autopilot', href: '#/autopilot', label: 'Autopilot' },
   { page: 'interruptions', href: '#/interruptions', label: 'Interruptions' },
   { page: 'bugs', href: '#/bugs', label: 'Bugs' },
+  { page: 'costs', href: '#/costs', label: 'Costs' },
   { page: 'integrations', href: '#/integrations', label: 'Integrations' },
 ];
 
@@ -94,6 +98,9 @@ export function App() {
           ))}
         </nav>
       )}
+      {signedIn && state.phase === 'ready' && state.me?.roles.includes('platform_admin') && (
+        <BudgetBanner />
+      )}
       {(!signedIn || route.page === 'home') && <h1>Autonomous SDLC</h1>}
       {state.phase === 'loading' && <p>Loading…</p>}
       {state.phase === 'error' && (
@@ -109,6 +116,7 @@ export function App() {
       {state.phase === 'ready' && state.me && route.page === 'autopilot' && <Autopilot />}
       {state.phase === 'ready' && state.me && route.page === 'integrations' && <Integrations />}
       {state.phase === 'ready' && state.me && route.page === 'bugs' && <Bugs me={state.me} />}
+      {state.phase === 'ready' && state.me && route.page === 'costs' && <Costs />}
       {state.phase === 'ready' && state.me && route.page === 'map' && (
         <MapPage initiativeId={route.initiativeId} me={state.me} />
       )}
