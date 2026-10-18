@@ -600,6 +600,11 @@ Not built, or only partly:
   - Local (non-Docker) runs on Windows need `COPILOT_BIN` to point at something `spawn` can run, because the npm shim is a `.ps1` file.
   - The phase B and C scripts had drifted since Step 3: balanced mode merged their docs-only change by rule, so they waited for a review that never came. They now start their initiatives in guided mode.
 
+**CI (2026-10-18).** GitHub Actions now builds the sandbox image, so the six Docker sandbox tests run there (they used to be skipped) and pass on Ubuntu 24.04. The four actions are pinned to commit SHAs and are on versions that run on Node 24, which removes the Node 20 warning. The runner image is the pinned `ubuntu-24.04`. Two things the Linux run found:
+
+- Public ECR throttled GitHub's shared addresses (HTTP 429), so CI builds from Docker Hub (`--build-arg NODE_IMAGE=node:22-bookworm-slim`). The Dockerfile still defaults to ECR.
+- **On Linux the platform must listen on a non-loopback address for the Docker adapter to work.** `host.docker.internal` is the docker0 bridge address there, not the host's loopback as in Docker Desktop. A dev stack with the API and gateway on `127.0.0.1` (the local default) cannot be reached by a sandbox on Linux. Set `API_HOST` and `GATEWAY_HOST` to `0.0.0.0` (the container image already does). I fixed the tests, not the default, and I did not run the full live acceptance on Linux.
+
 ## 17. Test strategy
 
 - **Unit** (`packages/core`): state machines, rules evaluation, ranking, routing. No I/O.
