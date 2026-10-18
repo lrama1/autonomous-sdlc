@@ -5,13 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import pg from 'pg';
+import { parseDesignTasks } from '@sdlc/core';
 import type { CookieJar } from './signin.js';
 import { signInAs } from './signin.js';
 import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -932,6 +933,140 @@ try {
         headers: auth,
       });
     }
+  }
+
+  // ---------------- Design: the Architect agent designs an approved spec, and only an Architect decides it ----------------
+  if (phase === 'design') {
+    say(
+      '--- design: the Architect agent turns a spec into a design and a task list (checkpoint G1) ---',
+    );
+    if (!ghToken)
+      throw new Error('GH_TOKEN is needed to read the spec from the scratch repository');
+    const cara = await signInAs(stack.publicUrl, 'dev-cara'); // Architect
+    const specs: any[] = await gh(`/repos/${REPO}/contents/docs/spec`);
+    const specFile: string = specs
+      .map((s) => s.name as string)
+      .sort()
+      .at(-1)!;
+    const slug = specFile.replace(/\.md$/, '');
+    const specText = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/docs/spec/${specFile}`)).content,
+      'base64',
+    ).toString('utf8');
+    const stories = [...new Set(specText.match(/US-\d+/g) ?? [])];
+    say(`designing docs/spec/${specFile} (${stories.join(', ')})`);
+
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Design ${stamp}`,
+      goal: `Design the ${slug} spec.`,
+      repositoryId: repo.id,
+      autonomyMode: 'autopilot',
+    });
+    const run = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+      role: 'architect',
+      budgetUsd: 1.5,
+      task:
+        `Design the approved spec docs/spec/${specFile}. Write the design to docs/design/${slug}.md following your instructions. ` +
+        `Do not ask any questions. Commit it and do not change any other file.`,
+    });
+    const g1 = await waitFor('the design review', () => openFor(cara, run.id, ['review']), 600_000);
+    const row = await db.query('select checkpoint_id, role_needed from interaction where id = $1', [
+      g1.id,
+    ]);
+    check(
+      row.rows[0].checkpoint_id === 'G1' && row.rows[0].role_needed === 'architect',
+      'D  the design is checkpoint G1, for the Architect',
+    );
+    check(
+      g1.contextCard.autoMerge?.auto === false,
+      `D  it was NOT approved by rule although the initiative is in autopilot: "${g1.contextCard.autoMerge?.reason}"`,
+    );
+    check(
+      g1.contextCard.diff.changedPaths.length === 1 &&
+        g1.contextCard.diff.changedPaths[0] === `docs/design/${slug}.md`,
+      `D  the change is only docs/design/${slug}.md (${g1.contextCard.diff.changedPaths.join(', ')})`,
+    );
+    let blocked = false;
+    try {
+      await call(bob, 'POST', `/api/interactions/${g1.id}/answer`, {
+        decision: 'approved',
+        answer: 'Not mine to decide.',
+      });
+    } catch (e) {
+      blocked = /403/.test(String(e));
+    }
+    check(blocked, 'D  an engineer cannot decide the design: it needs an Architect');
+
+    const branch: string = (await runState(run.id)).branch;
+    const design = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/docs/design/${slug}.md?ref=${encodeURIComponent(branch)}`))
+        .content,
+      'base64',
+    ).toString('utf8');
+    const headings = [...design.matchAll(/^## (.+)$/gm)].map((m) => m[1]!.toLowerCase());
+    const wanted = [
+      'spec',
+      'approach',
+      'changes',
+      'interfaces',
+      'external systems',
+      'risks',
+      'test strategy',
+      'assumptions',
+      'open questions',
+      'tasks',
+    ];
+    const missing = wanted.filter((w) => !headings.some((h) => h.includes(w)));
+    check(
+      missing.length === 0,
+      `D  the design has every section (${missing.length ? `missing: ${missing.join(', ')}` : 'all 10'})`,
+    );
+    const parsed = parseDesignTasks(design);
+    check(
+      parsed.ok,
+      `D  the task list reads and validates (${parsed.ok ? parsed.tasks.length + ' tasks, order ' + parsed.order.join(' > ') : parsed.errors.join('; ')})`,
+    );
+    if (parsed.ok) {
+      const covered = new Set(parsed.tasks.flatMap((t) => t.stories));
+      const uncovered = stories.filter((s) => !covered.has(s));
+      check(
+        uncovered.length === 0,
+        `D  every story in the spec is served by a task (${uncovered.length ? `not covered: ${uncovered.join(', ')}` : stories.join(', ')})`,
+      );
+      say(`tasks: ${parsed.tasks.map((t) => `${t.id} ${t.role} "${t.title}"`).join(' | ')}`);
+    }
+    const map: any = await call(bob, 'GET', `/api/initiatives/${init.id}/map`);
+    const spec = map.stages.find((s: any) => s.id === 'spec');
+    check(
+      spec.status === 'waiting_human' && spec.waitingOn.includes('architect'),
+      `D  the map shows spec and design waiting on the Architect (${spec.status}: ${spec.waitingOn.join(', ')})`,
+    );
+
+    await call(cara, 'POST', `/api/interactions/${g1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Design accepted.',
+    });
+    const merged = await waitFor(
+      'the Gate merges the design',
+      async () => {
+        const r = await db.query(
+          "select context_card -> 'gate' as gate from interaction where id = $1",
+          [g1.id],
+        );
+        const gate = r.rows[0]?.gate;
+        if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+          throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+        return gate?.state === 'merged' ? gate : null;
+      },
+      300_000,
+      4000,
+    );
+    check(
+      Boolean(merged.mergedSha),
+      'D  after the Architect approved it, the Gate merged the design',
+    );
+    const cost = await db.query('select cost_micros from agent_run where id = $1', [run.id]);
+    say(`the design run cost $${(Number(cost.rows[0].cost_micros) / 1e6).toFixed(4)}`);
   }
 
   // ---------------- Preview: the review pack shows what the repository's pipeline reported ----------------

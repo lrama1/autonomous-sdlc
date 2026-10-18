@@ -7,6 +7,7 @@ import { RunInactiveError, RunnerApi } from './api.js';
 import { PROXY_VARS, killTree, runClaude } from './claude.js';
 import type { EngineEvent, EngineRun } from './claude.js';
 import { COPILOT_ENGINE, runCopilot } from './copilot.js';
+import { checkDesigns } from './design-check.js';
 import { summarizeDiff } from './diff.js';
 import {
   checkoutWorkBranch,
@@ -309,6 +310,26 @@ export async function runOnce(env: RunnerEnv): Promise<ExitReason> {
         await events.flush();
         await api.finished('blocked');
         return 'blocked';
+      }
+
+      // The Architect's task list is read by the platform later, so it must read now.
+      if (spec.role === 'architect') {
+        const problem = await checkDesigns(repoDir, diff.changedPaths);
+        events.push([{ type: 'design.checked', payload: { ok: problem === null, problem } }]);
+        if (problem) {
+          attempts++;
+          if (attempts < spec.limits.maxVerifyAttempts) {
+            prompt = `The design is not accepted yet (attempt ${attempts} of ${spec.limits.maxVerifyAttempts}). Fix it and commit. The task list is a fenced block named sdlc-tasks holding a YAML list. Quote any line that contains a colon, a brace or a quote.\n\n${problem}`;
+            continue;
+          }
+          await api.trigger(
+            'verify_failed',
+            `The design's task list was not valid after ${attempts} attempts:\n${problem}`,
+          );
+          await events.flush();
+          await api.finished('blocked');
+          return 'blocked';
+        }
       }
 
       attempts++;

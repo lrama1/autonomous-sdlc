@@ -220,6 +220,7 @@ export type RunEvent = {
   | { type: 'tool.result';       toolCallId: string; ok: boolean; summary: string }
   | { type: 'file.changed';      path: string; change: 'create' | 'edit' | 'delete' }
   | { type: 'verify.finished';   ok: boolean; command: string; durationMs: number; summary: string }
+  | { type: 'design.checked';    ok: boolean; problem: string | null }
   | { type: 'interaction.raised'; interactionId: string; blocking: boolean }
   | { type: 'interaction.settled'; interactionId: string; via: 'human' | 'default' }
   | { type: 'assumption.declared'; assumptionId: string; text: string }
@@ -560,7 +561,7 @@ Not proven, or not built:
 - **G6, release** (`POST /api/initiatives/:id/releases`). A Product Owner, DevOps or admin prepares a version. The platform lists what merged since the last release, pins the tip of the integration branch, and requires the required check to be green on it. The checkpoint is a hard stop for `RELEASE_APPROVER_ROLE` (default Product Owner), never defaulted, never answered in chat. On approval the **Gate App** creates the tag and the release with the notes, but only if the branch has not moved. Live: published on `sdlc-scratch`, then removed.
 
 Not built, or only partly:
-- **A platform-run preview** (the repository's pipeline provides previews today, see "Previews" below). **Design and the Architect agent** (only the Product agent exists, so G1 covers the spec). **Stories as records**: they live inside the spec document.
+- **A platform-run preview** (the repository's pipeline provides previews today, see "Previews" below). **Stories as records**: they live inside the spec document.
 - **Nothing starts the next stage for you.** The map shows where work is. A person starts the spec run, the engineer runs, and the release.
 - The map is boxes and arrows, not xyflow, and there is no portfolio view, release calendar or freeze, hotfix path, or scope-change re-opening.
 - A new external host in a code diff is not detected (agents are told to propose it, and the sandbox cannot reach it anyway). A `none` test strategy is shown as a warning, not enforced as a trigger. Credentials from the register are not put into sandboxes.
@@ -599,6 +600,21 @@ Not built, or only partly:
   - The CLI is a pre-release version (1.0.100-1 is the build the spike used; the stable tag is 1.0.98). GitHub's terms for automated use of the CLI against a self-chosen model endpoint were not checked.
   - Local (non-Docker) runs on Windows need `COPILOT_BIN` to point at something `spawn` can run, because the npm shim is a `.ps1` file.
   - The phase B and C scripts had drifted since Step 3: balanced mode merged their docs-only change by rule, so they waited for a review that never came. They now start their initiatives in guided mode.
+
+**The Architect agent and the design checkpoint (2026-10-18): built and proven live (real agent, Docker sandbox, real GitHub).**
+
+- **What it does.** `agents/architect-agent` reads an approved spec in `docs/spec/` and writes `docs/design/<slug>.md` with ten sections in a fixed order (the spec it covers, the approach and the alternatives rejected, the changes per file, the interfaces, external systems, risks and the review triggers that will fire, the test strategy, assumptions, open questions, and the tasks). It never edits the spec. A new external system goes through `propose_integration`, which is a hard stop for the Architect, as before.
+- **The checkpoint.** A pull request from an Architect run is always checkpoint G1 for a person, in every mode, like the spec. It is decided by the Architect role, not the Product Owner. An engineer who tries to decide it gets a 403 (live). The map's "Spec and design" stage waits on the Architect while the design is open. The Map page can start an Architect run.
+- **The task list.** The last section is one fenced block named `sdlc-tasks`: a YAML list of tasks with `id` (`T1`...), `title`, `role` (`backend_engineer` or `frontend_engineer`), `stories` (`US-1`...), `depends_on`, `paths`, and `done_when` lines. `packages/core/src/design.ts` reads and validates it: unique ids, known roles, dependencies that exist, no circles, at most 20 tasks, and a build order. Each task is meant to be one engineer run of about 300 changed lines at most.
+- **A design that does not read is sent back.** Before verification, the runner checks the task list in every `docs/design/*.md` the branch changes (`apps/runner/src/design-check.ts`). If it is missing or invalid, the engine gets the errors in the same session and tries again, using the same attempts as verification; after the last one the run blocks and a person is asked. The run records a `design.checked` event. This came from the first live run: the agent wrote a `done_when` line with braces and a colon without quotes, which is not valid YAML. The prompt's own example had the same fault. Both are fixed, and a test keeps the prompt's example valid.
+- **Proven live** (`node --import tsx src/accept.ts design docker`, on the spec the Product agent wrote earlier in `sdlc-scratch`): the pull request is checkpoint G1 for the Architect and was not auto-approved in an autopilot initiative; it changes only the design file; an engineer cannot decide it; all ten sections are present; the task list validates and every story in the spec is served by a task; the map shows the stage waiting on the Architect; after the Architect approved it, the Gate merged it. The run cost about $0.08 to $0.13.
+- **Not proven or not built.**
+  - **Nothing consumes the task list yet.** Starting engineer runs from it, in dependency order, is the "start the next stage" work and is not built. So far it is only validated.
+  - The spec used was a one-endpoint spec, so the design had one task. A larger spec, and how well the agent splits and orders work, were not tested.
+  - Whether a design is good was not measured. A person reads it at G1, which is the point of the checkpoint.
+  - It was run with Claude Code only. The map does not tell a spec that was approved from one that was never drafted: a design can be started before any spec is merged. The prompt tells the agent to ask in that case, but I did not test it.
+  - The runner checks the shape of the list, not that the files in `paths` exist or that the stories exist in the spec.
+  - The design from the live check was merged into `sdlc-scratch` (`docs/design/`).
 
 **Previews (2026-10-18): the review pack shows the preview the repository's pipeline reported. Built and proven live against GitHub for commit statuses; Deployments are proven against a fake GitHub only.**
 

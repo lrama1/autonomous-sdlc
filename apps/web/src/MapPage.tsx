@@ -23,6 +23,7 @@ const STATUS: Record<Stage['status'], { label: string; cls: string }> = {
 
 const RUN_ROLES: Array<{ id: string; label: string }> = [
   { id: 'product', label: 'Product agent: draft the spec (checkpoint G1)' },
+  { id: 'architect', label: 'Architect agent: design it and list the tasks (checkpoint G1)' },
   { id: 'backend_engineer', label: 'Backend Engineer agent: build and open a PR' },
 ];
 

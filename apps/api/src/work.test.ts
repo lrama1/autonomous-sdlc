@@ -319,7 +319,7 @@ describe('runs', () => {
 
   it('refuses a role with no agent definition', async () => {
     const { po, initiativeId } = await newInitiative();
-    const res = await start(po.cookie, initiativeId, { task: 't', role: 'architect' });
+    const res = await start(po.cookie, initiativeId, { task: 't', role: 'qa' });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('no_agent');
   });

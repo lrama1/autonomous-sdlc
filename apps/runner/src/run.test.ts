@@ -324,6 +324,59 @@ describe('verification', () => {
   });
 });
 
+describe('the Architect agent', () => {
+  const architect = { specOverrides: { role: 'architect' } };
+
+  it('sends a design whose task list does not read back to the engine, and opens the PR once it does', async () => {
+    const r = await runWith(
+      { steps: [{ do: 'write-design-bad' }, { do: 'write-design-good' }] },
+      architect,
+    );
+    expect(r.reason).toBe('finished');
+    expect(r.calls).toHaveLength(2);
+    expect(r.calls[1]!.resumed).toBe(true);
+    expect(r.calls[1]!.prompt).toMatch(/^The design is not accepted yet \(attempt 1 of 3\)/);
+    expect(r.calls[1]!.prompt).toContain('docs/design/thing.md');
+    expect(r.calls[1]!.prompt).toContain('not valid YAML');
+    expect(fake.events.filter((e) => e.type === 'design.checked').map((e) => e.payload.ok)).toEqual(
+      [false, true],
+    );
+    expect(fake.prs).toHaveLength(1);
+    expect(fake.prs[0]!.diff.changedPaths).toContain('docs/design/thing.md');
+  });
+
+  it('stops after the allowed attempts, asks a person, and pushes nothing', async () => {
+    fake.maxVerifyAttempts = 2;
+    const r = await runWith({ do: 'write-design-bad' }, architect);
+    expect(r.reason).toBe('blocked');
+    expect(r.calls).toHaveLength(2);
+    expect(fake.triggers).toEqual([
+      {
+        kind: 'verify_failed',
+        summary: expect.stringContaining('task list was not valid after 2 attempts'),
+        paths: [],
+      },
+    ]);
+    expect(fake.prs).toHaveLength(0);
+    expect(remoteBranches().filter((b) => b.startsWith('agent/'))).toHaveLength(0);
+  });
+
+  it('asks for a design when the branch has none', async () => {
+    const r = await runWith(
+      { steps: [{ do: 'write-good' }, { do: 'write-design-good' }] },
+      architect,
+    );
+    expect(r.reason).toBe('finished');
+    expect(r.calls[1]!.prompt).toContain('has no design file');
+  });
+
+  it('does not read design files for other roles', async () => {
+    const r = await runWith({ do: 'write-design-bad' });
+    expect(r.reason).toBe('finished');
+    expect(fake.events.some((e) => e.type === 'design.checked')).toBe(false);
+  });
+});
+
 describe('protected paths', () => {
   it('asks a person and pushes nothing when the change touches a protected path', async () => {
     const r = await runWith({ do: 'edit-workflow' });

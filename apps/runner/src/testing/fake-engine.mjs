@@ -80,6 +80,35 @@ switch (step.do) {
     commit('add value (wrong)');
     finish('Added the value.');
     break;
+  case 'write-design-bad':
+  case 'write-design-good': {
+    // The unquoted line holds a colon and braces, which is not valid YAML. The quoted one is.
+    const line =
+      step.do === 'write-design-bad'
+        ? '    - GET /x answers {"version": "1"}'
+        : '    - \'GET /x answers {"ok": true}\'';
+    write(
+      'docs/design/thing.md',
+      [
+        '# Design',
+        '',
+        '```sdlc-tasks',
+        '- id: T1',
+        '  title: Add the route',
+        '  role: backend_engineer',
+        '  stories: [US-1]',
+        '  paths: [src/server.js]',
+        '  done_when:',
+        line,
+        '```',
+        '',
+      ].join('\n'),
+    );
+    write('src/value.txt', 'good\n');
+    commit('add design');
+    finish('Designed it.');
+    break;
+  }
   case 'edit-workflow':
     write('.github/workflows/ci.yml', 'name: changed\n');
     write('src/value.txt', 'good\n');
