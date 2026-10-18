@@ -160,6 +160,24 @@ describe.skipIf(!haveDocker)('the Docker preview host', () => {
     await expect(fetch(url, { signal: AbortSignal.timeout(2000) })).rejects.toThrow();
   }, 120_000);
 
+  it('lets the install and the start each change folder, as people write them', async () => {
+    const id = newId();
+    const port = await freePort();
+    const { url } = await host.start({
+      id,
+      hostPort: port,
+      archive: await archive({ 'app/server.js': SERVER }),
+      config: {
+        install: 'cd app && echo from-app > /work/installed.txt',
+        start: 'cd app && node server.js',
+        port: 3000,
+        readyPath: '/',
+      },
+    });
+    expect(await (await fetch(url)).text()).toBe('hello from preview: from-app');
+    await host.stop(id);
+  }, 120_000);
+
   it('says what the preview printed when it stops before it answers, and leaves nothing behind', async () => {
     const id = newId();
     const err = await host

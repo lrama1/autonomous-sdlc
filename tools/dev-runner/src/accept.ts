@@ -14,6 +14,7 @@ import { startStack } from './stack.js';
 // It spends a few cents and merges a small change into the scratch repository.
 //   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|previewrun|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all]
 //   PREVIEW_VARIANT=deployment makes the preview phase report through a GitHub Deployment instead of a commit status.
+//   PREVIEW_VARIANT=install makes the previewrun phase install a real package from the registry before it starts.
 //   BUG_VARIANT=norepro makes the bug phase report a bug that does not exist, to see the agent stop without a pull request. [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
@@ -2342,27 +2343,55 @@ try {
     );
     if (!ghToken) throw new Error('GH_TOKEN is needed to tidy the scratch repository');
     const s = stamp;
-    const server = `preview-${s}.js`;
+    // The install variant puts the server in a folder with a real dependency, which has to come through the registry tunnel.
+    const withInstall = process.env.PREVIEW_VARIANT === 'install';
+    const dir = `preview-${s}`;
+    const handler = [
+      `import http from 'node:http';`,
+      ...(withInstall ? [`import ms from 'ms';`] : []),
+      `http.createServer((req, res) => {`,
+      `  if (req.url === '/env') return res.end(JSON.stringify(Object.keys(process.env).filter((k) => /sdlc|token|secret|key/i.test(k))));`,
+      `  res.end('preview ${s}${withInstall ? " ' + ms(60000) + '" : ''}');`,
+      `}).listen(Number(process.env.PORT), process.env.HOST);`,
+    ];
     const { run } = await startRun(
       `Platform preview ${s}`,
-      [
-        `Create two files and commit them. Do not change anything else and do not ask any questions.`,
-        ``,
-        `1. The file ${server} with exactly this content:`,
-        '```js',
-        `import http from 'node:http';`,
-        `http.createServer((req, res) => {`,
-        `  if (req.url === '/env') return res.end(JSON.stringify(Object.keys(process.env).filter((k) => /sdlc|token|secret|key/i.test(k))));`,
-        `  res.end('preview ${s}');`,
-        `}).listen(Number(process.env.PORT), process.env.HOST);`,
-        '```',
-        ``,
-        `2. The file .sdlc/preview.yaml with exactly this content:`,
-        '```yaml',
-        `start: node ${server}`,
-        `port: 4000`,
-        '```',
-      ].join('\n'),
+      (withInstall
+        ? [
+            `Create three files and commit them. Do not run npm install, do not create a lock file or node_modules, do not change anything else, and do not ask any questions.`,
+            ``,
+            `1. The file ${dir}/package.json with exactly this content:`,
+            '```json',
+            `{ "name": "preview-app", "version": "1.0.0", "private": true, "dependencies": { "ms": "2.1.3" } }`,
+            '```',
+            ``,
+            `2. The file ${dir}/server.mjs with exactly this content:`,
+            '```js',
+            ...handler,
+            '```',
+            ``,
+            `3. The file .sdlc/preview.yaml with exactly this content:`,
+            '```yaml',
+            `install: cd ${dir} && npm install --no-audit --no-fund`,
+            `start: cd ${dir} && node server.mjs`,
+            `port: 4000`,
+            '```',
+          ]
+        : [
+            `Create two files and commit them. Do not change anything else and do not ask any questions.`,
+            ``,
+            `1. The file preview-${s}.js with exactly this content:`,
+            '```js',
+            ...handler,
+            '```',
+            ``,
+            `2. The file .sdlc/preview.yaml with exactly this content:`,
+            '```yaml',
+            `start: node preview-${s}.js`,
+            `port: 4000`,
+            '```',
+          ]
+      ).join('\n'),
       'guided',
     );
     const review = await waitFor(
@@ -2403,7 +2432,7 @@ try {
     );
     const body = await (await fetch(ready.url)).text();
     check(
-      body === `preview ${s}`,
+      body === `preview ${s}${withInstall ? ' 1m' : ''}`,
       `V  the page answers with the pull request's own code ("${body}")`,
     );
 

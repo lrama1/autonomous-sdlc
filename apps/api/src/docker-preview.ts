@@ -219,7 +219,8 @@ export class DockerPreviewHost implements PreviewHost {
       await docker(['network', 'connect', n.network, this.egress]);
       const proxy = await this.addressOn(n.network);
       const base = `http://${proxy}:${PROXY_PORT}`;
-      const script = `${spec.config.install ? `${spec.config.install} && ` : ''}exec ${spec.config.start}`;
+      // Each command runs in its own subshell, so a `cd` in the install does not change where start runs.
+      const script = `${spec.config.install ? `(${spec.config.install}) && ` : ''}(${spec.config.start})`;
       await docker([
         'run',
         '-d',
