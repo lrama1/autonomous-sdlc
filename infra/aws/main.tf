@@ -1,0 +1,46 @@
+terraform {
+  required_version = ">= 1.6"
+  required_providers {
+    aws    = { source = "hashicorp/aws", version = "~> 5.0" }
+    random = { source = "hashicorp/random", version = "~> 3.6" }
+  }
+}
+
+provider "aws" {
+  region  = var.region
+  profile = var.aws_profile
+  default_tags {
+    tags = { Project = "autonomous-sdlc", Stack = var.name, ManagedBy = "terraform" }
+  }
+}
+
+data "aws_caller_identity" "me" {}
+data "aws_availability_zones" "az" { state = "available" }
+
+locals {
+  account    = data.aws_caller_identity.me.account_id
+  azs        = slice(data.aws_availability_zones.az.names, 0, 2)
+  public_url = "https://${aws_cloudfront_distribution.edge.domain_name}"
+  issuer     = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+  image      = "${aws_ecr_repository.platform.repository_url}:${var.image_tag}"
+  # Secrets that Terraform creates and ECS injects. The API creates its own under runtime/.
+  runtime_prefix = "${var.name}/runtime/"
+}
+
+resource "aws_ecr_repository" "platform" {
+  name         = "${var.name}-platform"
+  force_delete = true
+  image_scanning_configuration { scan_on_push = true }
+}
+
+resource "aws_ecr_lifecycle_policy" "platform" {
+  repository = aws_ecr_repository.platform.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep the last 5 images"
+      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 5 }
+      action       = { type = "expire" }
+    }]
+  })
+}

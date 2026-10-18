@@ -18,6 +18,8 @@ export const PERSONAS: Persona[] = [
 
 export interface DevIdpOptions {
   port: number;
+  /** Loopback by default. A container needs all interfaces so its published port works. */
+  host?: string;
   issuer: string;
   clientId: string;
   clientSecret: string;
@@ -148,6 +150,6 @@ export async function startDevIdp(opts: DevIdpOptions): Promise<{ stop: () => Pr
     }
   });
 
-  await new Promise<void>((resolve) => server.listen(opts.port, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(opts.port, opts.host ?? '127.0.0.1', resolve));
   return { stop: () => new Promise((resolve) => server.close(() => resolve())) };
 }

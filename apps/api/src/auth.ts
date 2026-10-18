@@ -1,5 +1,5 @@
 import * as oidc from 'openid-client';
-import { person } from '@sdlc/db';
+import { hat, person } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import type { FastifyInstance } from 'fastify';
 import { recordActivity } from './activity.js';
@@ -89,6 +89,28 @@ export function registerAuthRoutes(app: FastifyInstance, config: ApiConfig, db: 
       })
       .returning();
     if (!row) throw new Error('person upsert returned no row');
+
+    // A fresh deployment has nobody with a hat. The configured address, once the IdP says it is verified, gets the admin hat.
+    if (
+      config.BOOTSTRAP_ADMIN_EMAIL &&
+      // Cognito sends this as the string "true", other providers as a boolean.
+      String(info.email_verified) === 'true' &&
+      info.email.toLowerCase() === config.BOOTSTRAP_ADMIN_EMAIL.toLowerCase()
+    ) {
+      const [added] = await db
+        .insert(hat)
+        .values({ personId: row.id, role: 'platform_admin' })
+        .onConflictDoNothing()
+        .returning({ id: hat.id });
+      if (added) {
+        await recordActivity(db, {
+          actorType: 'system',
+          actorId: row.id,
+          action: 'hat.bootstrapped',
+          detail: { role: 'platform_admin' },
+        });
+      }
+    }
 
     await recordActivity(db, {
       actorType: 'person',

@@ -5,9 +5,13 @@ const url = z.string().url();
 export const apiConfigSchema = z.object({
   SDLC_ENV: z.enum(['local', 'hybrid', 'aws-sandbox']).default('local'),
   API_PORT: z.coerce.number().int().default(8080),
+  // The address to listen on. Loopback in local development, all interfaces in a container.
+  API_HOST: z.string().optional(),
   // The one origin where the browser reaches both the web app and the API (the dev proxy or the load balancer).
   PUBLIC_URL: url.default('http://localhost:5173'),
   DATABASE_URL: z.string().min(1),
+  // A PEM file with the CA that signed the database certificate (the RDS bundle on AWS). Turns on verified TLS.
+  DATABASE_CA_FILE: z.string().optional(),
   OIDC_ISSUER: url,
   OIDC_CLIENT_ID: z.string().min(1),
   OIDC_CLIENT_SECRET: z.string().min(1),
@@ -15,6 +19,13 @@ export const apiConfigSchema = z.object({
   GITHUB_API_URL: url.default('https://api.github.com'),
   GITHUB_WEB_URL: url.default('https://github.com'),
   SECRETS_FILE: z.string().default('.dev-data/secrets.json'),
+  // Where secrets are kept: a git-ignored file locally, AWS Secrets Manager under SECRETS_PREFIX on AWS.
+  SECRETS_BACKEND: z.enum(['file', 'aws']).default('file'),
+  SECRETS_PREFIX: z.string().default('sdlc/'),
+  // The built web app, served by the API so the browser sees one origin. Absent in local development (Vite serves it).
+  WEB_DIR: z.string().optional(),
+  // A person who signs in with this email gets the platform admin hat. Needed once, to start a fresh deployment.
+  BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
   AGENTS_DIR: z.string().default('agents'),
   RULES_FILE: z.string().default('rules/triggers.yaml'),
   // How people are reached: reminders, escalation, working hours, what chat may settle.
@@ -46,7 +57,10 @@ export type ApiConfig = z.infer<typeof apiConfigSchema>;
 
 export const gatewayConfigSchema = z.object({
   GATEWAY_PORT: z.coerce.number().int().default(8787),
+  // Loopback locally. A container must listen on all interfaces to be reached by the API and by runners.
+  GATEWAY_HOST: z.string().default('127.0.0.1'),
   DATABASE_URL: z.string().min(1),
+  DATABASE_CA_FILE: z.string().optional(),
   // Key for agent runs. Read through the secrets port; in local mode that is an environment variable.
   OPENROUTER_KEY_AGENTS: z.string().min(1),
   UPSTREAM_URL: url.default('https://openrouter.ai/api'),

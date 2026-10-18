@@ -435,6 +435,7 @@ All routes are under `/api`, JSON, authenticated by the OIDC session cookie unle
 | `GET /standing-decisions?active=`, `POST`, `PATCH /standing-decisions/:id` | `PATCH` sets `text` or `active`. Only the author or an admin |
 | `GET /attention/profile` | "How you are reached": deputy, hours, reminder timing, chat link |
 | `GET /people`, `PUT /people/:id/slack` | Admin links a Slack user to a person. One Slack user, one person |
+| `POST /people/:id/hats` `{ role }`, `DELETE /people/:id/hats/:role` | Admin only. The last platform admin cannot be removed |
 | `PATCH /people/:id/hats/:role` | `{ deputyPersonId?, hours?, outOfOffice? }`. Own hats, or any for an admin |
 | `GET /activity?initiativeId=...` | Activity log (not built) |
 | `GET /metrics/interruptions?days=&initiativeId=` | §5.7 measures, built in step 2 |
@@ -460,6 +461,10 @@ One `config` module reads environment variables and validates them with `zod` at
 | `OPENROUTER_KEY_AGENTS_REF`, `OPENROUTER_KEY_SERVICES_REF` | | Secrets port references, never raw keys in config files |
 | `RUNNER_ADAPTER` | `process` \| `docker` \| `fargate` | |
 | `BLOCKING_MAX_S` | `120` | Section 6 |
+| `WEB_DIR`, `API_HOST` | `apps/web/dist`, `0.0.0.0` | The API serves the built web app, and listens on all interfaces in a container |
+| `BOOTSTRAP_ADMIN_EMAIL` | | Whoever signs in with this verified email gets the admin hat |
+| `SECRETS_BACKEND`, `SECRETS_PREFIX` | `aws`, `sdlc-dev/runtime/` | `file` locally, Secrets Manager on AWS |
+| `DATABASE_CA_FILE` | `/etc/ssl/rds-global-bundle.pem` | Turns on verified TLS to the database |
 | `ATTENTION_FILE` | `rules/attention.yaml` | How people are reached (§5): reminder and escalation timing, working hours, the digest, what chat may settle |
 | `ATTENTION_TICK_MS` | `2000` | How often the engine hands out, reminds, escalates, applies defaults and delivers |
 | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | | The token sends. The secret is needed to accept answers. Without the token the notifier only logs. `SLACK_API_URL` is for tests |
@@ -472,8 +477,18 @@ Secrets come through the secrets port: a git-ignored file locally, AWS Secrets M
 **Step 0, walking skeleton (done when):**
 1. **Local, done 2026-10-17.** `pnpm dev` starts `api`, `gateway`, `web`, PostgreSQL, and a dev identity provider. Sign-in works with a static persona. Docker is not required (see "Local mode without Docker" below).
 2. **Done.** `GET /healthz` is green and a page in `web` shows the signed-in person and their hats.
-3. **Not started.** `terraform apply` creates the same stack in the AWS account and `terraform destroy` removes it. Sign-in works through Cognito. The daily cost of the idle stack is measured and written down. Also add `docker-compose.yml` once Docker Desktop works on the workstation.
+3. **Done 2026-10-18.** `infra/aws` creates the stack in the AWS account (`deploy.ps1`) and removes it (`destroy.ps1`). Sign-in worked through Cognito in a real browser. The idle cost is an estimate from list prices, not a measurement. `docker-compose.yml` runs the same stack in containers. See "Step 0, AWS and Compose" below.
 4. **Done locally, CI unproven.** `pnpm verify` runs typecheck, lint, format check, and unit and integration tests (18 tests). `pnpm test:e2e` runs one Playwright sign-in test. `.github/workflows/ci.yml` runs both on GitHub but has not run there yet.
+
+**Step 0, AWS and Compose (2026-10-18).**
+
+- **One image.** The `Dockerfile` at the repository root builds the web app and holds the API and the gateway (two commands, same image). TypeScript runs through `tsx`, as in local development. The image carries the RDS certificate bundle.
+- **Compose** (`docker compose up --build`, then http://localhost:8080, sign in as "Dev Admin"): PostgreSQL, the API serving the web app, the gateway, and the dev identity provider, which shares the API's network namespace so that `localhost:9000` is the same address for the browser and for the API. Verified: sign-in works and the admin hat comes from `BOOTSTRAP_ADMIN_EMAIL`.
+- **AWS** (`infra/aws`, Terraform, 49 resources, applied and destroyed once): a VPC with two public subnets (tasks and load balancer, no NAT gateway) and two private subnets (database), RDS PostgreSQL 16 `db.t4g.micro` with TLS verified against the RDS bundle, ECS Fargate services for the API and the gateway (the gateway is found at `gateway.<name>.local` through Cloud Map), an Application Load Balancer that accepts only CloudFront (security group on the CloudFront prefix list plus a secret header), and CloudFront for HTTPS on its own `*.cloudfront.net` certificate, with caching off. Cognito has a user pool with no self sign-up and an app client with a secret. Secrets Manager holds the database URL, session secret, Cognito client secret and the OpenRouter key, injected into the tasks. The API writes its own secrets (GitHub App keys) under `<name>/runtime/` through the `AwsSecrets` adapter, and its task role can touch only that prefix.
+- **Verified live:** `/healthz` and `/readyz` through CloudFront (database over verified TLS); the load balancer refuses direct requests; sign-in through the Cognito hosted page in a real browser, ending as Platform Admin through the bootstrap rule; `AwsSecrets` writing, updating and reading a secret from a Fargate task under the API's role; `destroy.ps1` removing all 49 resources and the secrets the API wrote (checked afterwards by looking each one up).
+- **Found by the live run:** Cognito reports `email_verified` as the string `"true"`, which the bootstrap rule rejected until it was fixed. The CloudFront managed policies must be looked up by name, not by a remembered id. PowerShell splits `-target=a.b` at the dot, so it must be quoted.
+- **Idle cost, estimated from us-east-1 list prices, not measured** (Cost Explorer lags a day, and the stack was destroyed after the checks): load balancer about $0.68 a day, two Fargate tasks (0.25 vCPU, 0.5 GB) about $0.59, the RDS instance and 20 GB about $0.46, four public IPv4 addresses about $0.48, Secrets Manager, Cloud Map and logs about $0.10. **About $2.30 a day, or about $70 a month.** Cognito and CloudFront are free at this size. Runner tasks add cost only while they run. To measure it: deploy, leave it two days, then read Cost Explorer filtered on the tag `Stack=sdlc-dev`.
+- **Not built:** `RUNNER_ADAPTER=fargate` (runs on AWS still need the isolated-subnet runner from spike 3, so the AWS stack runs with `RUNNER_ADAPTER=none`), a custom domain and certificate, a budget alarm unless `budget_email` is set, a gateway that runners can use (the Cloud Map name exists, nothing uses it yet), and a CI job that deploys. Registering the GitHub Apps on AWS (which now has a public HTTPS URL, so webhooks could work) was not tried.
 
 **Local mode without Docker** (added 2026-10-17, because Docker Desktop does not start on the development workstation: WSL is not installed). `tools/dev-runner` starts real PostgreSQL 16 binaries through `embedded-postgres`, an `oidc-provider` identity provider with four static people, the API and gateway as Node processes, and Vite in-process. The browser sees one origin (`PUBLIC_URL`, the Vite dev server), which proxies `/api` and `/auth` to the API. This is the same shape as the load balancer on AWS. Contract tests per port (section 17) must run against this adapter set too.
 

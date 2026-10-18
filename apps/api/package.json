@@ -13,7 +13,9 @@
     "start": "node --import tsx src/main.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1152.0",
     "@fastify/cookie": "^11.1.3",
+    "@fastify/static": "^10.1.6",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@sdlc/core": "workspace:^",
     "@sdlc/db": "workspace:^",

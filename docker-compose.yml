@@ -1,0 +1,75 @@
+# The same stack as `pnpm dev`, in containers: one image for the API (which serves the web app) and the gateway,
+# PostgreSQL, and the development identity provider.
+#   docker compose up --build        then open http://localhost:8080 and sign in as "Dev Admin"
+# The identity provider shares the API's network namespace, so "localhost:9000" means the same thing to the browser
+# and to the API (the OIDC issuer URL must be identical for both).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sdlc
+      POSTGRES_PASSWORD: sdlc
+      POSTGRES_DB: sdlc
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sdlc']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    image: sdlc-platform:dev
+    depends_on:
+      db: { condition: service_healthy }
+    ports:
+      - '8080:8080'
+      - '9000:9000'
+    environment:
+      SDLC_ENV: local
+      API_HOST: 0.0.0.0
+      PUBLIC_URL: http://localhost:8080
+      DATABASE_URL: postgres://sdlc:sdlc@db:5432/sdlc
+      OIDC_ISSUER: http://localhost:9000
+      OIDC_CLIENT_ID: sdlc-web
+      OIDC_CLIENT_SECRET: dev-client-secret
+      SESSION_SECRET: compose-only-session-secret-change-me-0123456789
+      BOOTSTRAP_ADMIN_EMAIL: admin@example.test
+      SECRETS_FILE: /data/secrets.json
+      GATEWAY_URL: http://gateway:8787
+      RUNNER_ADAPTER: none
+    volumes:
+      - appdata:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8080/readyz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  idp:
+    image: sdlc-platform:dev
+    network_mode: 'service:api'
+    command: ['node', '--import', 'tsx', 'tools/dev-idp/src/main.ts']
+    environment:
+      DEV_IDP_PORT: '9000'
+      DEV_IDP_HOST: 0.0.0.0
+      OIDC_ISSUER: http://localhost:9000
+      OIDC_CLIENT_ID: sdlc-web
+      OIDC_CLIENT_SECRET: dev-client-secret
+      OIDC_REDIRECT_URI: http://localhost:8080/auth/callback
+
+  gateway:
+    image: sdlc-platform:dev
+    depends_on:
+      db: { condition: service_healthy }
+    command: ['node', '--import', 'tsx', 'apps/gateway/src/main.ts']
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      DATABASE_URL: postgres://sdlc:sdlc@db:5432/sdlc
+      # Set OPENROUTER_KEY_AGENTS in your shell to let agents call a model. The gateway starts without a real key.
+      OPENROUTER_KEY_AGENTS: ${OPENROUTER_KEY_AGENTS:-not-set}
+
+volumes:
+  dbdata:
+  appdata:

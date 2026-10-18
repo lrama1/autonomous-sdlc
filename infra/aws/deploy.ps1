@@ -1,0 +1,30 @@
+# Deploys the stack to your AWS account. Run from this folder. Needs: Terraform, Docker, the AWS CLI.
+#   $env:TF_VAR_bootstrap_admin_email = 'you@example.com'      # required: the first admin
+#   $env:TF_VAR_openrouter_key_agents = '<key>'                 # optional: the gateway's model key
+#   ./deploy.ps1
+# Safe to run again. It builds the image from the repository root and pushes it before starting any service.
+param([string]$Profile = 'default', [string]$Region = 'us-east-1', [string]$Tag = 'dev')
+$env:AWS_PROFILE = $Profile
+$root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
+
+# Native tools write warnings to stderr, so success is judged by the exit code, not by the error stream.
+function Run([scriptblock]$cmd) {
+  & $cmd
+  if ($LASTEXITCODE -ne 0) { throw "failed (exit $LASTEXITCODE): $cmd" }
+}
+
+Run { terraform init -input=false }
+# 1. The image repository first, so there is somewhere to push to. No service runs yet.
+Run { terraform apply -input=false -auto-approve '-target=aws_ecr_repository.platform' -var "desired_count=0" -var "image_tag=$Tag" }
+$repo = terraform output -raw ecr_repository
+$registry = $repo.Split('/')[0]
+
+# 2. Build and push.
+aws ecr get-login-password --region $Region | docker login --username AWS --password-stdin $registry
+if ($LASTEXITCODE -ne 0) { throw 'docker login failed' }
+Run { docker build -t "${repo}:$Tag" $root }
+Run { docker push "${repo}:$Tag" }
+
+# 3. Everything else.
+Run { terraform apply -input=false -auto-approve -var "image_tag=$Tag" }
+terraform output

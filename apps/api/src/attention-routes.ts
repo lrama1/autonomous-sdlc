@@ -423,6 +423,68 @@ export function registerAttentionRoutes(
     return { ok: true };
   });
 
+  // Who wears which hat. Only an admin changes this, and the last admin cannot be removed.
+  app.post('/api/people/:id/hats', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    if (!isAdmin(me))
+      return reply.code(403).send({
+        error: { code: 'admin_only', message: 'Only a platform admin can give out hats.' },
+      });
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { role } = z.object({ role: roleSchema }).parse(request.body ?? {});
+    const [who] = await db.select({ id: person.id }).from(person).where(eq(person.id, id));
+    if (!who) return reply.code(404).send(notFound('person'));
+    const [added] = await db
+      .insert(hat)
+      .values({ personId: id, role })
+      .onConflictDoNothing()
+      .returning({ id: hat.id });
+    if (added)
+      await recordActivity(db, {
+        actorType: 'person',
+        actorId: me.id,
+        action: 'hat.granted',
+        detail: { personId: id, role },
+      });
+    return reply.code(added ? 201 : 200).send({ ok: true, added: Boolean(added) });
+  });
+
+  app.delete('/api/people/:id/hats/:role', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    if (!isAdmin(me))
+      return reply.code(403).send({
+        error: { code: 'admin_only', message: 'Only a platform admin can take hats away.' },
+      });
+    const params = z.object({ id: z.string().uuid(), role: roleSchema }).parse(request.params);
+    if (params.role === 'platform_admin') {
+      const [admins] = await db
+        .select({ n: count() })
+        .from(hat)
+        .where(eq(hat.role, 'platform_admin'));
+      if ((admins?.n ?? 0) <= 1)
+        return reply.code(409).send({
+          error: {
+            code: 'last_admin',
+            message: 'This is the last platform admin. Make another first.',
+          },
+        });
+    }
+    const gone = await db
+      .delete(hat)
+      .where(and(eq(hat.personId, params.id), eq(hat.role, params.role)))
+      .returning({ id: hat.id });
+    if (gone.length === 0) return reply.code(404).send(notFound('hat'));
+    await recordActivity(db, {
+      actorType: 'person',
+      actorId: me.id,
+      action: 'hat.removed',
+      detail: { personId: params.id, role: params.role },
+    });
+    return { ok: true };
+  });
+
   // Deputy, working hours and time away, per hat. People set their own. An admin can set anyone's.
   app.patch('/api/people/:id/hats/:role', async (request, reply) => {
     const me = await requirePerson(db, request, reply);

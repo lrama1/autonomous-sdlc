@@ -62,3 +62,8 @@ e2e/             Playwright tests
 ## Reaching people in Slack (optional)
 
 Without Slack, asks are in the attention queue and the notifier writes to the API log. To use Slack, create an app from `integrations/slack/app-manifest.yaml`, set `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` for the API, and have an admin link each person: `PUT /api/people/:id/slack` with `{ "slackUserId": "U0123ABCD" }`. Slack must reach `/slack/interactions` over public HTTPS. How people are reached (reminder and escalation timing, working hours, the digest, what chat may settle) is in `rules/attention.yaml`. This part has been tested against a fake Slack only.
+
+## Compose and AWS
+
+- `docker compose up --build` runs the same stack in containers (PostgreSQL, the API serving the web app, the gateway, and the dev identity provider). Open http://localhost:8080 and sign in as "Dev Admin". `docker compose down -v` removes it.
+- `infra/aws` deploys to your AWS account: set `TF_VAR_bootstrap_admin_email`, run `./deploy.ps1`, then `./create-user.ps1 -Email you@example.com`, and `./destroy.ps1` when you are done. It costs about $2.30 a day while up (see `mvp-contract.md` section 16). It needs Terraform, Docker, and the AWS CLI.

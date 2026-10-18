@@ -714,6 +714,39 @@ describe('people, hats and chat links', () => {
     expect(row!.slackUserId).toBeNull();
   });
 
+  it('lets only an admin give out and take away hats, and keeps one admin', async () => {
+    const admin = await newPerson(['platform_admin']);
+    const bob = await newPerson([]);
+    const grant = (headers: Record<string, string>, role: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/people/${bob.id}/hats`,
+        headers,
+        payload: { role },
+      });
+    expect((await grant(bob.headers, 'qa')).statusCode).toBe(403);
+    expect((await grant(admin.headers, 'wizard')).statusCode).toBe(400);
+    expect((await grant(admin.headers, 'qa')).statusCode).toBe(201);
+    expect((await grant(admin.headers, 'qa')).json()).toMatchObject({ added: false });
+    const hats = async () =>
+      (await db.select().from(hat).where(eq(hat.personId, bob.id))).map((h) => h.role);
+    expect(await hats()).toEqual(['qa']);
+
+    const revoke = (headers: Record<string, string>, id: string, role: string) =>
+      app.inject({ method: 'DELETE', url: `/api/people/${id}/hats/${role}`, headers });
+    expect((await revoke(bob.headers, bob.id, 'qa')).statusCode).toBe(403);
+    expect((await revoke(admin.headers, bob.id, 'qa')).statusCode).toBe(200);
+    expect((await revoke(admin.headers, bob.id, 'qa')).statusCode).toBe(404);
+    expect(await hats()).toEqual([]);
+
+    // The only admin cannot be removed, even by themselves.
+    const last = await revoke(admin.headers, admin.id, 'platform_admin');
+    expect(last.statusCode).toBe(409);
+    expect(last.json().error.code).toBe('last_admin');
+    const second = await newPerson(['platform_admin']);
+    expect((await revoke(second.headers, admin.id, 'platform_admin')).statusCode).toBe(200);
+  });
+
   it('lets people set their own deputy, hours and time away, and validates them', async () => {
     const bob = await newPerson(['backend_engineer']);
     const sofia = await newPerson(['qa']);

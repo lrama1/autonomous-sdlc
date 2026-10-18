@@ -3,7 +3,7 @@ import { gatewayConfigSchema, parseEnv } from '@sdlc/schemas';
 import { createGatewayServer } from './app.js';
 
 const config = parseEnv(gatewayConfigSchema, process.env);
-const { db, pool } = createDb(config.DATABASE_URL);
+const { db, pool } = createDb(config.DATABASE_URL, { caFile: config.DATABASE_CA_FILE });
 const server = createGatewayServer({ db, config });
 
 const stop = () => {
@@ -12,6 +12,6 @@ const stop = () => {
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 
-server.listen(config.GATEWAY_PORT, '127.0.0.1', () => {
+server.listen(config.GATEWAY_PORT, config.GATEWAY_HOST, () => {
   console.log(`gateway listening on ${config.GATEWAY_PORT}`);
 });

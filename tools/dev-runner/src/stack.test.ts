@@ -16,6 +16,7 @@ beforeAll(async () => {
   stack = await startStack({
     dataDir,
     ports: { web: 25173, api: 28080, gateway: 28787, idp: 29000, db: 56329 },
+    apiEnv: { BOOTSTRAP_ADMIN_EMAIL: 'alice@example.test' },
     log: () => {},
   });
 }, 180_000);
@@ -46,6 +47,15 @@ describe('local stack', () => {
       displayName: 'Cara Okafor',
       roles: ['architect'],
     });
+  });
+
+  it('gives the configured bootstrap address the admin hat, and nobody else', async () => {
+    const alice = await signInAs(stack.publicUrl, 'dev-alice');
+    const me = meSchema.parse(JSON.parse((await alice.fetch(`${stack.publicUrl}/api/me`)).text));
+    expect(me.roles).toEqual(expect.arrayContaining(['product_owner', 'platform_admin']));
+    const bob = await signInAs(stack.publicUrl, 'dev-bob');
+    const other = meSchema.parse(JSON.parse((await bob.fetch(`${stack.publicUrl}/api/me`)).text));
+    expect(other.roles).not.toContain('platform_admin');
   });
 
   it('writes a login row to the activity log', async () => {

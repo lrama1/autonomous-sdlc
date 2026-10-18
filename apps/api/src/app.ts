@@ -1,3 +1,4 @@
+import path from 'node:path';
 import cookie from '@fastify/cookie';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
@@ -18,6 +19,7 @@ import { loadRules } from './rules.js';
 import { createRunWorker } from './run-worker.js';
 import { registerRunnerRoutes } from './runner-routes.js';
 import { registerGitHubAdminRoutes } from './github-admin.js';
+import { AwsSecrets } from './aws-secrets.js';
 import { FileSecrets } from './secrets.js';
 import type { SecretsStore } from './secrets.js';
 import type { ApiConfig } from './config.js';
@@ -65,7 +67,7 @@ export async function buildApp({
   slack: slackOverride,
 }: BuildOptions) {
   const app = Fastify({ logger });
-  const { db, pool } = deps ?? createDb(config.DATABASE_URL);
+  const { db, pool } = deps ?? createDb(config.DATABASE_URL, { caFile: config.DATABASE_CA_FILE });
   if (!deps) app.addHook('onClose', async () => pool.end());
 
   await app.register(cookie, { secret: config.SESSION_SECRET });
@@ -123,7 +125,11 @@ export async function buildApp({
 
   const loadedAgents = agents ?? (await loadAgents(config.AGENTS_DIR));
   const ghClient = github ?? new GitHubClient(config.GITHUB_API_URL);
-  const secretStore = secrets ?? new FileSecrets(config.SECRETS_FILE);
+  const secretStore =
+    secrets ??
+    (config.SECRETS_BACKEND === 'aws'
+      ? new AwsSecrets(config.SECRETS_PREFIX)
+      : new FileSecrets(config.SECRETS_FILE));
   const ghService = new GitHubService(db, secretStore, ghClient);
   const apiUrl = `http://127.0.0.1:${config.API_PORT}`;
   registerWorkRoutes(app, db, loadedAgents);
@@ -242,6 +248,12 @@ export async function buildApp({
       worker.stop();
       await adapter.close?.();
     });
+  }
+
+  // In a deployment the API serves the built web app, so the browser has one origin (the load balancer).
+  if (config.WEB_DIR) {
+    const { default: fastifyStatic } = await import('@fastify/static');
+    await app.register(fastifyStatic, { root: path.resolve(config.WEB_DIR), wildcard: false });
   }
 
   return app;

@@ -1,0 +1,14 @@
+﻿**/node_modules
+.git
+.github
+.dev-data
+.dev-demo
+test-results
+playwright-report
+spikes
+designs
+demo
+infra
+**/.terraform
+apps/runner/dist
+*.log

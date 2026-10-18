@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
@@ -50,5 +53,36 @@ describe('api without a database', () => {
     const res = await app.inject('/auth/callback?code=abc&state=xyz');
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('login_expired');
+  });
+});
+
+describe('serving the built web app', () => {
+  let dir: string;
+  let served: Awaited<ReturnType<typeof buildApp>>;
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'sdlc-web-'));
+    await writeFile(path.join(dir, 'index.html'), '<!doctype html><title>web</title>');
+    served = await buildApp({ config: { ...config, WEB_DIR: dir } });
+  });
+  afterAll(async () => {
+    await served.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('serves the page at the root, and the API routes still win', async () => {
+    const page = await served.inject('/');
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('<title>web</title>');
+    expect((await served.inject('/healthz')).json()).toMatchObject({ status: 'ok' });
+    expect((await served.inject('/api/me')).statusCode).toBe(401);
+  });
+
+  it('does not serve anything for an unknown path or a path outside the folder', async () => {
+    expect((await served.inject('/nope.js')).statusCode).toBe(404);
+    expect((await served.inject('/..%2f..%2fetc%2fpasswd')).statusCode).toBeGreaterThanOrEqual(400);
+  });
+
+  it('serves nothing when no web folder is configured', async () => {
+    expect((await app.inject('/')).statusCode).toBe(404);
   });
 });
