@@ -1,6 +1,8 @@
 # The sandbox image: Node, git, the two engines (Claude Code and the GitHub Copilot CLI), and the bundled runner. Built by `pnpm --filter @sdlc/runner image`.
 # It holds no secrets. Credentials arrive as environment variables when a run starts.
-FROM public.ecr.aws/docker/library/node:22-bookworm-slim
+# Public ECR has no pull limit from AWS. CI builds from Docker Hub instead, since ECR throttles GitHub's shared addresses.
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:22-bookworm-slim
+FROM ${NODE_IMAGE}
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \

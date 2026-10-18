@@ -20,7 +20,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build the sandbox image
-        run: pnpm --filter @sdlc/runner image
+        working-directory: apps/runner
+        run: |
+          node build.mjs
+          docker build --build-arg NODE_IMAGE=node:22-bookworm-slim -t sdlc-runner:dev .
       - name: Typecheck, lint, format, unit and integration tests
         run: pnpm verify
       - name: Install browser
