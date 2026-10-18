@@ -6,6 +6,7 @@ Three throwaway experiments that test the riskiest assumptions in `spec.md` (§1
 |---|---|---|
 | [s1-claude-openrouter](./s1-claude-openrouter) | Claude Code headless through a thin gateway to OpenRouter | **Pass** |
 | [s2-mcp-ask-human](./s2-mcp-ask-human) | `ask_human` over MCP from a headless run: block, default, non-blocking, park and resume, steering | **Pass** |
+| [s5 (below)](#spike-5-the-github-copilot-cli-as-a-second-engine-2026-10-18) | Copilot CLI as a second engine, through our gateway with BYOK | **Pass on this machine** (not yet in the sandbox image) |
 | [s3-fargate](./s3-fargate) | Fargate runner with a PostgreSQL sidecar, egress control, no AWS credentials | **Pass** (with one gap closed by DNS Firewall) |
 
 All AWS resources were created with Terraform and destroyed afterwards. The account was verified clean (the default VPC only). Total cost is a few cents.
@@ -78,6 +79,36 @@ Design consequences (resolves the §19 "egress enforcement" question):
 - Real Copilot or Codex adapters (§19 "Engines"). No spike was run.
 - Slack or Teams answer handling.
 - Preview environments and the sidecar manifest format. Spike 3 shows a sidecar works, not how a repository declares one.
+
+## Spike 5: the GitHub Copilot CLI as a second engine (2026-10-18)
+
+**Question.** Can the Copilot CLI (version 1.0.100 here) sit behind the same engine port as Claude Code, with the same gateway, the same MCP tools, and the same resume? **Answer: yes, on this machine, and more cheaply than Claude Code.** Scripts: `tools/dev-runner/src/copilot-spike.ts` and `copilot-spike2.ts` (throwaway). They start the dev stack, create a run with a run token, and drive the CLI.
+
+**The key finding: bring your own key (BYOK).** With `COPILOT_PROVIDER_TYPE=anthropic`, `COPILOT_PROVIDER_BASE_URL=<gateway>`, `COPILOT_PROVIDER_BEARER_TOKEN=<run token>` and `COPILOT_MODEL=<alias>`, the CLI uses **our gateway as its model provider**. It needs **no GitHub sign-in and no Copilot subscription**, bills **no premium requests** (`usage.premiumRequests` is 0), and every call is metered and budgeted by the gateway like Claude Code's. This removes the two unknowns I expected (billing and routing).
+
+| Question | Finding |
+|---|---|
+| Headless run | `copilot -p "<prompt>" --allow-all-tools --output-format json`. Exit code 0 on success, 1 on a failed model call. `--log-level error` keeps stderr empty. |
+| Through the gateway | Pass. The alias `agent-fast` went through the existing Anthropic endpoint, with the injected provider preference. Cost records were written (13 k input tokens for the first test, 3.5 k for a one-line prompt in a clean home, against about 30 k to 40 k for Claude Code). |
+| Edits and git | Pass. It created a file and committed it through its shell tool. |
+| Platform MCP tools | Pass. `--additional-mcp-config` with an `http` server and an `Authorization: Bearer <run token>` header loaded all 10 platform tools. Tools are named **`platform-<tool>`** (for example `platform-ask_human`). A call raised the interaction with the right topic and recommendation. |
+| Blocking ask answered in flight | Pass. The call stayed open, the answer arrived 6 s later, and the model wrote it into a file (13 s in all). |
+| Blocking ask not answered | The platform parked it after `BLOCKING_MAX_S` and returned `status: parked`. The CLI did not time out earlier. Its next model call then got **403, because the run was parked**: this is the platform working as designed (the runner must stop the engine when the run parks, as it does for Claude Code). |
+| Resume | Pass. `--session-id <uuid>` names a new session and `--resume <uuid>` continues it with full memory (the codename survived, in both the plain case and after a park with the run set back to running). The session id appears in every `result` event. Sessions live under `COPILOT_HOME`, so a per-run volume keeps them. |
+| Tool limits | `--deny-tool 'shell(git push)'` blocked a push (the remote stayed empty). `--available-tools` and `--excluded-tools` limit what the model sees. `--deny-url` exists for web access. These map onto the agent definition's `denied` list. |
+| What it contacts | With a **clean home** (no stored login) and BYOK, **nothing** went through the proxy: no `api.github.com`, no telemetry. Without a clean home it contacted `api.github.com` (my stored login). `COPILOT_OFFLINE=true` also worked with BYOK. Set `COPILOT_AUTO_UPDATE=false` and `--disable-client-telemetry` as well. The sandbox allowlist needs nothing extra beyond the gateway. |
+| Event stream | JSONL, one object per line. Types seen: `assistant.message` (and `_delta`), `assistant.tool_call_delta`, `tool.execution_start` (tool name and arguments), `tool.execution_complete` (success and result), `tool.shell_output`, `session.mcp_server_tools_loaded`, `session.warning`, and a final `result` with `sessionId`, `exitCode`, and usage. These map onto the engine-neutral run events in `mvp-contract.md` section 7. |
+| System prompt | There is no `--append-system-prompt`. Put the agent's prompt at the start of `-p`, or point `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` at a folder with an `AGENTS.md` kept outside the repository. Use `--no-custom-instructions` if the repository's own `AGENTS.md` must not apply. |
+
+**Gaps and risks.**
+- **Not tried inside the Docker sandbox or on Linux.** The CLI is a Node package (`@github/copilot`), so it needs adding to the runner image, and its size and start-up in a read-only image are unmeasured.
+- **A home directory leaks on Windows.** Overriding `HOME` and `USERPROFILE` did not stop it loading skills from the real user profile. In a container the home is the container's, so this should not apply there, but it is untested.
+- **`--allow-all-tools` is safe only because the sandbox is the boundary.** The tool allowlist is a second layer, not the first.
+- **It is a pre-1.1 tool** (1.0.100, with its own auto-update). Pin the version in the image. Whether using the CLI in automation against a self-chosen model provider is within GitHub's terms was **not checked**.
+- **No turn limit** other than the wall-clock timeout and the gateway's budget (`--max-autopilot-continues` applies to autopilot mode only).
+- Model quality was tested only on Haiku 4.5 through the alias, as for Claude Code. The CLI's prompts and tools differ, so results on real tasks may differ.
+
+**What the adapter would be.** A new engine id `copilot-cli` beside `claude-code` in `apps/runner/src`: the same `RunSpec`, the same MCP URL and token, spawn `copilot` with the arguments and environment above, read its JSONL, translate to run events, store the session id from the first `result` event, and resume with `--resume`. The Dockerfile gets the CLI at a pinned version. About a day of work including tests, with the risks above to check first.
 
 ## Spike 4: what the two GitHub Apps can really do (2026-10-17)
 
