@@ -83,7 +83,8 @@ beforeAll(async () => {
   const serve = (body: string) =>
     new Promise<http.Server>((resolve) => {
       const s = http.createServer((_q, r) => r.end(body));
-      s.listen(0, '127.0.0.1', () => resolve(s));
+      // On Linux, host.docker.internal is the docker0 bridge address, which a loopback-only server cannot be reached on.
+      s.listen(0, '0.0.0.0', () => resolve(s));
     });
   apiServer = await serve('api-pong');
   gwServer = await new Promise<http.Server>((resolve) => {
@@ -93,7 +94,7 @@ beforeAll(async () => {
       r.setHeader('content-type', 'application/json');
       r.end('{"type":"error","error":{"type":"authentication_error","message":"fake gateway"}}');
     });
-    s.listen(0, '127.0.0.1', () => resolve(s));
+    s.listen(0, '0.0.0.0', () => resolve(s));
   });
   apiPort = (apiServer.address() as AddressInfo).port;
   gwPort = (gwServer.address() as AddressInfo).port;
@@ -307,15 +308,22 @@ req.end();`;
     const a = adapter(['sh', '-c', 'sleep 6'], lines);
     const launched = await a.launch({ runId: id, token: 'sdlc_SECRET_TOKEN_VALUE', apiUrl: 'x' });
     await new Promise((r) => setTimeout(r, 1500));
-    const cli = execFileSync(
-      'powershell',
-      [
-        '-NoProfile',
-        '-Command',
-        "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'docker.exe' } | Select-Object -ExpandProperty CommandLine",
-      ],
-      { encoding: 'utf8' },
-    ).toString();
+    // What anyone on the machine can read: the docker client's command line.
+    const cli =
+      process.platform === 'win32'
+        ? execFileSync(
+            'powershell',
+            [
+              '-NoProfile',
+              '-Command',
+              "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'docker.exe' } | Select-Object -ExpandProperty CommandLine",
+            ],
+            { encoding: 'utf8' },
+          ).toString()
+        : execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8' })
+            .split('\n')
+            .filter((l) => /\bdocker\b/.test(l))
+            .join('\n');
     expect(cli).not.toContain('sdlc_SECRET_TOKEN_VALUE');
     expect(cli).toContain('SDLC_RUN_TOKEN');
     launched.kill();
