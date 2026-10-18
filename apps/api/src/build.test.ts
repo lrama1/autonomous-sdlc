@@ -289,7 +289,9 @@ describe('making a plan from an approved design', () => {
     await buildTick(deps());
     designText = block(task('T1', { role: 'frontend_engineer' }));
     const unstaffed = await approvedDesign();
-    await buildTick(deps());
+    // As if the platform had no frontend agent.
+    const withoutFrontend = new Map([...agents].filter(([role]) => role !== 'frontend_engineer'));
+    await buildTick(deps({ agents: withoutFrontend }));
     const a = await planOf(bad.initiativeId);
     expect(a.plan).toMatchObject({ state: 'invalid' });
     expect(a.plan!.errors[0]).toContain('no ```sdlc-tasks block');
@@ -321,6 +323,34 @@ describe('running the plan', () => {
     expect(t1.task).toContain('- T1 works');
     expect(t1.sponsorPersonId).toBe(f.personId);
     expect(tasks[0]!.attempt).toBe(1);
+  });
+
+  it('gives each task to the agent for its role', async () => {
+    designText = block(
+      task('T1') +
+        task('T2', { role: 'frontend_engineer', dependsOn: ['T1'] }) +
+        task('T3', { role: 'frontend_engineer' }),
+    );
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    await finishTask(plan.id, 'T1', 'merged');
+    await buildTick(deps());
+    const { tasks } = await planOf(f.initiativeId);
+    const runs = await db.select().from(agentRun).where(eq(agentRun.initiativeId, f.initiativeId));
+    const of = (key: string) => runs.find((r) => r.id === tasks.find((t) => t.key === key)!.runId)!;
+    expect(of('T1')).toMatchObject({
+      agentRole: 'backend_engineer',
+      agentDefinitionId: 'backend-engineer',
+    });
+    expect(of('T2')).toMatchObject({
+      agentRole: 'frontend_engineer',
+      agentDefinitionId: 'frontend-engineer',
+    });
+    expect(of('T3')).toMatchObject({
+      agentRole: 'frontend_engineer',
+      agentDefinitionId: 'frontend-engineer',
+    });
   });
 
   it('starts a task only after what it depends on is merged', async () => {

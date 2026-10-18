@@ -12,7 +12,7 @@ import { startStack } from './stack.js';
 
 // Step 1 acceptance (mvp-contract section 16), live: real Claude Code, real gateway and OpenRouter, real GitHub.
 // It spends a few cents and merges a small change into the scratch repository.
-//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|catchup|all] [docker]
+//   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|design|build|bigbuild|mixedbuild|catchup|all] [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
@@ -172,6 +172,62 @@ try {
     say(`run ${run.id} queued (${run.definition}, budget $${run.budgetUsd})`);
     return { init, run };
   }
+  /**
+   * Plays the people around a build plan until it ends: approves the engineers' pull requests, answers their
+   * questions with the agent's own recommendation, and records when each task changed state.
+   */
+  const drivePlan = async (initiativeId: string, handled: string[], startedAt: number) => {
+    const getPlan = async () =>
+      (await call(bob, 'GET', `/api/initiatives/${initiativeId}/plan`)).plan as any;
+    let maxRunning = 0;
+    const seen = new Map<string, string>();
+    const timeline: string[] = [];
+    const done = new Set<string>(handled);
+    const final = await waitFor(
+      'the plan ends',
+      async () => {
+        const p = await getPlan();
+        const running = p.tasks.filter((t: any) => t.state === 'running').length;
+        maxRunning = Math.max(maxRunning, running);
+        for (const t of p.tasks) {
+          if (seen.get(t.key) !== t.state) {
+            seen.set(t.key, t.state);
+            timeline.push(`${Math.round((Date.now() - startedAt) / 1000)}s ${t.key}:${t.state}`);
+          }
+        }
+        if (p.tasks.some((t: any) => t.state === 'failed'))
+          throw new Error(
+            `a task failed: ${JSON.stringify(p.tasks.map((t: any) => [t.key, t.state, t.detail]))}`,
+          );
+        const queue: any[] = await call(bob, 'GET', '/api/interactions');
+        for (const q of queue) {
+          if (q.initiativeId !== initiativeId || done.has(q.id)) continue;
+          if (q.type === 'review') {
+            done.add(q.id);
+            await call(bob, 'POST', `/api/interactions/${q.id}/answer`, {
+              decision: 'approved',
+              answer: 'Fine.',
+            }).catch(() => done.delete(q.id));
+          } else if (['question', 'decision'].includes(q.type)) {
+            const options = Array.isArray(q.options) ? q.options : [];
+            const choice = q.recommendation ?? options[0]?.id;
+            if (choice) {
+              done.add(q.id);
+              say(`answering "${q.title}" with "${choice}"`);
+              await call(bob, 'POST', `/api/interactions/${q.id}/answer`, { answer: choice }).catch(
+                () => done.delete(q.id),
+              );
+            }
+          }
+        }
+        return p.state === 'done' || p.state === 'invalid' || p.state === 'cancelled' ? p : null;
+      },
+      1_500_000,
+      2500,
+    );
+    return { final, maxRunning, timeline };
+  };
+
   const runState = async (id: string) => (await call(alice, 'GET', `/api/runs/${id}`)) as any;
   const openFor = async (jar: CookieJar, runId: string, types: string[]) => {
     const queue: any[] = await call(jar, 'GET', '/api/interactions');
@@ -1292,54 +1348,8 @@ try {
       `P  the design became a plan with five tasks, three of them free to run together (${shape.join(' ')})`,
     );
 
-    // Keep going until the plan ends: approve the engineers' pull requests, answer questions, and watch the plan.
-    let maxRunning = 0;
+    const { final, maxRunning, timeline } = await drivePlan(init.id, [g1.id], started);
     let caught = 0;
-    const seen = new Map<string, string>();
-    const timeline: string[] = [];
-    const approved = new Set<string>([g1.id]);
-    const final = await waitFor(
-      'the plan ends',
-      async () => {
-        const p = await getPlan();
-        const running = p.tasks.filter((t: any) => t.state === 'running').length;
-        maxRunning = Math.max(maxRunning, running);
-        for (const t of p.tasks) {
-          if (seen.get(t.key) !== t.state) {
-            seen.set(t.key, t.state);
-            timeline.push(`${Math.round((Date.now() - started) / 1000)}s ${t.key}:${t.state}`);
-          }
-        }
-        if (p.tasks.some((t: any) => t.state === 'failed'))
-          throw new Error(
-            `a task failed: ${JSON.stringify(p.tasks.map((t: any) => [t.key, t.state, t.detail]))}`,
-          );
-        const queue: any[] = await call(bob, 'GET', '/api/interactions');
-        for (const q of queue) {
-          if (q.initiativeId !== init.id || approved.has(q.id)) continue;
-          if (q.type === 'review') {
-            approved.add(q.id);
-            await call(bob, 'POST', `/api/interactions/${q.id}/answer`, {
-              decision: 'approved',
-              answer: 'Fine.',
-            }).catch(() => approved.delete(q.id));
-          } else if (['question', 'decision'].includes(q.type)) {
-            const options = Array.isArray(q.options) ? q.options : [];
-            const choice = q.recommendation ?? options[0]?.id;
-            if (choice) {
-              approved.add(q.id);
-              say(`answering "${q.title}" with "${choice}"`);
-              await call(bob, 'POST', `/api/interactions/${q.id}/answer`, { answer: choice }).catch(
-                () => approved.delete(q.id),
-              );
-            }
-          }
-        }
-        return p.state === 'done' || p.state === 'invalid' || p.state === 'cancelled' ? p : null;
-      },
-      1_500_000,
-      2500,
-    );
     caught = (
       await db.query(
         "select count(*)::int n from activity_event where action = 'gate.caught_up' and initiative_id = $1",
@@ -1378,6 +1388,96 @@ try {
     const total = cost.rows.reduce((a: number, r: any) => a + r.c, 0);
     say(
       `cost: ${cost.rows.map((r: any) => `${r.agent_role} x${r.n} $${(r.c / 1e6).toFixed(3)}`).join(', ')}; total $${(total / 1e6).toFixed(3)}; wall ${Math.round((Date.now() - started) / 1000)}s after approval`,
+    );
+  }
+
+  // ---------------- Mixed build: a backend task, then a frontend task that uses it ----------------
+  if (phase === 'mixedbuild') {
+    say('--- mixedbuild: the backend agent builds T1, then the frontend agent builds T2 ---');
+    const cara = await signInAs(stack.publicUrl, 'dev-cara'); // Architect
+    const specs: any[] = await gh(`/repos/${REPO}/contents/docs/spec`);
+    const specFile: string = specs
+      .map((x) => x.name as string)
+      .sort()
+      .at(-1)!;
+    const s = stamp;
+    const init = await call(alice, 'POST', '/api/initiatives', {
+      title: `Mixed build ${s}`,
+      goal: 'A small info module and a page that shows it.',
+      repositoryId: repo.id,
+      autonomyMode: 'balanced',
+    });
+    const designRun = await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+      role: 'architect',
+      budgetUsd: 1.5,
+      task:
+        `Treat docs/spec/${specFile} as background only. Design this work instead, and write the design to docs/design/mixed-${s}.md following your instructions. ` +
+        `The task list is exactly two tasks. ` +
+        `T1 (backend_engineer) adds src/info-${s}.js exporting getInfo(), which returns {"name": "sdlc-scratch", "version": <the version in package.json>}, with a test in test/info-${s}.test.js. ` +
+        `T2 (frontend_engineer, depends on T1) adds GET /page-${s} to src/server.js. It answers an HTML page (content type text/html; charset=utf-8) that shows the name and version from getInfo(), with a test in test/server.test.js. ` +
+        `Do not ask any questions. Commit it and change no other file.`,
+    });
+    const g1 = await waitFor(
+      'the design review',
+      () => openFor(cara, designRun.id, ['review']),
+      600_000,
+    );
+    await call(cara, 'POST', `/api/interactions/${g1.id}/answer`, {
+      decision: 'approved',
+      answer: 'Build it.',
+    });
+    const started = Date.now();
+    const plan0 = await waitFor(
+      'the build plan',
+      async () => (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan ?? null,
+      420_000,
+      3000,
+    );
+    check(
+      plan0.state === 'active' &&
+        plan0.tasks.map((t: any) => t.role).join(',') === 'backend_engineer,frontend_engineer',
+      `F  the plan has a backend task and a frontend task after it (${plan0.state}: ${plan0.tasks.map((t: any) => t.key + ' ' + t.role).join('; ')})`,
+    );
+    const { final, timeline } = await drivePlan(init.id, [g1.id], started);
+    say(`timeline: ${timeline.join(' | ')}`);
+    check(final.state === 'done', `F  the plan finished (${final.state})`);
+    const runs = await db.query(
+      "select r.agent_role, r.agent_definition_id, r.engine, r.state, r.cost_micros, i.role_needed from agent_run r left join interaction i on i.run_id = r.id and i.type = 'review' where r.initiative_id = $1 and r.agent_role in ('backend_engineer','frontend_engineer') order by r.created_at",
+      [init.id],
+    );
+    check(
+      runs.rows.length === 2 &&
+        runs.rows[0].agent_definition_id === 'backend-engineer' &&
+        runs.rows[1].agent_definition_id === 'frontend-engineer',
+      `F  each task ran with its own agent (${runs.rows.map((r: any) => r.agent_definition_id).join(', ')})`,
+    );
+    check(
+      runs.rows[1]?.role_needed === 'frontend_engineer',
+      `F  the frontend pull request went to a Frontend Engineer to review (${runs.rows[1]?.role_needed})`,
+    );
+    const server = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/src/server.js`)).content,
+      'base64',
+    ).toString('utf8');
+    check(server.includes(`/page-${s}`), `F  main now serves /page-${s}`);
+    // What the Frontend Engineer's prompt asks for, read from the merged page.
+    const at = server.indexOf(`/page-${s}`);
+    const block = server.slice(at, at + 2500);
+    for (const [what, re] of [
+      ['a page language', /lang=["']en["']/],
+      ['a title', /<title>/],
+      ['a main landmark', /<main/],
+      ['one h1', /<h1/],
+      ['HTML content type', /text\/html/],
+    ] as Array<[string, RegExp]>)
+      check(re.test(block), `F  the page has ${what}`);
+    const test = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/test/server.test.js`)).content,
+      'base64',
+    ).toString('utf8');
+    check(test.includes(`/page-${s}`), 'F  and a test for it');
+    say(
+      `cost: ${runs.rows.map((r: any) => `${r.agent_role} $${(r.cost_micros / 1e6).toFixed(3)}`).join(', ')}`,
     );
   }
 
