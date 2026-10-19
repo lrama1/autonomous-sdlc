@@ -105,6 +105,8 @@ export function taskPrompt(
   redo?: string,
   /** What the approved design says the running app must prove. */
   smoke?: DesignSmoke | null,
+  /** Set when a reviewer read an earlier attempt and asked for changes: what they said. */
+  rework?: string,
 ): string {
   const lines = [
     `${task.id}: ${task.title}`,
@@ -121,6 +123,13 @@ export function taskPrompt(
     lines.push(
       '',
       `This is a new attempt. An earlier attempt's pull request could not merge: ${redo} Start from the current main branch, which already holds the changes other tasks merged meanwhile, and do this task again on top of it. Do not undo or rewrite what is already there.`,
+    );
+  }
+  if (rework) {
+    lines.push(
+      '',
+      `This is a new attempt. A reviewer read an earlier attempt's pull request and asked for changes. That pull request was closed, so none of its changes are on the main branch. Start from the current main branch, do this task again, and make every change the reviewer asked for. The reviewer wrote:`,
+      rework,
     );
   }
   if (smoke?.kind === 'checks') {

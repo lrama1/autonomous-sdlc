@@ -4,6 +4,9 @@ export const agentDefinitionSchema = z.object({
   id: z.string().min(1),
   version: z.number().int().positive(),
   role: z.string().min(1),
+  // `inline` agents answer from one reading inside the platform (through the gateway). They have no sandbox, so no run is
+  // started for them by a person; the platform starts them from a review.
+  runs: z.enum(['sandbox', 'inline']).default('sandbox'),
   engine: z.string().min(1),
   model_alias: z.string().min(1),
   prompt_file: z.string().min(1),

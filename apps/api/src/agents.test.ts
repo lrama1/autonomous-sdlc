@@ -9,13 +9,21 @@ describe('loading agents', () => {
   it('leaves each agent on its own engine unless told otherwise', async () => {
     const agents = await loadAgents(dir);
     expect(agents.size).toBeGreaterThan(3);
-    expect([...agents.values()].every((a) => a.definition.engine === 'claude-code')).toBe(true);
+    const sandboxed = [...agents.values()].filter((a) => a.definition.runs === 'sandbox');
+    expect(sandboxed.every((a) => a.definition.engine === 'claude-code')).toBe(true);
+    // An agent that works inside the platform reads through the gateway, whatever the engine setting says.
+    expect(agents.get('security')!.definition.engine).toBe('gateway');
   });
 
   it('moves every agent to the engine it is told to use, changing nothing else', async () => {
     const before = await loadAgents(dir);
     const after = await loadAgents(dir, 'copilot-cli');
-    expect([...after.values()].every((a) => a.definition.engine === 'copilot-cli')).toBe(true);
+    expect(
+      [...after.values()]
+        .filter((a) => a.definition.runs === 'sandbox')
+        .every((a) => a.definition.engine === 'copilot-cli'),
+    ).toBe(true);
+    expect(after.get('security')!.definition.engine).toBe('gateway');
     for (const [role, a] of after)
       expect({ ...a.definition, engine: 'x' }).toEqual({
         ...before.get(role)!.definition,

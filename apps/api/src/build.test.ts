@@ -119,7 +119,15 @@ async function planOf(initiativeId: string) {
 async function finishTask(
   planId: string,
   key: string,
-  how: 'merged' | 'declined' | 'no_pr' | 'run_failed' | 'review_open' | 'ci_failed' | 'conflict',
+  how:
+    | 'merged'
+    | 'declined'
+    | 'changes'
+    | 'no_pr'
+    | 'run_failed'
+    | 'review_open'
+    | 'ci_failed'
+    | 'conflict',
 ) {
   const [t] = await db
     .select()
@@ -149,10 +157,15 @@ async function finishTask(
     roleNeeded: 'backend_engineer',
     answer:
       how === 'declined'
-        ? { decision: 'changes_requested' }
-        : how === 'review_open'
-          ? null
-          : { decision: 'approved' },
+        ? { decision: 'rejected' }
+        : how === 'changes'
+          ? {
+              decision: 'changes_requested',
+              text: 'F1 [high] XSS in the list. Fix: use textContent.',
+            }
+          : how === 'review_open'
+            ? null
+            : { decision: 'approved' },
     contextCard: {
       kind: 'pull_request',
       repository: 'o/r',
@@ -544,6 +557,39 @@ describe('tasks that touch the same files', () => {
     expect(run!.task).toContain('conflicted with changes that merged in the meantime');
     const log = await db.select().from(activityEvent).where(eq(activityEvent.runId, firstRun!));
     expect(log.map((l) => l.action)).toContain('build_task.redo');
+  });
+
+  it("redoes a task with the reviewer's words when changes were requested, and closes the old pull request", async () => {
+    designText = block(task('T1'));
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    const firstRun = (await planOf(f.initiativeId)).tasks[0]!.runId;
+    await finishTask(plan.id, 'T1', 'changes');
+    closed.length = 0;
+    await buildTick(deps());
+    const after = (await planOf(f.initiativeId)).tasks[0]!;
+    expect(closed).toEqual([20]);
+    expect(after).toMatchObject({ state: 'running', attempt: 2 });
+    expect(after.runId).not.toBe(firstRun);
+    const [run] = await db.select().from(agentRun).where(eq(agentRun.id, after.runId!));
+    expect(run!.task).toContain('asked for changes');
+    expect(run!.task).toContain('F1 [high] XSS in the list. Fix: use textContent.');
+    expect(run!.task).not.toContain('could not merge');
+  });
+
+  it('hands a task to a person when a reviewer keeps asking for changes', async () => {
+    designText = block(task('T1'));
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await finishTask(plan.id, 'T1', 'changes');
+      await buildTick(deps());
+    }
+    const task1 = (await planOf(f.initiativeId)).tasks[0]!;
+    expect(task1.state).toBe('failed');
+    expect(task1.detail).toContain('asked for changes on each of 3 attempts');
   });
 
   it('gives up and asks a person when it keeps conflicting', async () => {

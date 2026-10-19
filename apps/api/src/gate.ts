@@ -27,7 +27,10 @@ export interface GateInfo {
   catchUps?: number;
 }
 
-/** What the Gate asks about a repository's smoke test (mvp-contract section 16). Null from the getter means the platform cannot run one. */
+/**
+ * What the Gate asks of a check that must be settled before a pull request is approved or merged: the smoke test, the
+ * security review (mvp-contract section 16). Null from the getter means the platform cannot run that check.
+ */
 export interface SmokeGuard {
   /** Why this review may not be approved or merged yet, or null. */
   blocks(row: InteractionRow): Promise<string | null>;
@@ -45,6 +48,8 @@ export interface GateOptions {
   github: GitHubService;
   /** Late-bound: the smoke test service is made after the Gate, and only when the platform can run previews. */
   smoke?: () => SmokeGuard | null;
+  /** Late-bound too: the security review needs the agent definition and the gateway. */
+  security?: () => SmokeGuard | null;
   /** How long to wait for the required check before giving up. */
   waitForCiMs?: number;
   /** How long to wait between looks when GitHub updates a branch. */
@@ -68,6 +73,7 @@ export function createGate({
   db,
   github,
   smoke = () => null,
+  security = () => null,
   waitForCiMs = 30 * 60_000,
   catchUpPollMs = 1000,
   log = (l) => console.log(l),
@@ -198,9 +204,10 @@ export function createGate({
       action: 'gate.caught_up',
       detail: { from: card.headSha, to: next, prNumber: card.prNumber },
     });
-    await smoke()
-      ?.carryOver?.(row, card.headSha, next)
-      .catch((e) => log(`[gate] could not carry the smoke result over: ${String(e)}`));
+    for (const g of guards())
+      await g
+        .carryOver?.(row, card.headSha, next)
+        .catch((e) => log(`[gate] could not carry a check result over: ${String(e)}`));
     await setGate(row, {
       state: 'waiting_ci',
       since: new Date().toISOString(),
@@ -321,23 +328,24 @@ export function createGate({
         return 'ci_failed';
       }
 
-      // The review was held until the smoke test passed or a person overrode it. This is the same question asked again
+      // The review was held until each check had passed or a person had settled it. This is the same question asked again
       // at the last moment, so an approval that slipped past (or a result that changed) still cannot merge.
-      const guard = smoke();
-      const held = guard ? await guard.blocks(row) : null;
+      const held = await heldBy(row);
       if (held) {
         await finish(
           row,
           {
             state: 'failed',
             since,
-            detail: `the smoke test has not passed: ${held}`.slice(0, 500),
+            detail: `the merge is held: ${held}`.slice(0, 500),
           },
-          'gate.smoke_held',
+          'gate.held',
         );
         return 'failed';
       }
-      const proof = guard ? await guard.evidence(row) : null;
+      const proof = (await Promise.all(guards().map((g) => g.evidence(row))))
+        .filter((p): p is string => Boolean(p))
+        .join(' ');
 
       const a = answerOf(row);
       const byRule = (row.answer as { source?: string } | null)?.source === 'policy';
@@ -382,6 +390,17 @@ export function createGate({
    * One look at a time per review. A person's approval and the worker's next pass can arrive together, and two looks that
    * each approve and merge on GitHub, then disagree about what happened, leave the review in the wrong state.
    */
+  const guards = (): SmokeGuard[] =>
+    [smoke(), security()].filter((g): g is SmokeGuard => g !== null);
+  /** The first reason any check gives for holding this review back, or null. */
+  async function heldBy(row: InteractionRow): Promise<string | null> {
+    for (const g of guards()) {
+      const reason = await g.blocks(row);
+      if (reason) return reason;
+    }
+    return null;
+  }
+
   const looking = new Map<string, Promise<GateState | null>>();
   function evaluate(row: InteractionRow): Promise<GateState | null> {
     const running = looking.get(row.id);
@@ -398,10 +417,10 @@ export function createGate({
   return {
     evaluate,
 
-    /** Why a person may not approve this review yet because of the smoke test, or null. */
-    async smokeBlocks(row: InteractionRow): Promise<string | null> {
+    /** Why a person may not approve this review yet (the smoke test, the security review), or null. */
+    async approvalBlocks(row: InteractionRow): Promise<string | null> {
       if (row.type !== 'review' || !isPr(row)) return null;
-      return (await smoke()?.blocks(row)) ?? null;
+      return heldBy(row);
     },
 
     /**
@@ -414,8 +433,9 @@ export function createGate({
       why: { reason: string; rule: string | null },
     ): Promise<GateState | null> {
       if (row.type !== 'review' || !isPr(row)) return null;
-      // A change with smoke checks always waits for a person to run them: the rules do not click for anyone.
-      if (await smoke()?.blocks(row)) return null;
+      // A change with smoke checks, or code for a security review to read, always waits for a person to run them: the rules
+      // do not click for anyone.
+      if (await heldBy(row)) return null;
       const settled = await settleByPolicy(db, row.id, {
         decision: 'approved',
         reason: why.reason,

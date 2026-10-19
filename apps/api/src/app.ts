@@ -19,6 +19,10 @@ import type { PreviewHost } from './docker-preview.js';
 import { PreviewService } from './previews.js';
 import { registerSmokeRoutes } from './smoke-routes.js';
 import { SmokeService } from './smoke-service.js';
+import { GatewayModel } from './inline-model.js';
+import type { InlineModel } from './inline-model.js';
+import { registerSecurityRoutes } from './security-routes.js';
+import { SecurityService } from './security-service.js';
 import { FargatePreviewHost, CloudWatchTaskLogs, S3CodeStore } from './fargate-preview.js';
 import { registerPreviewProxy } from './preview-proxy.js';
 import { ProcessRunner } from './launcher.js';
@@ -80,6 +84,8 @@ export interface BuildOptions {
   docFetcher?: DocFetcher;
   /** Where platform previews run. Tests pass a fake. Otherwise the Docker host is used when the Docker runner is. */
   previewHost?: PreviewHost;
+  /** What the Security agent asks. Tests replace it; otherwise it asks the model gateway. */
+  securityModel?: InlineModel;
 }
 
 export async function buildApp({
@@ -95,6 +101,7 @@ export async function buildApp({
   slack: slackOverride,
   docFetcher,
   previewHost,
+  securityModel,
 }: BuildOptions) {
   const app = Fastify({ logger });
   const { db, pool } = deps ?? createDb(config.DATABASE_URL, { caFile: config.DATABASE_CA_FILE });
@@ -165,10 +172,12 @@ export async function buildApp({
   registerWorkRoutes(app, db, loadedAgents, () => refreshInstallations(db, secretStore, ghClient));
   const ruleSet = await loadRules(config.RULES_FILE);
   let smoke: SmokeService | null = null;
+  let security: SecurityService | null = null;
   const gate = createGate({
     db,
     github: ghService,
     smoke: () => smoke,
+    security: () => security,
     log: (l) => app.log.info(l),
   });
   registerRunnerRoutes(app, {
@@ -206,6 +215,29 @@ export async function buildApp({
     portBase: config.PREVIEW_PORT_BASE,
   };
   let previews: PreviewService | null = null;
+  // The Security agent reads through the model gateway; nothing else is needed, so it does not wait for a preview host.
+  const securityAgent = loadedAgents.get('security');
+  if (config.SECURITY_REVIEW === 'on' && securityAgent?.definition.runs === 'inline') {
+    security = new SecurityService({
+      db,
+      github: ghService,
+      agent: securityAgent,
+      model: securityModel ?? new GatewayModel(config.GATEWAY_URL),
+      log: (l) => app.log.info(l),
+    });
+    // The platform starts, and says so on its health page, even when the database is not there yet.
+    await security
+      .recover()
+      .catch((e) =>
+        app.log.warn(
+          { err: e instanceof Error ? e.message : String(e) },
+          'security recovery failed',
+        ),
+      );
+    app.addHook('onClose', async () => {
+      await security?.idle();
+    });
+  }
   const useHost = async (host: PreviewHost) => {
     previews = new PreviewService({
       db,
@@ -252,6 +284,7 @@ export async function buildApp({
     ttlMinutes: config.PREVIEW_TTL_MIN,
   });
   registerSmokeRoutes(app, db, rules, () => smoke);
+  registerSecurityRoutes(app, db, rules, gate, () => security);
   app.decorate('previews', () => previews);
   registerPreviewProxy(app, db, { secret: config.SESSION_SECRET, origin: config.PREVIEW_ORIGIN });
   registerBuildRoutes(app, db);

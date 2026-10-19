@@ -73,6 +73,8 @@ const stack = await startStack({
       : !l.startsWith('[gateway]') && say(l),
   apiEnv: {
     BLOCKING_MAX_S: '600',
+    // Only the phases about the security review ask for it; the others approve reviews without it.
+    SECURITY_REVIEW: phase === 'securityrun' || phase === 'dogfood' ? 'on' : 'off',
     ...(docker ? { RUNNER_ADAPTER: 'docker' } : {}),
     ...(agentsDir ? { AGENTS_DIR: agentsDir } : {}),
   },
@@ -240,6 +242,43 @@ try {
       }).catch((e) => say(`override failed: ${e.message.slice(0, 200)}`));
       return false;
     };
+    const securitySeen = new Map<string, string>();
+    /**
+     * A review with code in it cannot be approved until the Security agent has read it. A person clicks the review; each
+     * high or critical finding is written down as a finding and dismissed with a reason, so the rest can still be built.
+     */
+    const securityAllows = async (q: any): Promise<boolean> => {
+      const sc = await call(bob, 'GET', `/api/interactions/${q.id}/security`).catch(() => null);
+      if (!sc || !sc.available || !sc.required) return true;
+      const state = sc.run?.state ?? 'none';
+      if (state === 'running') return false;
+      const key = `${q.id}:${sc.run?.id ?? 'none'}`;
+      if (state === 'none' || state === 'error') {
+        if (securitySeen.has(key)) return false;
+        securitySeen.set(key, 'started');
+        say(`clicking Run the security review on "${q.title.slice(0, 80)}"`);
+        await call(bob, 'POST', `/api/interactions/${q.id}/security/start`, {}).catch((e) => {
+          securitySeen.delete(key);
+          say(`could not start the security review: ${e.message.slice(0, 200)}`);
+        });
+        return false;
+      }
+      for (const f of sc.run.findings) {
+        if (f.dismissed || securitySeen.has(`${key}:${f.id}`)) continue;
+        securitySeen.set(`${key}:${f.id}`, 'noted');
+        findings.push(
+          `${q.title.slice(0, 80)} - security ${f.severity} ${f.id} ${f.category} ${f.file}:${f.line}: ${f.title}. ${f.why} Fix: ${f.fix}`,
+        );
+        say(
+          `SECURITY ${f.severity.toUpperCase()} on "${q.title.slice(0, 80)}": ${f.title} (${f.file}:${f.line})`,
+        );
+        if (['critical', 'high'].includes(f.severity))
+          await call(bob, 'POST', `/api/interactions/${q.id}/security/findings/${f.id}/dismiss`, {
+            reason: 'Dogfood run: written down as a finding; continuing so the rest can be built.',
+          }).catch((e) => say(`dismiss failed: ${e.message.slice(0, 200)}`));
+      }
+      return (await call(bob, 'GET', `/api/interactions/${q.id}/security`)).blocks === null;
+    };
     const final = await waitFor(
       'the plan ends',
       async () => {
@@ -265,6 +304,7 @@ try {
           if (q.initiativeId !== initiativeId || done.has(q.id)) continue;
           if (q.type === 'review') {
             if (!(await smokeAllows(q))) continue;
+            if (!(await securityAllows(q))) continue;
             done.add(q.id);
             await call(bob, 'POST', `/api/interactions/${q.id}/answer`, {
               decision: 'approved',
@@ -3029,6 +3069,236 @@ try {
       `S  the activity log has the whole story (${actions.join(', ')})`,
     );
     check((await leftovers()) === '', 'S  nothing is left running');
+  }
+  if (phase === 'securityrun') {
+    const variant = process.env.SECURITY_VARIANT ?? 'sendback';
+    const clean = variant === 'clean';
+    say(
+      `--- securityrun (${variant}): the Security agent reads the pull request, a high finding holds the approval, and a person sends it back or dismisses it with a reason ---`,
+    );
+    if (!ghToken) throw new Error('GH_TOKEN is needed to read the pull request');
+    const dir = `sec-${stamp}`;
+    const page = clean
+      ? [
+          `<!doctype html>`,
+          `<meta charset="utf-8"><title>Guests</title>`,
+          `<ul id="list"></ul>`,
+          `<script>`,
+          `const guests = ['Ann', 'Bo'];`,
+          `const list = document.getElementById('list');`,
+          `for (const g of guests) {`,
+          `  const li = document.createElement('li');`,
+          `  li.textContent = g;`,
+          `  list.appendChild(li);`,
+          `}`,
+          `</script>`,
+        ]
+      : [
+          `<!doctype html>`,
+          `<meta charset="utf-8"><title>Guests</title>`,
+          `<input id="name"><button id="add">Add</button>`,
+          `<ul id="list"></ul>`,
+          `<script>`,
+          `const list = document.getElementById('list');`,
+          `function show(name) {`,
+          `  list.innerHTML += '<li onclick="pick(\\'' + name + '\\')">' + name + '</li>';`,
+          `}`,
+          `function pick(name) { document.title = name; }`,
+          `document.getElementById('add').onclick = () => show(document.getElementById('name').value);`,
+          `new URLSearchParams(location.search).getAll('guest').forEach(show);`,
+          `</script>`,
+        ];
+    const task = [
+      `Create one file and commit it. Do not change anything else, do not run anything and do not ask any questions.`,
+      ``,
+      `The file ${dir}/index.html with exactly this content:`,
+      '```html',
+      ...page,
+      '```',
+    ].join('\n');
+    const { run } = await startRun(`Security review ${stamp} ${variant}`, task, 'guided');
+    const review = await waitFor(
+      'the review request',
+      () => openFor(bob, run.id, ['review']),
+      600_000,
+    );
+    const prNumber: number = review.contextCard.prNumber;
+    const sec = () => call(bob, 'GET', `/api/interactions/${review.id}/security`);
+    const raw = async (who: CookieJar, path: string, body?: object) => {
+      const r = await who.fetch(`${stack.publicUrl}${path}`, {
+        method: 'POST',
+        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      });
+      let json: any = {};
+      try {
+        json = JSON.parse(r.text);
+      } catch {
+        // not JSON
+      }
+      return { status: r.status, json };
+    };
+    /** The scratch repository may list smoke checks from earlier runs. This phase is about the security review, so they are overridden. */
+    const letSmokeThrough = async () => {
+      const sm = await call(bob, 'GET', `/api/interactions/${review.id}/smoke`).catch(() => null);
+      if (sm?.available && sm.required !== 'none' && sm.blocks) {
+        say(`the repository lists smoke checks (${sm.required}); overriding them for this phase`);
+        await raw(bob, `/api/interactions/${review.id}/smoke/override`, {
+          reason: 'Security run: the smoke checks belong to an earlier test of this repository.',
+        });
+      }
+    };
+    const approve = () =>
+      raw(bob, `/api/interactions/${review.id}/answer`, {
+        decision: 'approved',
+        answer: 'Looks good.',
+      });
+
+    const before = await sec();
+    check(
+      before.available === true && before.required === true && before.run === null,
+      'X  the review shows a security review as required, and not yet run on this commit',
+    );
+    const early = await approve();
+    check(
+      early.status === 409 && early.json.error?.code === 'smoke_required',
+      `X  approving before the security review is refused (${early.status})`,
+    );
+
+    const t0 = Date.now();
+    const click = await raw(bob, `/api/interactions/${review.id}/security/start`);
+    check(click.status === 202, `X  one click starts it (${click.status})`);
+    const done = await waitFor(
+      'the security review finishes',
+      async () => {
+        const x = await sec();
+        return x.run && x.run.state !== 'running' ? x : null;
+      },
+      300_000,
+      3000,
+    );
+    say(
+      `security review after ${Math.round((Date.now() - t0) / 1000)}s: ${done.run.state}. ${done.run.summary ?? done.run.detail}\n${done.run.findings.map((f: any) => `  [${f.severity}] ${f.id} ${f.category} ${f.file}:${f.line}: ${f.title}\n      ${f.why}\n      fix: ${f.fix}`).join('\n')}`,
+    );
+    check(done.run.state === 'done', `X  the agent gave an answer that reads (${done.run.state})`);
+    const cost = await db.query(
+      "select cost_micros from agent_run where agent_role = 'security' order by created_at desc limit 1",
+    );
+    say(`the review cost ${Number(cost.rows[0]?.cost_micros ?? 0) / 1_000_000} USD`);
+    check(
+      Number(cost.rows[0]?.cost_micros ?? 0) > 0,
+      'X  the model call was metered on its own run',
+    );
+    const pause = Number(process.env.SECURITY_PAUSE_S ?? 0);
+    if (pause > 0) {
+      say(`Pausing ${pause}s so the page can be looked at: ${stack.publicUrl}/#/queue`);
+      await new Promise((r) => setTimeout(r, pause * 1000));
+    }
+    const high = done.run.findings.filter((f: any) => ['critical', 'high'].includes(f.severity));
+
+    if (clean) {
+      check(
+        high.length === 0,
+        `X  a page that builds its list with textContent has no high or critical finding (${high.length})`,
+      );
+      check(done.blocks === null, 'X  and the review can be approved');
+    } else {
+      check(
+        high.some(
+          (f: any) =>
+            /xss|injection|script/i.test(`${f.category} ${f.title}`) &&
+            String(f.file).includes(dir),
+        ),
+        `X  the agent finds the cross-site scripting in ${dir}/index.html (${high.map((f: any) => f.id + ' ' + f.title).join('; ')})`,
+      );
+      check(
+        typeof done.blocks === 'string' && done.blocks.includes(high[0]?.id),
+        `X  the approval is held and names the findings ("${String(done.blocks).slice(0, 100)}...")`,
+      );
+      const held = await approve();
+      check(
+        held.status === 409,
+        `X  approving with an open high finding is refused (${held.status})`,
+      );
+      const noReason = await raw(
+        bob,
+        `/api/interactions/${review.id}/security/findings/${high[0].id}/dismiss`,
+        { reason: 'ok' },
+      );
+      check(noReason.status === 400, `X  dismissing needs a real reason (${noReason.status})`);
+    }
+
+    if (variant === 'sendback') {
+      const back = await raw(bob, `/api/interactions/${review.id}/security/send-back`);
+      check(
+        back.status === 201,
+        `X  one click sends the findings back to the engineer (${back.status})`,
+      );
+      const row = await db.query('select state, answer from interaction where id = $1', [
+        review.id,
+      ]);
+      check(
+        row.rows[0].state === 'answered' &&
+          row.rows[0].answer?.decision === 'changes_requested' &&
+          String(row.rows[0].answer?.text).includes(high[0].id),
+        'X  the review is answered "changes requested" with the findings as the request',
+      );
+      // A standalone run has no build plan to redo it; the engineer sees the findings on the pull request.
+      const comments: any[] = await gh(`/repos/${REPO}/issues/${prNumber}/comments`);
+      check(
+        comments.some((c) => /asked for changes/.test(c.body) && c.body.includes(high[0].id)),
+        'X  the findings are on the pull request for the engineer',
+      );
+    } else {
+      let note = '';
+      if (variant === 'dismiss') {
+        const reason = 'The guest list is typed by the host on their own page; nothing is shared.';
+        for (const f of high) {
+          const r = await raw(
+            bob,
+            `/api/interactions/${review.id}/security/findings/${f.id}/dismiss`,
+            { reason },
+          );
+          check(r.status === 201, `X  ${f.id} is dismissed with a reason (${r.status})`);
+        }
+        check(
+          (await sec()).blocks === null,
+          'X  once each is dismissed the review can be approved',
+        );
+        note = reason;
+      }
+      await letSmokeThrough();
+      const ok = await approve();
+      check(
+        ok.status === 200,
+        `X  the review is approved (${ok.status} ${JSON.stringify(ok.json.error ?? '')})`,
+      );
+      const merged = await waitFor(
+        'the Gate merges',
+        async () => {
+          const r = await db.query(
+            "select context_card -> 'gate' as gate from interaction where id = $1",
+            [review.id],
+          );
+          const gate = r.rows[0]?.gate;
+          if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+            throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+          return gate?.state === 'merged' ? gate : null;
+        },
+        300_000,
+        4000,
+      );
+      check(Boolean(merged.mergedSha), 'X  the Gate merged the pull request');
+      const reviews: any[] = await gh(`/repos/${REPO}/pulls/${prNumber}/reviews`);
+      const text = reviews.map((r) => String(r.body)).find((b) => /Security review/.test(b)) ?? '';
+      say(`the Gate's approval on GitHub: ${text}`);
+      check(
+        text.includes('Security review:') && (note === '' || text.includes(note)),
+        note
+          ? 'X  GitHub shows the findings and the reason they were dismissed'
+          : 'X  GitHub shows the security review',
+      );
+    }
   }
 } catch (e) {
   say(`ERROR: ${e instanceof Error ? e.message : String(e)}`);

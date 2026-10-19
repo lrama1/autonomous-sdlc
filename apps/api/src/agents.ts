@@ -41,7 +41,7 @@ export async function loadAgents(dir: string, engine?: string): Promise<Map<stri
         `${file} is not a valid agent definition: ${parsed.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`,
       );
     }
-    const def = engine ? { ...parsed.data, engine } : parsed.data;
+    const def = engine && parsed.data.runs !== 'inline' ? { ...parsed.data, engine } : parsed.data;
     if (def.id !== entry)
       throw new Error(`${file}: id "${def.id}" must match the folder name "${entry}"`);
     const prompt = await readFile(path.join(dir, entry, def.prompt_file), 'utf8');

@@ -6,7 +6,8 @@
 //   node --import tsx src/aws-accept.ts [smoke|resume|pipeline|previewrun|smokerun|all]
 // smokerun is not part of `all`: it runs the smoke test of two pull requests (one healthy, one broken) as Fargate tasks.
 // The pipeline phase runs on whichever engine the stack is set to (terraform apply -var agent_engine=copilot-cli).
-// The stack is expected to run with INDEPENDENT_REVIEW=false, since one person plays every part.
+// The stack is expected to run with INDEPENDENT_REVIEW=false, since one person plays every part, and with
+// SECURITY_REVIEW=off, since these runs approve pull requests without a security review.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { signInCognito } from './cognito.js';

@@ -190,6 +190,25 @@ export class GitHubService {
     );
   }
 
+  /** The files a pull request changes, each with its unified diff (GitHub leaves it out for a binary or a very large file). */
+  async pullRequestFiles(
+    repo: string,
+    number: number,
+    maxFiles = 300,
+  ): Promise<Array<{ path: string; status: string; patch: string | null }>> {
+    const { token } = await this.tokenFor('gate', repo);
+    const out: Array<{ path: string; status: string; patch: string | null }> = [];
+    for (let page = 1; out.length < maxFiles; page++) {
+      const batch = await this.client.call<
+        Array<{ filename: string; status: string; patch?: string }>
+      >('GET', `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`, token);
+      for (const f of batch)
+        out.push({ path: f.filename, status: f.status, patch: f.patch ?? null });
+      if (batch.length < 100) break;
+    }
+    return out.slice(0, maxFiles);
+  }
+
   async closePullRequest(repo: string, number: number): Promise<void> {
     const { token } = await this.tokenFor('gate', repo, { pull_requests: 'write' });
     await this.client.call('PATCH', `/repos/${repo}/pulls/${number}`, token, { state: 'closed' });

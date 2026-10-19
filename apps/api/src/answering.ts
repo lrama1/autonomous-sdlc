@@ -28,7 +28,7 @@ export const REASONS: Record<string, { status: number; message: string }> = {
   smoke_required: {
     status: 409,
     message:
-      'This change has smoke checks that have not passed. Run the smoke test, or override it with a reason.',
+      'This change has checks that have not passed (the smoke test, the security review). Settle them first.',
   },
 };
 
@@ -97,7 +97,7 @@ export async function answerAsPerson(
 
   // Approving a pull request that has smoke checks needs a passing smoke test (or an override) for this commit.
   if (body.decision === 'approved' && deps.gate) {
-    const held = await deps.gate.smokeBlocks(row);
+    const held = await deps.gate.approvalBlocks(row);
     if (held) return { ok: false, status: 409, code: 'smoke_required', message: held };
   }
 

@@ -122,6 +122,7 @@ resource "aws_ecs_task_definition" "api" {
       { name = "SECRETS_PREFIX", value = local.runtime_prefix },
       { name = "GATEWAY_URL", value = "http://gateway.${aws_service_discovery_private_dns_namespace.main.name}:8787" },
       { name = "INDEPENDENT_REVIEW", value = tostring(var.independent_review) },
+      { name = "SECURITY_REVIEW", value = var.security_review },
       { name = "PREVIEW_ORIGIN", value = "https://${aws_cloudfront_distribution.previews.domain_name}" },
       { name = "FARGATE_PREVIEW_TASK_DEFINITION", value = aws_ecs_task_definition.preview.family },
       { name = "FARGATE_PREVIEW_SECURITY_GROUPS", value = aws_security_group.preview.id },

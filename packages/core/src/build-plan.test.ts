@@ -151,6 +151,20 @@ describe('taskPrompt', () => {
     expect(taskPrompt({ path: 'x' }, a, [a, b])).not.toContain('new attempt');
   });
 
+  it("puts a reviewer's words in the prompt when changes were requested", () => {
+    const p = taskPrompt(
+      { path: 'docs/design/x.md' },
+      a,
+      [a, b],
+      undefined,
+      undefined,
+      'F1 use textContent.',
+    );
+    expect(p).toContain('asked for changes');
+    expect(p).toContain('F1 use textContent.');
+    expect(p).not.toContain('could not merge');
+  });
+
   it('tells the engineer what the design requires of the running app, only when it does', () => {
     const checks = {
       kind: 'checks' as const,

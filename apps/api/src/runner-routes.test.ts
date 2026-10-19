@@ -559,10 +559,10 @@ describe('POST /runner/pull-request', () => {
       expect(review.state).toBe('open');
     });
 
-    it('autopilot: any change no trigger fired on is approved by rule', async () => {
-      const { review } = await open('autopilot');
-      expect(review).toMatchObject({ state: 'answered', answeredVia: 'auto' });
-      expect(review.answer).toMatchObject({ rule: null });
+    it('autopilot: a change no trigger fired on still waits for the security review, and nothing is approved by rule before it ran', async () => {
+      const { body, review } = await open('autopilot');
+      expect(body.triggers).toEqual([]);
+      expect(review.state).toBe('open');
     });
 
     it('autopilot: a fired trigger still goes to a person', async () => {
@@ -589,8 +589,8 @@ describe('POST /runner/pull-request', () => {
     it('autopilot: a runner that does not report the check at all is taken to mean no', async () => {
       const old = diff() as Record<string, unknown>;
       delete old.unsafeHtml;
-      const { review } = await open('autopilot', old as ReturnType<typeof diff>);
-      expect(review).toMatchObject({ state: 'answered', answeredVia: 'auto' });
+      const { body } = await open('autopilot', old as ReturnType<typeof diff>);
+      expect(body.triggers).toEqual([]);
     });
 
     it('a spec from the Product agent is always decided by a person (G1), even in autopilot', async () => {

@@ -469,6 +469,46 @@ export const smokeRun = pgTable(
   (t) => [index('smoke_run_pr_idx').on(t.repository, t.prNumber, t.headSha)],
 );
 
+// One security review of a pull request's code at one commit (mvp-contract section 16, security review). The findings
+// are kept as the agent wrote them, with a person's dismissal (a reason) added to the ones they dismiss.
+export const securityReview = pgTable(
+  'security_review',
+  {
+    id: id(),
+    interactionId: uuid('interaction_id').references(() => interaction.id),
+    initiativeId: uuid('initiative_id').references(() => initiative.id),
+    // The inline run that paid for it, so its cost shows with the rest.
+    runId: uuid('run_id').references(() => agentRun.id),
+    repository: text('repository').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    // running | done | error (the agent could not give an answer that reads)
+    state: text('state').notNull().default('running'),
+    summary: text('summary'),
+    findings: jsonb('findings')
+      .$type<
+        Array<{
+          id: string;
+          severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+          category: string;
+          file: string;
+          line: number | null;
+          title: string;
+          why: string;
+          fix: string;
+          dismissed?: { by: string; byName: string | null; reason: string; at: string };
+        }>
+      >()
+      .notNull()
+      .default([]),
+    detail: text('detail'),
+    startedBy: uuid('started_by').references(() => person.id),
+    createdAt: createdAt(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [index('security_review_pr_idx').on(t.repository, t.prNumber, t.headSha)],
+);
+
 export const bugReport = pgTable(
   'bug_report',
   {

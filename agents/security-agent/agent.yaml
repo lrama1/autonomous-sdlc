@@ -1,0 +1,18 @@
+id: security-agent
+version: 1
+role: security
+# Works inside the platform, not in a sandbox: one reading of a pull request, through the gateway, that answers with
+# findings. It has no tools, no repository access and no credentials.
+runs: inline
+engine: gateway
+model_alias: agent-strong
+prompt_file: prompt.md
+tools:
+  platform: []
+  engine_builtin: []
+  denied: [web_fetch]
+limits:
+  max_turns: 1
+  max_wall_seconds: 300
+  budget_usd: 1.00
+asks: []

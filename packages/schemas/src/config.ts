@@ -91,6 +91,8 @@ export const apiConfigSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // Whether a pull request needs a security review before it can be approved (mvp-contract section 16). On by default.
+  SECURITY_REVIEW: z.enum(['on', 'off']).default('on'),
 });
 export type ApiConfig = z.infer<typeof apiConfigSchema>;
 

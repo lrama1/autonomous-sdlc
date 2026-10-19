@@ -26,6 +26,16 @@ variable "independent_review" {
   description = "Whether the person who started a run may not review it. Turn off only for a stack used by one person."
 }
 
+variable "security_review" {
+  type        = string
+  default     = "on"
+  description = "on: a pull request needs a security review before it can be approved. off: it does not."
+  validation {
+    condition     = contains(["on", "off"], var.security_review)
+    error_message = "security_review must be on or off."
+  }
+}
+
 variable "agent_engine" {
   type        = string
   default     = ""

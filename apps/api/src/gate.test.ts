@@ -588,7 +588,7 @@ describe('smoke test', () => {
     reset();
     const g = withSmoke(() => null);
     expect(await g.autoApprove(await openReview(await setup()), why)).toBe('merged');
-    expect(await g.smokeBlocks(await openReview(await setup()))).toBeNull();
+    expect(await g.approvalBlocks(await openReview(await setup()))).toBeNull();
   });
 
   it('refuses to approve through the answer path until it is satisfied, and says why', async () => {
@@ -646,12 +646,61 @@ describe('smoke test', () => {
     ).toBe('failed');
     expect(calledPaths()).not.toContain('PUT /pulls/7/merge');
     expect(world.calls.filter((c) => c.url.endsWith('/reviews'))).toHaveLength(0);
-    expect((await card(row.id)).gate.detail).toContain('the smoke test has not passed');
+    expect((await card(row.id)).gate.detail).toContain('the merge is held');
     const log = await db
       .select()
       .from(activityEvent)
       .where(eq(activityEvent.interactionId, row.id));
-    expect(log.map((l) => l.action)).toContain('gate.smoke_held');
+    expect(log.map((l) => l.action)).toContain('gate.held');
+  });
+});
+
+describe('the smoke test and the security review together', () => {
+  const guard = (blocks: string | null, evidence: string | null = null): SmokeGuard => ({
+    blocks: async () => blocks,
+    evidence: async () => evidence,
+  });
+  const both = (smoke: SmokeGuard | null, security: SmokeGuard | null) =>
+    createGate({
+      db,
+      github: service,
+      log: () => {},
+      catchUpPollMs: 0,
+      smoke: () => smoke,
+      security: () => security,
+    });
+  const why = { reason: 'It fits the pre-approved type "docs-only".', rule: 'docs-only' };
+
+  it('holds the review while either one holds it, and says which', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    expect(
+      await both(guard(null), guard('Run the security review first.')).approvalBlocks(row),
+    ).toBe('Run the security review first.');
+    expect(await both(guard('The smoke test failed.'), guard(null)).approvalBlocks(row)).toBe(
+      'The smoke test failed.',
+    );
+    expect(
+      await both(guard(null), guard('Run the security review first.')).autoApprove(row, why),
+    ).toBeNull();
+    expect(
+      await both(guard(null), guard('Run the security review first.')).afterDecision(row),
+    ).toBe('failed');
+    expect(world.calls.some((c) => c.url.endsWith('/merge'))).toBe(false);
+  });
+
+  it('puts the proof of both on the approval when both are satisfied', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    expect(
+      await both(
+        guard(null, 'Smoke test passed (3 checks).'),
+        guard(null, 'Security review: no findings.'),
+      ).afterDecision(row),
+    ).toBe('merged');
+    const approval = world.calls.find((c) => c.url.endsWith('/reviews'))!;
+    expect(String(approval.body.body)).toContain('Smoke test passed (3 checks).');
+    expect(String(approval.body.body)).toContain('Security review: no findings.');
   });
 });
 

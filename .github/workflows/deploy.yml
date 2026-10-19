@@ -19,6 +19,11 @@ on:
         description: Require a second person to approve (turn off to work alone)
         type: boolean
         default: false
+      security_review:
+        description: Require a security review before a pull request can be approved
+        type: choice
+        options: ['on', 'off']
+        default: 'on'
       agent_engine:
         description: Engine for every agent (empty keeps each agent's own setting)
         type: choice
@@ -43,6 +48,7 @@ jobs:
       TF_VAR_bootstrap_admin_email: ${{ vars.BOOTSTRAP_ADMIN_EMAIL }}
       TF_VAR_openrouter_key_agents: ${{ secrets.OPENROUTER_KEY_AGENTS }}
       TF_VAR_independent_review: ${{ inputs.independent_review }}
+      TF_VAR_security_review: ${{ inputs.security_review }}
       TF_VAR_agent_engine: ${{ inputs.agent_engine }}
       TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
     steps:

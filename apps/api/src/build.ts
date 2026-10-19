@@ -38,6 +38,8 @@ const GATE_STOPPED = new Set(['ci_failed', 'failed', 'stale', 'closed', 'timed_o
 /** How many times a task is redone on the current main after its pull request conflicted. */
 const MAX_REDO = 2;
 const NO_PR = 'The run finished without opening a pull request.';
+/** A reviewer asked for changes: the task is done again, with their words in its prompt. */
+const REWORK = 'Reworking: the reviewer asked for changes. ';
 const REDO = 'Redoing: its pull request conflicted with changes that merged meanwhile.';
 
 interface DesignCard {
@@ -206,6 +208,15 @@ function settle(
           detail: `Its pull request conflicted with main on each of ${task.attempt} attempts.`,
         };
   }
+  if (review.state === 'answered' && decision === 'changes_requested') {
+    const said = String((review.answer as { text?: string } | null)?.text ?? '').trim();
+    return task.attempt <= MAX_REDO
+      ? { state: 'waiting', detail: `${REWORK}${said}`.slice(0, 4500), redo: true }
+      : {
+          state: 'failed',
+          detail: `A reviewer asked for changes on each of ${task.attempt} attempts. A person takes over.`,
+        };
+  }
   if (review.state === 'answered' && decision && decision !== 'approved') {
     return { state: 'failed', detail: `The reviewer chose "${decision}".` };
   }
@@ -280,7 +291,9 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
           .comment(
             pr.repository,
             pr.prNumber,
-            'Closing this: the task is being redone on the current main branch.',
+            task.detail?.startsWith(REWORK)
+              ? 'Closing this: a reviewer asked for changes, and the task is being redone with their words.'
+              : 'Closing this: the task is being redone on the current main branch.',
           )
           .catch(() => {});
         await deps.github.closePullRequest(pr.repository, pr.prNumber).catch(() => {});
@@ -372,6 +385,7 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
             ? 'It conflicted with changes that merged in the meantime.'
             : undefined,
           plan.smoke as DesignSmoke | null,
+          task.detail?.startsWith(REWORK) ? task.detail.slice(REWORK.length) : undefined,
         ),
         sponsorPersonId: sponsor,
       });

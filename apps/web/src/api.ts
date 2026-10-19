@@ -13,6 +13,7 @@ import {
   interruptionMetricsSchema,
   meSchema,
   previewSchema,
+  securitySchema,
   smokeSchema,
   readySchema,
   stageStartSchema,
@@ -35,6 +36,7 @@ import type {
   Me,
   MonthlyBudgetDto,
   PreviewDto,
+  SecurityDto,
   SmokeDto,
   Ready,
   StageStartDto,
@@ -146,6 +148,28 @@ export const overrideSmoke = (interactionId: string, reason: string) =>
     z.object({ id: z.string(), state: z.string() }),
     { method: 'POST', body: { reason } },
   );
+
+export const getSecurity = (id: string): Promise<SecurityDto> =>
+  call(`/api/interactions/${id}/security`, securitySchema);
+
+export const startSecurity = (interactionId: string) =>
+  call(
+    `/api/interactions/${interactionId}/security/start`,
+    z.object({ id: z.string(), state: z.string() }),
+    { method: 'POST' },
+  );
+
+export const dismissFinding = (interactionId: string, findingId: string, reason: string) =>
+  call(
+    `/api/interactions/${interactionId}/security/findings/${findingId}/dismiss`,
+    z.object({ id: z.string(), state: z.string() }),
+    { method: 'POST', body: { reason } },
+  );
+
+export const sendFindingsBack = (interactionId: string) =>
+  call(`/api/interactions/${interactionId}/security/send-back`, z.object({ sent: z.number() }), {
+    method: 'POST',
+  });
 
 export const getAssumptions = (): Promise<AssumptionDto[]> =>
   call('/api/assumptions', z.array(assumptionSchema));

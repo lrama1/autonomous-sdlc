@@ -18,7 +18,8 @@ const LIVE_STATES = ['queued', 'starting', 'running', 'parked', 'resuming', 'pau
 
 export class RunError extends Error {
   constructor(
-    readonly code: 'no_agent' | 'budget_too_high' | 'initiative_not_active' | 'not_found',
+    readonly code:
+      'no_agent' | 'budget_too_high' | 'initiative_not_active' | 'not_found' | 'inline_agent',
     message: string,
   ) {
     super(message);
@@ -42,6 +43,11 @@ export async function createRun(
   const agent = agents.get(input.role);
   if (!agent) throw new RunError('no_agent', `No agent definition for the role "${input.role}".`);
   const def = agent.definition;
+  if (def.runs === 'inline')
+    throw new RunError(
+      'inline_agent',
+      `The ${input.role} agent works inside the platform. It starts from a review, not as a run.`,
+    );
   if (input.budgetUsd !== undefined && input.budgetUsd > def.limits.budget_usd) {
     throw new RunError(
       'budget_too_high',
@@ -138,4 +144,65 @@ export async function cancelRun(db: Db, runId: string, by: string): Promise<RunR
 export async function repositoryFor(db: Db, repositoryId: string) {
   const [r] = await db.select().from(repositoryEntry).where(eq(repositoryEntry.id, repositoryId));
   return r;
+}
+
+/**
+ * A run for an agent that works inside the platform (`runs: inline`): one reading through the gateway. It has a row and
+ * a token like any run, so its cost and its record sit with the rest, but nothing is queued and no sandbox starts.
+ */
+export async function startInlineRun(
+  db: Db,
+  agent: LoadedAgent,
+  input: { initiativeId: string; task: string; sponsorPersonId: string },
+): Promise<{ run: RunRow; token: string }> {
+  const def = agent.definition;
+  const [init] = await db.select().from(initiative).where(eq(initiative.id, input.initiativeId));
+  if (!init) throw new RunError('not_found', 'No such initiative.');
+  const [run] = await db
+    .insert(agentRun)
+    .values({
+      initiativeId: init.id,
+      agentRole: def.role,
+      task: input.task.slice(0, 8000),
+      agentDefinitionId: def.id,
+      agentDefinitionVersion: def.version,
+      engine: def.engine,
+      modelAlias: def.model_alias,
+      state: 'running',
+      sponsorPersonId: input.sponsorPersonId,
+      repositoryId: init.repositoryId,
+      budgetMicros: Math.round(def.limits.budget_usd * 1_000_000),
+      startedAt: new Date(),
+    })
+    .returning();
+  const token = generateToken();
+  await db.insert(runToken).values({
+    tokenHash: hashToken(token),
+    runId: run!.id,
+    scopes: ['gateway', `alias:${def.model_alias}`],
+    expiresAt: new Date(Date.now() + (def.limits.max_wall_seconds + 60) * 1000),
+  });
+  await recordActivity(db, {
+    actorType: 'person',
+    actorId: input.sponsorPersonId,
+    initiativeId: init.id,
+    runId: run!.id,
+    action: 'run.created',
+    detail: { role: def.role, definition: `${def.id}@${def.version}`, inline: true },
+  });
+  return { run: run!, token };
+}
+
+/** Ends an inline run and takes its token away. */
+export async function finishInlineRun(
+  db: Db,
+  runId: string,
+  outcome: { state: 'succeeded' | 'failed'; exitReason: string },
+): Promise<void> {
+  await db
+    .update(agentRun)
+    .set({ state: outcome.state, exitReason: outcome.exitReason, finishedAt: new Date() })
+    .where(eq(agentRun.id, runId));
+  await revokeRunTokens(db, runId);
+  await appendRunEvent(db, runId, 'run.finished', { exitReason: outcome.exitReason });
 }

@@ -356,6 +356,44 @@ export const smokeSchema = z.object({
 export type SmokeDto = z.infer<typeof smokeSchema>;
 export type SmokeResultDto = z.infer<typeof smokeResultSchema>;
 
+// The security review of a pull request's code at the commit under review (mvp-contract section 16).
+export const securityFindingSchema = z.object({
+  id: z.string(),
+  severity: z.enum(['critical', 'high', 'medium', 'low', 'info']),
+  category: z.string(),
+  file: z.string(),
+  line: z.number().nullable(),
+  title: z.string(),
+  why: z.string(),
+  fix: z.string(),
+  dismissed: z
+    .object({ by: z.string(), byName: z.string().nullable(), reason: z.string(), at: z.string() })
+    .optional(),
+});
+export const securitySchema = z.object({
+  // False when this platform has no security agent or no model gateway.
+  available: z.boolean(),
+  // False when the change only touches documents: there is nothing to read.
+  required: z.boolean(),
+  commit: z.string(),
+  run: z
+    .object({
+      id: z.string(),
+      state: z.enum(['running', 'done', 'error']),
+      summary: z.string().nullable(),
+      findings: z.array(securityFindingSchema),
+      detail: z.string().nullable(),
+      by: z.string().nullable(),
+      startedAt: z.string(),
+      finishedAt: z.string().nullable(),
+    })
+    .nullable(),
+  // Why the review cannot be approved yet, or null when it can.
+  blocks: z.string().nullable(),
+});
+export type SecurityDto = z.infer<typeof securitySchema>;
+export type SecurityFindingDto = z.infer<typeof securityFindingSchema>;
+
 // The build plan of an initiative: the approved design's tasks, and where each one is.
 export const buildTaskStateSchema = z.enum([
   'waiting',
