@@ -52,7 +52,13 @@ export const apiConfigSchema = z.object({
   GATEWAY_URL: url.default('http://127.0.0.1:8787'),
   // How runs are started: 'none' (only record them), 'process' (a child process on this machine, no isolation),
   // or 'docker' (an isolated container).
-  RUNNER_ADAPTER: z.enum(['none', 'process', 'docker']).default('none'),
+  RUNNER_ADAPTER: z.enum(['none', 'process', 'docker', 'fargate']).default('none'),
+  // RUNNER_ADAPTER=fargate: where each run starts (see infra/aws/runner.tf). Lists are comma separated.
+  FARGATE_CLUSTER: z.string().optional(),
+  FARGATE_TASK_DEFINITION: z.string().optional(),
+  FARGATE_SUBNETS: z.string().optional(),
+  FARGATE_SECURITY_GROUPS: z.string().optional(),
+  FARGATE_STATE_BUCKET: z.string().optional(),
   RUNNER_IMAGE: z.string().default('sdlc-runner:dev'),
   // Hosts a sandbox may open HTTPS tunnels to. The platform itself is reached through fixed ports, not this list.
   RUNNER_EGRESS_ALLOW: z.string().default('github.com,registry.npmjs.org'),

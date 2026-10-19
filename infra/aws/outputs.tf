@@ -15,6 +15,10 @@ output "cognito_domain" {
   value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com"
 }
 
+output "runner_ecr_repository" {
+  value = aws_ecr_repository.runner.repository_url
+}
+
 output "cluster" {
   value = aws_ecs_cluster.main.name
 }

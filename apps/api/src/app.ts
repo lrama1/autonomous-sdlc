@@ -13,6 +13,7 @@ import { GitHubClient } from './github-app.js';
 import { createGate } from './gate.js';
 import { GitHubService } from './github-service.js';
 import { DockerRunner } from './docker-runner.js';
+import { FargateRunner, S3StateStore } from './fargate-runner.js';
 import { DockerPreviewHost } from './docker-preview.js';
 import type { PreviewHost } from './docker-preview.js';
 import { PreviewService } from './previews.js';
@@ -367,11 +368,13 @@ export async function buildApp({
             ],
             log: (l) => app.log.info(l),
           })
-        : new ProcessRunner({
-            runsDir: config.RUNS_DIR,
-            entry: config.RUNNER_ENTRY,
-            cwd: process.cwd(),
-          });
+        : config.RUNNER_ADAPTER === 'fargate'
+          ? fargateRunner(config, (l) => app.log.info(l))
+          : new ProcessRunner({
+              runsDir: config.RUNS_DIR,
+              entry: config.RUNNER_ENTRY,
+              cwd: process.cwd(),
+            });
     if (!previewHost && config.RUNNER_ADAPTER === 'docker')
       await useHost(
         new DockerPreviewHost({
@@ -403,4 +406,34 @@ export async function buildApp({
   }
 
   return app;
+}
+
+/** The Fargate runner from configuration, or a clear message about what is missing. */
+function fargateRunner(config: ApiConfig, log: (line: string) => void): FargateRunner {
+  const list = (v?: string) =>
+    (v ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const missing = (
+    [
+      ['FARGATE_CLUSTER', config.FARGATE_CLUSTER],
+      ['FARGATE_TASK_DEFINITION', config.FARGATE_TASK_DEFINITION],
+      ['FARGATE_SUBNETS', config.FARGATE_SUBNETS],
+      ['FARGATE_SECURITY_GROUPS', config.FARGATE_SECURITY_GROUPS],
+      ['FARGATE_STATE_BUCKET', config.FARGATE_STATE_BUCKET],
+    ] as const
+  )
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length > 0)
+    throw new Error(`RUNNER_ADAPTER=fargate needs ${missing.join(', ')} to be set.`);
+  return new FargateRunner({
+    cluster: config.FARGATE_CLUSTER!,
+    taskDefinition: config.FARGATE_TASK_DEFINITION!,
+    subnets: list(config.FARGATE_SUBNETS),
+    securityGroups: list(config.FARGATE_SECURITY_GROUPS),
+    state: new S3StateStore(config.FARGATE_STATE_BUCKET!),
+    log,
+  });
 }

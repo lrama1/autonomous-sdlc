@@ -65,30 +65,35 @@ resource "aws_security_group" "alb" {
   }
 }
 
+# Its rules are separate resources (not inline), because runner.tf adds more and the two styles cannot be mixed.
 resource "aws_security_group" "tasks" {
   name   = "${var.name}-tasks"
   vpc_id = aws_vpc.main.id
-  ingress {
-    description     = "The load balancer reaches the API"
-    from_port       = 8080
-    to_port         = 8080
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-  ingress {
-    description = "The API and, later, runners reach the gateway"
-    from_port   = 8787
-    to_port     = 8787
-    protocol    = "tcp"
-    self        = true
-  }
-  # Tasks need the internet for image pulls (ECR), OpenRouter, GitHub, and Cognito.
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "tasks_from_alb" {
+  description                  = "The load balancer reaches the API"
+  security_group_id            = aws_security_group.tasks.id
+  referenced_security_group_id = aws_security_group.alb.id
+  ip_protocol                  = "tcp"
+  from_port                    = 8080
+  to_port                      = 8080
+}
+
+resource "aws_vpc_security_group_ingress_rule" "tasks_self_gateway" {
+  description                  = "The API reaches the gateway"
+  security_group_id            = aws_security_group.tasks.id
+  referenced_security_group_id = aws_security_group.tasks.id
+  ip_protocol                  = "tcp"
+  from_port                    = 8787
+  to_port                      = 8787
+}
+
+# Tasks need the internet for image pulls (ECR), OpenRouter, GitHub, and Cognito.
+resource "aws_vpc_security_group_egress_rule" "tasks_out" {
+  security_group_id = aws_security_group.tasks.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
 }
 
 resource "aws_security_group" "db" {

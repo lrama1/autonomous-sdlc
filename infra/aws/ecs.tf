@@ -121,13 +121,20 @@ resource "aws_ecs_task_definition" "api" {
       { name = "SECRETS_BACKEND", value = "aws" },
       { name = "SECRETS_PREFIX", value = local.runtime_prefix },
       { name = "GATEWAY_URL", value = "http://gateway.${aws_service_discovery_private_dns_namespace.main.name}:8787" },
-      { name = "RUNNER_ADAPTER", value = "none" },
+      { name = "RUNNER_ADAPTER", value = "fargate" },
+      { name = "FARGATE_CLUSTER", value = aws_ecs_cluster.main.name },
+      { name = "FARGATE_TASK_DEFINITION", value = aws_ecs_task_definition.runner.family },
+      { name = "FARGATE_SUBNETS", value = aws_subnet.runner.id },
+      { name = "FARGATE_SECURITY_GROUPS", value = aws_security_group.runner.id },
+      { name = "FARGATE_STATE_BUCKET", value = aws_s3_bucket.state.bucket },
+      { name = "MAX_CONCURRENT_RUNS", value = "6" },
       { name = "AWS_REGION", value = var.region },
     ]
     secrets = [
       { name = "DATABASE_URL", valueFrom = local.secret_arn["database_url"] },
       { name = "SESSION_SECRET", valueFrom = local.secret_arn["session_secret"] },
       { name = "OIDC_CLIENT_SECRET", valueFrom = local.secret_arn["oidc_client_secret"] },
+      { name = "EGRESS_ALLOW_TOKEN", valueFrom = local.secret_arn["egress_token"] },
     ]
     logConfiguration = merge(local.log, { options = merge(local.log.options, { "awslogs-stream-prefix" = "api" }) })
   }])
@@ -175,6 +182,7 @@ resource "aws_ecs_service" "api" {
     container_name   = "api"
     container_port   = 8080
   }
+  service_registries { registry_arn = aws_service_discovery_service.api.arn }
   health_check_grace_period_seconds = 90
   depends_on                        = [aws_lb_listener_rule.from_edge]
 }

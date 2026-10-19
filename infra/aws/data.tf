@@ -48,6 +48,7 @@ locals {
     session_secret        = random_password.session.result
     oidc_client_secret    = aws_cognito_user_pool_client.web.client_secret
     openrouter_key_agents = var.openrouter_key_agents
+    egress_token          = random_password.egress.result
   }
 }
 
