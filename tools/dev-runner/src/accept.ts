@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { execFile } from 'node:child_process';
-import { cp, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -18,9 +19,11 @@ import { startStack } from './stack.js';
 //   smokerun: a reviewer runs the smoke test of a pull request. By default the engineer agent writes the checks the design requires,
 //   and the run is approved and merged. SMOKE_VARIANT=broken uses an app that fails its checks, then overrides with a reason.
 //   SMOKE_PAUSE_S=120 keeps the stack up that long after the first result, to look at the page.
+//   dogfood: DOGFOOD_IDEA="<one line>" ACCEPT_REPO=owner/name ACCEPT_PROTECTED=".github/workflows/**" builds an app from the idea. It stops
+//   at the spec and at the design until the file dogfood-spec-ok / dogfood-design-ok exists in DOGFOOD_FLAGS (default: the temp folder).
 //   BUG_VARIANT=norepro makes the bug phase report a bug that does not exist, to see the agent stop without a pull request. [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
-const REPO = 'lrama1/sdlc-scratch';
+const REPO = process.env.ACCEPT_REPO ?? 'lrama1/sdlc-scratch';
 const phase = process.argv[2] ?? 'both';
 const docker = process.argv.includes('docker');
 const stamp = Date.now().toString(36);
@@ -159,7 +162,9 @@ try {
   if (!repo) {
     repo = await call(admin, 'POST', '/api/repositories', {
       fullName: REPO,
-      protectedPaths: ['.github/workflows/**', 'scripts/**', 'package.json'],
+      protectedPaths: process.env.ACCEPT_PROTECTED
+        ? process.env.ACCEPT_PROTECTED.split(',')
+        : ['.github/workflows/**', 'scripts/**', 'package.json'],
     });
   }
   check(Boolean(repo?.id), `1  ${REPO} is in the registry (branch_pr, ${repo.verifyCommand})`);
@@ -197,6 +202,44 @@ try {
     const seen = new Map<string, string>();
     const timeline: string[] = [];
     const done = new Set<string>(handled);
+    const findings: string[] = [];
+    const smokeSeen = new Map<string, string>();
+    /**
+     * A review whose repository lists smoke checks cannot be approved until they pass. A person clicks the smoke test; a
+     * result that is not a pass is written down as a finding and overridden with a reason, so the rest can still be built.
+     */
+    const smokeAllows = async (q: any): Promise<boolean> => {
+      const sm = await call(bob, 'GET', `/api/interactions/${q.id}/smoke`).catch(() => null);
+      if (!sm || !sm.available || sm.required === 'none') return true;
+      const state = sm.run?.state ?? 'none';
+      if (state === 'passed' || state === 'overridden') return true;
+      if (state === 'running') return false;
+      const key = `${q.id}:${state}:${sm.run?.id ?? ''}`;
+      if (state === 'none' && sm.required === 'required') {
+        if (smokeSeen.has(key)) return false;
+        smokeSeen.set(key, 'started');
+        say(`clicking Run the smoke test on "${q.title.slice(0, 80)}"`);
+        await call(bob, 'POST', `/api/interactions/${q.id}/smoke/start`, {}).catch((e) => {
+          smokeSeen.delete(key);
+          say(`could not start the smoke test: ${e.message.slice(0, 200)}`);
+        });
+        return false;
+      }
+      if (smokeSeen.has(key)) return false;
+      smokeSeen.set(key, 'overridden');
+      const what =
+        sm.required === 'invalid'
+          ? `the smoke checks could not be read: ${sm.detail}`
+          : (sm.run?.results ?? [])
+              .map((r: any) => `${r.ok ? 'ok' : 'FAIL'} ${r.label}: ${r.detail}`)
+              .join('; ') || String(sm.run?.detail);
+      findings.push(`${q.title.slice(0, 80)} - smoke ${state}: ${what.slice(0, 400)}`);
+      say(`SMOKE ${state.toUpperCase()} on "${q.title.slice(0, 80)}": ${what.slice(0, 300)}`);
+      await call(bob, 'POST', `/api/interactions/${q.id}/smoke/override`, {
+        reason: `Dogfood run: the smoke test ${state}; continuing so the rest can be built, and the result is written down as a finding.`,
+      }).catch((e) => say(`override failed: ${e.message.slice(0, 200)}`));
+      return false;
+    };
     const final = await waitFor(
       'the plan ends',
       async () => {
@@ -221,6 +264,7 @@ try {
         for (const q of queue) {
           if (q.initiativeId !== initiativeId || done.has(q.id)) continue;
           if (q.type === 'review') {
+            if (!(await smokeAllows(q))) continue;
             done.add(q.id);
             await call(bob, 'POST', `/api/interactions/${q.id}/answer`, {
               decision: 'approved',
@@ -243,7 +287,7 @@ try {
       1_500_000,
       2500,
     );
-    return { final, maxRunning, timeline };
+    return { final, maxRunning, timeline, findings };
   };
 
   const runState = async (id: string) => (await call(alice, 'GET', `/api/runs/${id}`)) as any;
@@ -1627,6 +1671,229 @@ try {
       [init.id],
     );
     check(clicks.rows[0].n === 0, 'S  nobody clicked Start on any step');
+  }
+
+  // ---------------- Dogfood: a one-line idea becomes an app in a fresh repository, with a person looking at the spec and the design ----------------
+  if (phase === 'dogfood') {
+    const idea = process.env.DOGFOOD_IDEA;
+    if (!idea) throw new Error('DOGFOOD_IDEA is the one-line idea');
+    const flags = process.env.DOGFOOD_FLAGS ?? os.tmpdir();
+    say(`--- dogfood: "${idea}" in ${REPO} ---`);
+    const cara = await signInAs(stack.publicUrl, 'dev-cara');
+    const t0 = Date.now();
+    const at = () => `${Math.round((Date.now() - t0) / 1000)}s`;
+    // DOGFOOD_RESUME=<initiative id> carries on an initiative whose spec was already approved (GitHub was down meanwhile).
+    const resume = process.env.DOGFOOD_RESUME;
+    const init = resume
+      ? { id: resume }
+      : await call(bob, 'POST', '/api/initiatives', {
+          title: idea.slice(0, 120),
+          goal: idea,
+          repositoryId: repo.id,
+          autonomyMode: 'balanced',
+          autoStages: true,
+        });
+    say(`initiative ${init.id} ${resume ? 'resumed' : 'created'}`);
+    const jars: Array<[string, CookieJar]> = [
+      ['alice', alice],
+      ['bob', bob],
+      ['cara', cara],
+    ];
+    const answered = new Set<string>();
+    // The agents' questions are answered with their own recommendation, by whoever holds the role, and written down.
+    const tend = async () => {
+      for (const [who, jar] of jars) {
+        const q: any[] = await call(jar, 'GET', '/api/interactions');
+        for (const i of q) {
+          if (i.initiativeId !== init.id || answered.has(i.id)) continue;
+          if (!['question', 'decision'].includes(i.type)) continue;
+          const options = Array.isArray(i.options) ? i.options : [];
+          const choice = i.recommendation ?? options[0]?.id;
+          if (!choice) continue;
+          answered.add(i.id);
+          say(`${at()} QUESTION (${who} answers "${choice}"): ${i.title}`);
+          await call(jar, 'POST', `/api/interactions/${i.id}/answer`, { answer: choice }).catch(
+            () => answered.delete(i.id),
+          );
+        }
+      }
+    };
+    const reviewFor = (jar: CookieJar, role: string) =>
+      waitFor(
+        `a ${role} review`,
+        async () => {
+          await tend();
+          const q: any[] = await call(jar, 'GET', '/api/interactions');
+          return (
+            q.find(
+              (i) => i.initiativeId === init.id && i.type === 'review' && i.roleNeeded === role,
+            ) ?? null
+          );
+        },
+        900_000,
+        3000,
+      );
+    const flag = (name: string) =>
+      waitFor(
+        `your go-ahead (${name})`,
+        async () => {
+          await tend();
+          return existsSync(path.join(flags, `dogfood-${name}`)) ? true : null;
+        },
+        7_200_000,
+        3000,
+      );
+
+    const specReview = resume ? { id: 'resumed' } : await reviewFor(alice, 'product_owner');
+    if (!resume) {
+      say(`${at()} SPEC READY: ${(specReview as any).contextCard.prUrl}`);
+      await flag('spec-ok');
+      await call(alice, 'POST', `/api/interactions/${specReview.id}/answer`, {
+        decision: 'approved',
+        answer: 'Approved after reading it.',
+      });
+      say(`${at()} spec approved`);
+    }
+
+    // The design: a person reads it and either approves it or asks for changes, and the Architect revises. Each decision
+    // is a file in DOGFOOD_FLAGS: dogfood-design-ok, or dogfood-design-changes holding the comment. If the approved
+    // design cannot be built (the plan is invalid), the Architect is asked once more to fix it, and a person reads that too.
+    const askArchitectToFix = async (errors: string[]) => {
+      // Bob starts it, so Cara (the Architect) may review it: the person who starts a run cannot approve it.
+      await call(bob, 'POST', `/api/initiatives/${init.id}/runs`, {
+        role: 'architect',
+        task: `The design you wrote was approved and merged, but the platform cannot build it: ${errors.join(' / ')}. Open docs/design/*.md (the expense splitter design), fix only what the platform reports, keep everything else as it is, and commit it. A run: value in the sdlc-smoke block must be in single quotes.`,
+        budgetUsd: 1,
+      });
+    };
+    const seenDesigns = new Set<string>();
+    let plan: any;
+    // Reviews left open by an earlier attempt are not this attempt's.
+    if (resume)
+      for (const i of (await call(cara, 'GET', '/api/interactions')) as any[])
+        if (i.initiativeId === init.id && i.type === 'review') seenDesigns.add(i.id);
+    // A new design makes a new plan; this is the one that was there before.
+    let lastPlanId: string | null = null;
+    if (resume) {
+      const before = (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan;
+      lastPlanId = before?.id ?? null;
+      if (before?.state === 'invalid') {
+        say(
+          `${at()} FINDING: the merged design cannot be built (${(before.errors ?? []).join(' / ')}). Asking the Architect to fix it.`,
+        );
+        await askArchitectToFix(before.errors ?? []);
+      } else if (before) {
+        plan = before; // the design was built from already; only the tasks remain
+      }
+    }
+    for (let round = 0; !plan; round++) {
+      let designReview: any;
+      for (;;) {
+        designReview = await waitFor(
+          'an architect review',
+          async () => {
+            await tend();
+            const q: any[] = await call(cara, 'GET', '/api/interactions');
+            return (
+              q.find(
+                (i) =>
+                  i.initiativeId === init.id &&
+                  i.type === 'review' &&
+                  i.roleNeeded === 'architect' &&
+                  !seenDesigns.has(i.id),
+              ) ?? null
+            );
+          },
+          900_000,
+          3000,
+        );
+        seenDesigns.add(designReview.id);
+        say(`${at()} DESIGN READY: ${designReview.contextCard.prUrl}`);
+        const okFile = path.join(flags, 'dogfood-design-ok');
+        const changesFile = path.join(flags, 'dogfood-design-changes');
+        await waitFor(
+          'your decision on the design',
+          async () => {
+            await tend();
+            return existsSync(okFile) || existsSync(changesFile) ? true : null;
+          },
+          7_200_000,
+          3000,
+        );
+        if (existsSync(changesFile)) {
+          const comment = (await readFile(changesFile, 'utf8')).trim();
+          await rm(changesFile);
+          say(`${at()} changes requested: ${comment.slice(0, 200)}`);
+          await call(cara, 'POST', `/api/interactions/${designReview.id}/answer`, {
+            decision: 'changes_requested',
+            answer: comment,
+          });
+          continue;
+        }
+        await rm(okFile, { force: true });
+        break;
+      }
+      await call(cara, 'POST', `/api/interactions/${designReview.id}/answer`, {
+        decision: 'approved',
+        answer: 'Approved after reading it.',
+      });
+      say(`${at()} design approved`);
+
+      plan = await waitFor(
+        'the build plan',
+        async () => {
+          await tend();
+          const p = (await call(bob, 'GET', `/api/initiatives/${init.id}/plan`)).plan ?? null;
+          return p && p.id !== lastPlanId ? p : null;
+        },
+        600_000,
+        3000,
+      );
+      lastPlanId = plan.id;
+      say(
+        `${at()} PLAN ${plan.state}: ${plan.tasks.map((t: any) => `${t.key} ${t.title} [${t.role}]`).join(' | ')}${plan.errors?.length ? ` ERRORS: ${plan.errors.join(' / ')}` : ''}`,
+      );
+      if (plan.state !== 'invalid' || round >= 1) break;
+      say(
+        `${at()} FINDING: the approved design could not be built (${(plan.errors ?? []).join(' / ')}). Asking the Architect to fix it.`,
+      );
+      await askArchitectToFix(plan.errors ?? []);
+    }
+    check(
+      plan.state === 'active',
+      `D  approving the design started the build (${plan.tasks.length} tasks)`,
+    );
+    const first = await drivePlan(init.id, [specReview.id, ...seenDesigns], Date.now(), true);
+    let final = first.final;
+    const { timeline, findings } = first;
+    // A task that ends without a pull request fails. Here the call is made as a person would: look at why, skip it,
+    // and let what is behind it go on. Each skip is written down as a finding.
+    for (let again = 0; again < 4 && final.state !== 'done'; again++) {
+      const failed = final.tasks.filter((t: any) => t.state === 'failed');
+      if (failed.length === 0) break;
+      for (const t of failed) {
+        findings.push(`${t.key} ${t.title} failed: ${t.detail}`);
+        say(`FINDING: ${t.key} failed: ${String(t.detail).slice(0, 600)}`);
+        await call(alice, 'POST', `/api/plans/${final.id}/tasks/${t.key}/skip`, {}).catch((e) =>
+          say(`could not skip ${t.key}: ${e.message.slice(0, 200)}`),
+        );
+      }
+      const more = await drivePlan(init.id, [specReview.id, ...seenDesigns], Date.now(), true);
+      timeline.push(...more.timeline);
+      findings.push(...more.findings);
+      final = more.final;
+    }
+    say(`build timeline: ${timeline.join(' | ')}`);
+    check(final.state === 'done', `D  the plan finished (${final.state})`);
+    for (const f of findings) say(`FINDING: ${f}`);
+    const cost = await db.query(
+      'select agent_role, count(*)::int n, coalesce(sum(cost_micros),0)::int c from agent_run where initiative_id = $1 group by agent_role order by agent_role',
+      [init.id],
+    );
+    say(
+      `cost: ${cost.rows.map((r: any) => `${r.agent_role} x${r.n} $${(r.c / 1e6).toFixed(3)}`).join(', ')}; total $${(cost.rows.reduce((a: number, r: any) => a + r.c, 0) / 1e6).toFixed(3)}; wall ${at()}`,
+    );
+    say(`questions answered by the script: ${answered.size}`);
   }
 
   // ---------------- Bug: a reported bug is reproduced, explained, fixed, reviewed, and merged ----------------

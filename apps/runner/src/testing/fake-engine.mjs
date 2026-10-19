@@ -102,6 +102,10 @@ switch (step.do) {
         line,
         '```',
         '',
+        '```sdlc-smoke',
+        '- get: /x',
+        '```',
+        '',
       ].join('\n'),
     );
     write('src/value.txt', 'good\n');

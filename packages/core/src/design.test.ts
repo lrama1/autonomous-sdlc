@@ -172,6 +172,19 @@ describe('the Architect agent prompt', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.tasks[0]!.doneWhen[0]).toContain('{"version"');
   });
+
+  it('shows a smoke example that the platform accepts, with the quoting it asks for', () => {
+    const prompt = readFileSync(
+      new URL('../../../agents/architect-agent/prompt.md', import.meta.url),
+      'utf8',
+    );
+    const r = parseDesignSmoke(prompt);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.smoke.kind === 'checks')
+      expect(r.smoke.checks.some((c) => c.kind === 'run' && c.command === 'npm run smoke')).toBe(
+        true,
+      );
+  });
 });
 
 describe('parseDesignSmoke', () => {
@@ -229,5 +242,15 @@ describe('parseDesignSmoke', () => {
       'get: /a (status 404, body contains "gone")',
     );
     expect(describeSmokeCheck({ kind: 'run', command: 'npm test' })).toBe('run: npm test');
+  });
+});
+
+describe('a smoke block that reads as something else', () => {
+  it('names an unquoted command with a colon and braces, which is what an Architect wrote', () => {
+    const md =
+      '# Design\n\n```sdlc-smoke\n- get: /\n- run: node -e "const o = {a: 1}; process.exit(0)"\n```\n';
+    const r = parseDesignSmoke(md);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors[0]).toContain('not valid YAML');
   });
 });
