@@ -2,7 +2,7 @@
 # deploy workflow needs before it can run: a bucket for Terraform's state, and a role GitHub Actions can assume.
 #   cd infra/bootstrap
 #   terraform init
-#   terraform apply -var repository=lrama1/autonomous-sdlc
+#   terraform apply -var repository=repo:lrama1@5783118/autonomous-sdlc@1423309795   # see the variable's description
 # Its own state stays local (and is not committed): it holds no secrets and can be re-imported.
 terraform {
   required_version = ">= 1.6"
@@ -13,7 +13,7 @@ terraform {
 
 variable "repository" {
   type        = string
-  description = "owner/name of the GitHub repository allowed to deploy."
+  description = "The repository as it appears in GitHub's sign-in token (new repositories include their numeric ids, so a deleted and re-created name cannot inherit trust). Read it with: gh api repos/OWNER/NAME/actions/oidc/customization/sub  (use sub_claim_prefix)."
 }
 
 variable "branch" {
@@ -104,7 +104,7 @@ resource "aws_iam_role" "deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.repository}:ref:refs/heads/${var.branch}"
+          "token.actions.githubusercontent.com:sub" = "${var.repository}:ref:refs/heads/${var.branch}"
         }
       }
     }]
