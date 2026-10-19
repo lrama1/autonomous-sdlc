@@ -77,6 +77,8 @@ export const diffSummarySchema = z.object({
   dependencyAdded: z.boolean(),
   testsDeletedOrSkipped: z.boolean(),
   protectedPathsTouched: z.array(z.string()),
+  // A runner built before this rule existed does not send it.
+  unsafeHtml: z.boolean().default(false),
 });
 
 export const runnerPullRequestSchema = z.object({
@@ -113,6 +115,7 @@ export const ruleSetSchema = z.object({
           tests_deleted_or_skipped: z.boolean().optional(),
           lines_changed_over: z.number().optional(),
           touches_protected_path: z.boolean().optional(),
+          writes_unescaped_html: z.boolean().optional(),
         }),
         action: z.enum(['require_review', 'require_checkpoint', 'hard_stop']),
       }),
@@ -131,6 +134,7 @@ export const ruleSetSchema = z.object({
           tests_deleted_or_skipped: z.boolean().optional(),
           lines_changed_over: z.number().optional(),
           touches_protected_path: z.boolean().optional(),
+          writes_unescaped_html: z.boolean().optional(),
         }),
       }),
     )

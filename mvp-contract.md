@@ -384,6 +384,9 @@ triggers:
   - id: tests-removed
     when: { tests_deleted_or_skipped: true }
     action: require_review
+  - id: unsafe-html
+    when: { writes_unescaped_html: true }
+    action: require_review
   - id: large-diff
     when: { lines_changed_over: 800 }
     action: require_review
@@ -400,7 +403,7 @@ pre_approved_change_types:
     review_by: 2027-01-15
 ```
 
-Evaluation input is the PR diff summary: changed paths, added dependencies, lines changed, deleted or skipped tests, protected-path matches. Output is a list of fired triggers with reasons, stored on the PR's `interaction.context_card`. `hard_stop` can never be defaulted or pre-approved.
+Evaluation input is the PR diff summary: changed paths, added dependencies, lines changed, deleted or skipped tests, protected-path matches, and whether an added line hands a non-literal string to the HTML parser (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `dangerouslySetInnerHTML`, `v-html`, jQuery `.html(x)`; `writesUnescapedHtml` in `packages/core/src/triggers.ts`, computed by the runner from the added lines; a right-hand side that starts with an `escape`, `sanitize` or `DOMPurify.sanitize` call counts as escaped). Output is a list of fired triggers with reasons, stored on the PR's `interaction.context_card`. `hard_stop` can never be defaulted or pre-approved.
 
 ## 13. Verification contract and sidecars (interim)
 
@@ -850,7 +853,7 @@ The idea: "A small expense splitter as a web page with a small JSON API: add peo
   2. *The Architect wrote an unquoted `run:` command in the smoke block, which is not valid YAML*, and the design was approved and merged before the build plan found out. Fixed: the runner now checks the smoke block too, in the Architect's own run, and sends it back to the agent (`apps/runner/src/design-check.ts`); the prompts say to quote.
   3. *An approved design that cannot be built has no way back except a new Architect run.* It worked (a run started by a second person, 24 s, one line changed), but no button or automatic step does it. Not fixed.
   4. *Two tasks (T5, T7) were work that earlier tasks had already done*, so their agents ended without a pull request and the tasks failed ("already implemented by T4"). A person skipped them and the plan finished. Not fixed: the design split the work too finely. The Architect prompt could say to merge a route into the task that needs it, and the platform could offer "it was already done" as a one-click skip.
-  5. *The generated page has a stored cross-site-scripting hole*: names and descriptions go into `innerHTML` without escaping, so a person named `<img src=x onerror=alert(1)>` runs script for everyone who opens the page. Neither the spec, the design, the review triggers nor the smoke test mention it, and the reviewer sees only the pull request. This is the first thing a real user of the platform would be hurt by. Not fixed: the prompts for the frontend and backend engineers should say to escape output, and a review trigger or a Security agent (spec 8, stage "Security") is the proper answer.
+  5. *The generated page has a stored cross-site-scripting hole*: names and descriptions go into `innerHTML` without escaping, so a person named `<img src=x onerror=alert(1)>` runs script for everyone who opens the page. Neither the spec, the design, the review triggers nor the smoke test mentioned it. **Answered in part (2026-10-19):** a review trigger `unsafe-html` (a change that writes a non-literal string into the page's markup needs a person, also in autopilot, and the review says why; it flags all five places in the generated page and passes its fixed-text assignments), the engineer prompts say to show text with `textContent` or one escape function and to write a test with `<img src=x onerror=alert(1)>`, and the Architect prompt asks for that in Risks and in the Test strategy. Not covered: server-side string-built HTML (`res.end(`<li>${name}</li>`)`), and a person who does not look. A Security agent (spec 8) is the fuller answer. Not run again with an agent.
   6. *The spec added a feature the one line did not ask for* (deleting people and expenses) and left a question open that the design then answered on its own (whether the payer must share). The person caught it in the design review. That is the review working as meant.
   7. *GitHub Actions had a critical outage for about 25 minutes*, so the first spec pull request's `verify` sat in the queue and the run waited. The Gate holds for 30 minutes after approval. The resume option (`DOGFOOD_RESUME=<initiative id>`) carried on from the merged spec once GitHub recovered.
 - **Not shown.** A run with no person in the loop, a repository that already has code, a second engine, and the app deployed anywhere other than a developer's machine.

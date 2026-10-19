@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import {
   dependencyAddedInPackageJson,
@@ -6,6 +8,7 @@ import {
   matchingPaths,
   strongestAction,
   testsDeletedOrSkipped,
+  writesUnescapedHtml,
 } from './triggers.js';
 import type { DiffSummary, RuleSet } from './triggers.js';
 
@@ -159,5 +162,61 @@ describe('dependencyAddedInPackageJson', () => {
     expect(dependencyAddedInPackageJson(pkg({ a: '1' }), null)).toBe(false);
     expect(dependencyAddedInPackageJson('{', pkg({ a: '1' }))).toBe(true);
     expect(dependencyAddedInPackageJson(pkg({ a: '1' }), '{')).toBe(false);
+  });
+});
+
+describe('writesUnescapedHtml', () => {
+  const flags = (...lines: string[]) => writesUnescapedHtml(lines);
+
+  it('flags what the dogfood run found: names and descriptions put into innerHTML', () => {
+    expect(flags('  peopleList.innerHTML = people.map(person => `')).toBe(true);
+    expect(flags('    <strong>${person.name}</strong>')).toBe(false); // the interpolation alone is not the sink
+    expect(flags('el.innerHTML = `<b>${name}</b>`;')).toBe(true);
+    expect(flags("el.innerHTML = '<b>' + name + '</b>';")).toBe(true);
+    expect(flags('el.innerHTML += row;')).toBe(true);
+    expect(flags('node.outerHTML = html;')).toBe(true);
+  });
+
+  it('flags the other ways to hand a string to the HTML parser', () => {
+    expect(flags("el.insertAdjacentHTML('beforeend', html);")).toBe(true);
+    expect(flags('document.write(markup)')).toBe(true);
+    expect(flags('<div dangerouslySetInnerHTML={{ __html: body }} />')).toBe(true);
+    expect(flags('<p v-html="body"></p>')).toBe(true);
+    expect(flags('$(el).html(body)')).toBe(true);
+  });
+
+  it('lets a fixed literal, an empty string, text, and escaped output through', () => {
+    expect(flags(`list.innerHTML = '<div class="empty-state">No people added yet</div>';`)).toBe(
+      false,
+    );
+    expect(flags("list.innerHTML = '';")).toBe(false);
+    expect(flags('el.innerHTML = `<hr>`;')).toBe(false);
+    expect(flags('el.textContent = name;')).toBe(false);
+    expect(flags('el.innerHTML = escapeHtml(name);')).toBe(false);
+    expect(flags('el.innerHTML = DOMPurify.sanitize(html);')).toBe(false);
+    expect(flags("el.insertAdjacentHTML('beforeend', '<hr>');")).toBe(false);
+    expect(flags("document.write('<p>hi</p>')")).toBe(false);
+    expect(flags('// el.innerHTML = name', ' * el.innerHTML = name', '# innerHTML = x')).toBe(
+      false,
+    );
+    expect(flags()).toBe(false);
+  });
+});
+
+describe('the shipped rules', () => {
+  const shipped = parse(
+    readFileSync(new URL('../../../rules/triggers.yaml', import.meta.url), 'utf8'),
+  ) as RuleSet;
+
+  it('ask a person to look at a change that writes unescaped HTML, and nothing else fires', () => {
+    const fired = evaluateTriggers(shipped, diff({ unsafeHtml: true }));
+    expect(fired.map((f) => f.id)).toEqual(['unsafe-html']);
+    expect(fired[0]!.action).toBe('require_review');
+    expect(fired[0]!.description).toContain('cross-site scripting');
+  });
+
+  it('leave an ordinary change alone, and a runner that does not say', () => {
+    expect(evaluateTriggers(shipped, diff({ unsafeHtml: false }))).toEqual([]);
+    expect(evaluateTriggers(shipped, diff())).toEqual([]);
   });
 });

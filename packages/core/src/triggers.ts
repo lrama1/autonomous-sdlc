@@ -11,6 +11,8 @@ export interface TriggerWhen {
   tests_deleted_or_skipped?: boolean;
   lines_changed_over?: number;
   touches_protected_path?: boolean;
+  /** The change puts text into page markup without clear escaping (a possible cross-site scripting hole). */
+  writes_unescaped_html?: boolean;
 }
 
 export interface TriggerRule {
@@ -40,6 +42,8 @@ export interface DiffSummary {
   dependencyAdded: boolean;
   testsDeletedOrSkipped: boolean;
   protectedPathsTouched: string[];
+  /** Optional so a runner built before this rule existed still fits: absent means no. */
+  unsafeHtml?: boolean;
 }
 
 export interface FiredTrigger {
@@ -72,6 +76,8 @@ function holds(when: TriggerWhen, d: DiffSummary): boolean {
   if (when.lines_changed_over !== undefined) checks.push(d.linesChanged > when.lines_changed_over);
   if (when.touches_protected_path !== undefined)
     checks.push(d.protectedPathsTouched.length > 0 === when.touches_protected_path);
+  if (when.writes_unescaped_html !== undefined)
+    checks.push((d.unsafeHtml ?? false) === when.writes_unescaped_html);
   // A rule with no conditions never fires. Better silent than firing on everything.
   return checks.length > 0 && checks.every(Boolean);
 }
@@ -142,4 +148,32 @@ export function dependencyAddedInPackageJson(before: string | null, after: strin
   };
   const was = names(before);
   return [...names(after)].some((n) => !was.has(n));
+}
+
+// Writing text into page markup. `textContent` and DOM calls are safe; these are the ways to hand a string to the HTML
+// parser, which is where a name like <img onerror=...> becomes script. A literal with nothing in it that varies is fine.
+const ASSIGN_SINK = /(?:innerHTML|outerHTML)\s*\+?=\s*(.*)$/;
+const CALL_SINK = /\b(?:insertAdjacentHTML|document\.write(?:ln)?)\s*\((.*)$/;
+const FRAMEWORK_SINK = /dangerouslySetInnerHTML|\bv-html\b|\[innerHTML\]|\.html\s*\(\s*[^)\s]/;
+const PLAIN_LITERAL = /^\s*(?:'[^'\\]*'|"[^"\\]*"|`[^`$\\]*`)\s*\)?\s*;?\s*(?:\/\/.*)?$/;
+const SANITIZED =
+  /^\s*(?:escapeHtml|escapeHTML|escape|sanitize|sanitizeHtml|DOMPurify\.sanitize)\s*\(/;
+const STRING_LITERALS = /'[^'\\]*'|"[^"\\]*"|`[^`$\\]*`/g;
+
+/**
+ * True if an added line hands a string that is not a fixed literal to the HTML parser: an `innerHTML` or `outerHTML`
+ * assignment, `insertAdjacentHTML`, `document.write`, or a framework's raw-HTML escape hatch. It is a flag for a person
+ * to look, not a proof: a call to a function named escape-something on the right-hand side is taken as escaping.
+ */
+export function writesUnescapedHtml(addedLines: string[]): boolean {
+  return addedLines.some((raw) => {
+    const line = raw.trim();
+    if (line.startsWith('//') || line.startsWith('*') || line.startsWith('#')) return false;
+    if (FRAMEWORK_SINK.test(line)) return true;
+    const assign = ASSIGN_SINK.exec(line);
+    if (assign) return !PLAIN_LITERAL.test(assign[1]!) && !SANITIZED.test(assign[1]!);
+    const call = CALL_SINK.exec(line);
+    if (call) return /[A-Za-z_$]/.test(call[1]!.replace(STRING_LITERALS, ''));
+    return false;
+  });
 }

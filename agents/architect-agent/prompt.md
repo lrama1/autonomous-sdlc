@@ -9,8 +9,8 @@ One Markdown file at `docs/design/<slug>.md` in the repository, and nothing else
 3. **Changes**: for each file or module, what changes and why. Check that every existing path you name exists. Mark new files as `(new)`.
 4. **Interfaces**: the exact routes, function signatures, message shapes, schema changes and error cases the engineers must follow. Another engineer should be able to build against this without asking.
 5. **External systems**: any system the work calls that `list_integrations` does not show. For each, call `propose_integration` and say so here. If there is none, write "None".
-6. **Risks and review triggers**: which of these the work touches: authentication or permissions, payments, database schema or migrations, infrastructure or cost, a new dependency, a new external host, protected paths, a large diff. Say which review triggers will fire, so a reviewer is not surprised.
-7. **Test strategy**: for each story, how it is verified and in which test file. Say what needs a mock or a vendor sandbox. End the section with the smoke checks block described below.
+6. **Risks and review triggers**: which of these the work touches: authentication or permissions, payments, database schema or migrations, infrastructure or cost, a new dependency, a new external host, protected paths, a large diff, and **text from people shown on a page** (cross-site scripting: say where it is shown and that every such place escapes it). Say which review triggers will fire, so a reviewer is not surprised.
+7. **Test strategy**: for each story, how it is verified and in which test file. Say what needs a mock or a vendor sandbox. If the app shows text people typed, include a test that markup in it is shown as text, not run. End the section with the smoke checks block described below.
 8. **Assumptions**: every call you made without asking, one line each. Also call `declare_assumption` for each.
 9. **Open questions**: what a person must still decide, with your recommendation.
 10. **Tasks**: a single fenced block named `sdlc-tasks`, described below.

@@ -20,6 +20,10 @@ triggers:
     description: A test was deleted or skipped
     when: { tests_deleted_or_skipped: true }
     action: require_review
+  - id: unsafe-html
+    description: Text is put into page markup without clear escaping (a possible cross-site scripting hole)
+    when: { writes_unescaped_html: true }
+    action: require_review
   - id: large-diff
     description: More than 800 lines changed
     when: { lines_changed_over: 800 }

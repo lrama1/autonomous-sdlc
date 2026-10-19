@@ -1,4 +1,9 @@
-import { dependencyAddedInPackageJson, matchingPaths, testsDeletedOrSkipped } from '@sdlc/core';
+import {
+  dependencyAddedInPackageJson,
+  matchingPaths,
+  testsDeletedOrSkipped,
+  writesUnescapedHtml,
+} from '@sdlc/core';
 import { git } from './git.js';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -9,6 +14,7 @@ export interface DiffSummary {
   dependencyAdded: boolean;
   testsDeletedOrSkipped: boolean;
   protectedPathsTouched: string[];
+  unsafeHtml: boolean;
 }
 
 /** Summarizes what the branch changes against the integration branch, in the terms the rules use. */
@@ -51,5 +57,6 @@ export async function summarizeDiff(
     dependencyAdded,
     testsDeletedOrSkipped: testsDeletedOrSkipped(deleted, addedLines),
     protectedPathsTouched: matchingPaths(names, protectedGlobs),
+    unsafeHtml: writesUnescapedHtml(addedLines),
   };
 }
