@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DockerPreviewHost, PreviewStartError, previewNames } from './docker-preview.js';
+import { runSmoke } from './smoke.js';
 
 // Real containers. Needs Docker and the image from `pnpm --filter @sdlc/runner image`. Skipped otherwise.
 const IMAGE = 'sdlc-runner:dev';
@@ -218,5 +219,79 @@ describe.skipIf(!haveDocker)('the Docker preview host', () => {
 
     await host.reconcile();
     expect(leftovers(first)).toEqual([]);
+  }, 180_000);
+});
+
+// The smoke test, against a real preview in a real sandbox: HTTP checks from outside, commands from inside.
+const APP = `
+const http = require('http');
+http.createServer((req, res) => {
+  if (req.url === '/health') return res.end('ok');
+  if (req.url === '/items') return res.end(JSON.stringify({ items: [{ id: 1 }] }));
+  if (req.url === '/broken') { res.statusCode = 500; return res.end('database is down'); }
+  res.statusCode = 404; res.end('nothing here');
+}).listen(Number(process.env.PORT), process.env.HOST);
+`;
+// A check written by the repository: it asks the running app, from inside the sandbox, and exits 1 when it is wrong.
+const SMOKE_SCRIPT = `
+fetch('http://127.0.0.1:' + process.env.PORT + '/items')
+  .then((r) => r.json())
+  .then((b) => { if (!b.items.length) { console.error('no items'); process.exit(1); } console.log('items ok: ' + b.items.length); })
+  .catch((e) => { console.error(String(e)); process.exit(1); });
+`;
+
+describe.skipIf(!haveDocker)('a smoke test against a real preview', () => {
+  it('runs HTTP checks and commands, tells a good app from a broken one, and leaves nothing behind', async () => {
+    const id = newId();
+    const port = await freePort();
+    const { url } = await host.start({
+      id,
+      hostPort: port,
+      archive: await archive({ 'server.js': APP, 'smoke.js': SMOKE_SCRIPT }),
+      config: { install: null, start: 'node server.js', port: 3000, readyPath: '/health' },
+    });
+    const base = url.replace(/\/$/, '');
+    const exec = (command: string, ms: number) => host.exec!(id, command, ms);
+
+    const good = await runSmoke({
+      baseUrl: base,
+      exec,
+      checks: [
+        { kind: 'get', path: '/health', status: 200, contains: null },
+        { kind: 'get', path: '/items', status: 200, contains: '"items"' },
+        { kind: 'run', command: 'node smoke.js' },
+        { kind: 'run', command: 'pwd' },
+      ],
+    });
+    expect(good.results.map((r) => [r.label, r.ok, r.detail])).toEqual([
+      ['GET /health', true, '200'],
+      ['GET /items', true, '200'],
+      ['run node smoke.js', true, 'items ok: 1'],
+      ['run pwd', true, '/work'],
+    ]);
+    expect(good.passed).toBe(true);
+
+    const bad = await runSmoke({
+      baseUrl: base,
+      exec,
+      checks: [
+        { kind: 'get', path: '/broken', status: 200, contains: null },
+        { kind: 'get', path: '/health', status: 200, contains: 'fine' },
+        { kind: 'get', path: '/nope', status: 200, contains: null },
+        { kind: 'run', command: 'echo no items >&2; exit 1' },
+      ],
+    });
+    expect(bad.passed).toBe(false);
+    expect(bad.results.map((r) => r.ok)).toEqual([false, false, false, false]);
+    expect(bad.results[0]!.detail).toBe('expected 200, got 500: database is down');
+    expect(bad.results[3]!.detail).toBe('exit 1: no items');
+
+    // A command that runs too long is stopped and reported, not waited for.
+    const slow = await host.exec!(id, 'sleep 30', 1500);
+    expect(slow.exitCode).toBe(-1);
+    expect(slow.output).toContain('stopped after');
+
+    await host.stop(id);
+    expect(leftovers(id)).toEqual([]);
   }, 180_000);
 });

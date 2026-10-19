@@ -438,6 +438,33 @@ export const previewRun = pgTable(
   (t) => [index('preview_run_pr_idx').on(t.repository, t.prNumber)],
 );
 
+// One smoke test of a pull request's code at one commit (mvp-contract section 16, smoke test). The checks come from
+// .sdlc/preview.yaml; `results` has one entry per check, in order.
+export const smokeRun = pgTable(
+  'smoke_run',
+  {
+    id: id(),
+    interactionId: uuid('interaction_id').references(() => interaction.id),
+    initiativeId: uuid('initiative_id').references(() => initiative.id),
+    repository: text('repository').notNull(),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    // running | passed | failed | error (the preview did not start, so no check ran)
+    state: text('state').notNull().default('running'),
+    results: jsonb('results')
+      .$type<
+        Array<{ kind: 'get' | 'run'; label: string; ok: boolean; detail: string; ms: number }>
+      >()
+      .notNull()
+      .default([]),
+    detail: text('detail'),
+    startedBy: uuid('started_by').references(() => person.id),
+    createdAt: createdAt(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [index('smoke_run_pr_idx').on(t.repository, t.prNumber, t.headSha)],
+);
+
 export const bugReport = pgTable(
   'bug_report',
   {

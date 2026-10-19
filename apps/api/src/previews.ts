@@ -89,6 +89,11 @@ export class PreviewService {
     return row ?? null;
   }
 
+  async get(id: string): Promise<PreviewRow | null> {
+    const [row] = await this.deps.db.select().from(previewRun).where(eq(previewRun.id, id));
+    return row ?? null;
+  }
+
   async start(interactionId: string, by: string | null): Promise<StartResult> {
     const { db, github, settings } = this.deps;
     const [review] = await db.select().from(interaction).where(eq(interaction.id, interactionId));

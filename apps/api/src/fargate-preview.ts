@@ -14,7 +14,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { PreviewConfig } from '@sdlc/core';
+import type { PreviewStartConfig } from '@sdlc/core';
 import { PreviewStartError } from './docker-preview.js';
 import type { PreviewHost } from './docker-preview.js';
 import type { EcsLike } from './fargate-runner.js';
@@ -139,7 +139,7 @@ export class FargatePreviewHost implements PreviewHost {
   async start(spec: {
     id: string;
     archive: Buffer;
-    config: PreviewConfig;
+    config: PreviewStartConfig;
     hostPort: number;
   }): Promise<{ url: string; target: string }> {
     const codeUrl = await this.opts.code.put(spec.id, spec.archive);

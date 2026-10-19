@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import type { PreviewConfig } from '@sdlc/core';
+import type { PreviewStartConfig } from '@sdlc/core';
 import { MANAGED, docker, inspect } from './docker-runner.js';
 
 /**
@@ -13,10 +13,19 @@ export interface PreviewHost {
   start(spec: {
     id: string;
     archive: Buffer;
-    config: PreviewConfig;
+    config: PreviewStartConfig;
     hostPort: number;
   }): Promise<{ url: string; target?: string }>;
   // `target` is where the platform itself reaches the preview, when a reviewer cannot (Fargate).
+  /**
+   * Runs one command inside a running preview's sandbox, in the folder the code is in, and returns its exit code and
+   * output. Left out by a host that cannot. A command that runs past `timeoutMs` is stopped and reported as exit -1.
+   */
+  exec?(
+    id: string,
+    command: string,
+    timeoutMs: number,
+  ): Promise<{ exitCode: number; output: string }>;
   /** Removes everything one preview created. Safe to call twice. */
   stop(id: string): Promise<void>;
   /** Removes previews left by an earlier API process. */
@@ -207,7 +216,7 @@ export class DockerPreviewHost implements PreviewHost {
   async start(spec: {
     id: string;
     archive: Buffer;
-    config: PreviewConfig;
+    config: PreviewStartConfig;
     hostPort: number;
   }): Promise<{ url: string }> {
     const n = previewNames(spec.id);
@@ -342,6 +351,40 @@ export class DockerPreviewHost implements PreviewHost {
       await this.stop(spec.id);
       throw e;
     }
+  }
+
+  async exec(
+    id: string,
+    command: string,
+    timeoutMs: number,
+  ): Promise<{ exitCode: number; output: string }> {
+    const n = previewNames(id);
+    return await new Promise((resolve) => {
+      const child = spawn('docker', ['exec', '-w', '/work', n.container, 'sh', '-c', command], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let output = '';
+      const keep = (b: Buffer) => (output = (output + b.toString()).slice(-16_000));
+      child.stdout?.on('data', keep);
+      child.stderr?.on('data', keep);
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, timeoutMs);
+      child.on('error', (e) => {
+        clearTimeout(timer);
+        resolve({ exitCode: -1, output: `could not run the command: ${e.message}` });
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve(
+          timedOut
+            ? { exitCode: -1, output: `${output}\nstopped after ${Math.round(timeoutMs / 1000)} s` }
+            : { exitCode: code ?? -1, output },
+        );
+      });
+    });
   }
 
   async stop(id: string): Promise<void> {
