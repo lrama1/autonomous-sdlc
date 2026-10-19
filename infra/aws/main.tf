@@ -1,5 +1,7 @@
 terraform {
   required_version = ">= 1.6"
+  # The bucket is passed by tf-init.ps1 (it is named after the account). State is shared by your machine and CI.
+  backend "s3" {}
   required_providers {
     aws    = { source = "hashicorp/aws", version = "~> 5.0" }
     random = { source = "hashicorp/random", version = "~> 3.6" }
@@ -8,7 +10,7 @@ terraform {
 
 provider "aws" {
   region  = var.region
-  profile = var.aws_profile
+  profile = var.aws_profile == "" ? null : var.aws_profile
   default_tags {
     tags = { Project = "autonomous-sdlc", Stack = var.name, ManagedBy = "terraform" }
   }

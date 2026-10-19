@@ -10,8 +10,9 @@ variable "region" {
 }
 
 variable "aws_profile" {
-  type    = string
-  default = "default"
+  type        = string
+  default     = "default"
+  description = "Named AWS CLI profile. Empty means use the credentials in the environment (as CI does)."
 }
 
 variable "bootstrap_admin_email" {

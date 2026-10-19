@@ -2,10 +2,12 @@
 #   $env:TF_VAR_bootstrap_admin_email = 'you@example.com'      # required: the first admin
 #   $env:TF_VAR_openrouter_key_agents = '<key>'                 # optional: the gateway's model key
 #   ./deploy.ps1
+# State lives in S3 (see ../bootstrap), so your machine and the Deploy workflow can manage the same stack.
 # Safe to run again. It builds the platform image and the runner (sandbox) image and pushes both before starting any service.
 param([string]$Profile = 'default', [string]$Region = 'us-east-1', [string]$Tag = 'dev')
-$env:AWS_PROFILE = $Profile
-$root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
+if ($Profile) { $env:AWS_PROFILE = $Profile } # CI passes -Profile '' and uses the credentials in the environment
+$env:TF_VAR_aws_profile = $Profile
+$root = Resolve-Path (Join-Path $PSScriptRoot '../..')
 
 # Native tools write warnings to stderr, so success is judged by the exit code, not by the error stream.
 function Run([scriptblock]$cmd) {
@@ -13,7 +15,8 @@ function Run([scriptblock]$cmd) {
   if ($LASTEXITCODE -ne 0) { throw "failed (exit $LASTEXITCODE): $cmd" }
 }
 
-Run { terraform init -input=false }
+. "$PSScriptRoot/tf-init.ps1"
+Initialize-Terraform $Region
 # 1. The image repository first, so there is somewhere to push to. No service runs yet.
 Run { terraform apply -input=false -auto-approve '-target=aws_ecr_repository.platform' '-target=aws_ecr_repository.runner' -var "desired_count=0" -var "image_tag=$Tag" }
 $repo = terraform output -raw ecr_repository

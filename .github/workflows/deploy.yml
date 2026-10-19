@@ -1,0 +1,108 @@
+name: deploy
+
+# Deploys or destroys the AWS dev stack. Started by hand from the Actions tab, and only from main:
+# the deploy role's trust (infra/bootstrap) accepts no other branch.
+# One-time setup is in docs: mvp-contract.md, "Deploy from CI".
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy or destroy the stack
+        type: choice
+        options: [deploy, destroy]
+        default: deploy
+      confirm_destroy:
+        description: To destroy, type "destroy" here
+        type: string
+        default: ''
+      independent_review:
+        description: Require a second person to approve (turn off to work alone)
+        type: boolean
+        default: false
+      agent_engine:
+        description: Engine for every agent (empty keeps each agent's own setting)
+        type: choice
+        options: ['', claude-code, copilot-cli]
+        default: ''
+
+permissions:
+  id-token: write
+  contents: read
+
+# Two runs on one stack would fight over the state lock.
+concurrency:
+  group: sdlc-dev-stack
+  cancel-in-progress: false
+
+jobs:
+  stack:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TF_VAR_bootstrap_admin_email: ${{ vars.BOOTSTRAP_ADMIN_EMAIL }}
+      TF_VAR_openrouter_key_agents: ${{ secrets.OPENROUTER_KEY_AGENTS }}
+      TF_VAR_independent_review: ${{ inputs.independent_review }}
+      TF_VAR_agent_engine: ${{ inputs.agent_engine }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - name: Check the destroy confirmation
+        if: inputs.action == 'destroy' && inputs.confirm_destroy != 'destroy'
+        run: |
+          echo "::error::To destroy the stack, type destroy in the confirmation box."
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.14.0
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: inputs.action == 'deploy'
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: inputs.action == 'deploy'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: inputs.action == 'deploy'
+
+      - name: Deploy
+        if: inputs.action == 'deploy'
+        shell: pwsh
+        working-directory: infra/aws
+        run: ./deploy.ps1 -Profile '' -Tag "${{ github.sha }}"
+
+      - name: Wait until the platform answers
+        if: inputs.action == 'deploy'
+        working-directory: infra/aws
+        run: |
+          url=$(terraform output -raw url)
+          for i in $(seq 1 40); do
+            if curl -fsS "$url/readyz" >/dev/null; then
+              echo "ready after $i tries"
+              {
+                echo "### Stack is up"
+                echo "- Platform: $url"
+                echo "- Previews: $(terraform output -raw previews_url)"
+                echo "- Image tag: ${{ github.sha }}"
+                echo ""
+                echo "Next, by hand: create a sign-in user (infra/aws/create-user.ps1) and register the GitHub Apps at $url/admin/github."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::$url/readyz did not answer within 10 minutes"
+          exit 1
+
+      - name: Destroy
+        if: inputs.action == 'destroy'
+        shell: pwsh
+        working-directory: infra/aws
+        run: ./destroy.ps1 -Profile ''

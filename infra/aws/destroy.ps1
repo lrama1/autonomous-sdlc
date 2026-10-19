@@ -2,7 +2,10 @@
 # which Terraform does not know about.
 param([string]$Profile = 'default', [string]$Region = 'us-east-1')
 $ErrorActionPreference = 'Stop'
-$env:AWS_PROFILE = $Profile
+if ($Profile) { $env:AWS_PROFILE = $Profile }
+$env:TF_VAR_aws_profile = $Profile
+. "$PSScriptRoot/tf-init.ps1"
+Initialize-Terraform $Region
 $prefix = terraform output -raw runtime_secret_prefix
 $names = aws secretsmanager list-secrets --region $Region --filters "Key=name,Values=$prefix" --query 'SecretList[].Name' --output text
 foreach ($n in ($names -split '\s+' | Where-Object { $_ })) {
