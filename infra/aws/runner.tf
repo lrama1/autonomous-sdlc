@@ -15,6 +15,16 @@ variable "runner_memory" {
   default = 4096
 }
 
+variable "preview_cpu" {
+  type    = number
+  default = 1024
+}
+
+variable "preview_memory" {
+  type    = number
+  default = 2048
+}
+
 variable "runner_egress_allow" {
   type        = string
   default     = "github.com,registry.npmjs.org"
@@ -161,13 +171,52 @@ resource "aws_vpc_security_group_egress_rule" "runner_to_s3" {
   to_port           = 443
 }
 
-# The platform reaches a port a run (a preview) opens. Nothing else reaches a run.
-resource "aws_vpc_security_group_ingress_rule" "runner_from_platform" {
-  security_group_id            = aws_security_group.runner.id
+# A preview runs unreviewed code, so it gets a group of its own: it reaches the proxy, the endpoints and S3, but not the
+# API or the gateway the way a run does. The platform reaches the port it opens, and nothing else does.
+resource "aws_security_group" "preview" {
+  name        = "${var.name}-preview"
+  description = "Previews of pull requests"
+  vpc_id      = aws_vpc.main.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "preview_from_platform" {
+  security_group_id            = aws_security_group.preview.id
   referenced_security_group_id = aws_security_group.tasks.id
   ip_protocol                  = "tcp"
   from_port                    = 1024
   to_port                      = 65535
+}
+
+resource "aws_vpc_security_group_egress_rule" "preview_to_proxy" {
+  security_group_id            = aws_security_group.preview.id
+  referenced_security_group_id = aws_security_group.egress_proxy.id
+  ip_protocol                  = "tcp"
+  from_port                    = 3128
+  to_port                      = 3128
+}
+
+resource "aws_vpc_security_group_egress_rule" "preview_to_endpoints" {
+  security_group_id            = aws_security_group.preview.id
+  referenced_security_group_id = aws_security_group.endpoints.id
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+}
+
+resource "aws_vpc_security_group_egress_rule" "preview_to_s3" {
+  security_group_id = aws_security_group.preview.id
+  prefix_list_id    = aws_vpc_endpoint.s3.prefix_list_id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+}
+
+resource "aws_vpc_security_group_ingress_rule" "proxy_from_preview" {
+  security_group_id            = aws_security_group.egress_proxy.id
+  referenced_security_group_id = aws_security_group.preview.id
+  ip_protocol                  = "tcp"
+  from_port                    = 3128
+  to_port                      = 3128
 }
 
 resource "aws_vpc_security_group_ingress_rule" "tasks_from_runner_api" {
@@ -388,6 +437,29 @@ resource "aws_ecs_task_definition" "runner" {
   }])
 }
 
+# ---- a preview of a pull request: its code arrives by a signed address, and it is told nothing about the platform
+resource "aws_ecs_task_definition" "preview" {
+  family                   = "${var.name}-preview"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.preview_cpu
+  memory                   = var.preview_memory
+  execution_role_arn       = aws_iam_role.execution.arn
+  container_definitions = jsonencode([{
+    name      = "preview"
+    image     = local.runner_image
+    essential = true
+    command   = ["node", "/app/preview.mjs"]
+    environment = [
+      { name = "HTTPS_PROXY", value = local.proxy_url },
+      { name = "https_proxy", value = local.proxy_url },
+      { name = "NO_PROXY", value = "localhost,127.0.0.1" },
+      { name = "no_proxy", value = "localhost,127.0.0.1" },
+    ]
+    logConfiguration = merge(local.log, { options = merge(local.log.options, { "awslogs-stream-prefix" = "preview" }) })
+  }])
+}
+
 # ---- what the API may do to run them
 resource "aws_iam_role_policy" "api_runs" {
   role = aws_iam_role.api.id
@@ -399,6 +471,18 @@ resource "aws_iam_role_policy" "api_runs" {
         Action    = ["ecs:RunTask"]
         Resource  = ["arn:aws:ecs:${var.region}:${local.account}:task-definition/${aws_ecs_task_definition.runner.family}:*"]
         Condition = { ArnEquals = { "ecs:cluster" = aws_ecs_cluster.main.arn } }
+      },
+      {
+        Effect    = "Allow"
+        Action    = ["ecs:RunTask"]
+        Resource  = ["arn:aws:ecs:${var.region}:${local.account}:task-definition/${aws_ecs_task_definition.preview.family}:*"]
+        Condition = { ArnEquals = { "ecs:cluster" = aws_ecs_cluster.main.arn } }
+      },
+      {
+        # To say what a preview printed when it did not come up.
+        Effect   = "Allow"
+        Action   = ["logs:GetLogEvents"]
+        Resource = ["${aws_cloudwatch_log_group.platform.arn}:log-stream:preview/*"]
       },
       {
         Effect    = "Allow"

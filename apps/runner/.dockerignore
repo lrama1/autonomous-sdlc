@@ -1,3 +1,4 @@
 *
 !dist/runner.mjs
 !dist/egress.mjs
+!dist/preview.mjs

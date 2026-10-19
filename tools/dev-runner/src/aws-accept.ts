@@ -3,13 +3,13 @@
 // machine. Agent runs are Fargate tasks. Needs the deploy's outputs in the environment:
 //   SDLC_URL (the CloudFront address), SDLC_USER and SDLC_PASSWORD (a Cognito user with the platform admin role),
 //   GH_TOKEN (to look at and tidy the scratch repository), and AWS credentials for the stack's account.
-//   node --import tsx src/aws-accept.ts [smoke|resume|pipeline|all]
+//   node --import tsx src/aws-accept.ts [smoke|resume|pipeline|previewrun|all]
 // The pipeline phase runs on whichever engine the stack is set to (terraform apply -var agent_engine=copilot-cli).
 // The stack is expected to run with INDEPENDENT_REVIEW=false, since one person plays every part.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { signInCognito } from './cognito.js';
-import type { CookieJar } from './signin.js';
+import { CookieJar } from './signin.js';
 
 const exec = promisify(execFile);
 const REPO = 'lrama1/sdlc-scratch';
@@ -513,6 +513,230 @@ async function main() {
       `cost: $${costs.totals.costUsd.toFixed(3)} over ${costs.totals.runs} runs and ${costs.totals.calls} model calls; ${costs.byRole.map((r: any) => `${r.role} x${r.runs} $${r.costUsd.toFixed(3)}`).join(', ')}; wall ${Math.round((Date.now() - started) / 1000)} s`,
     );
     check(costs.totals.costUsd > 0, '5  the cost of every run was recorded');
+  }
+
+  if (phase === 'previewrun' || phase === 'all') {
+    say(
+      '--- previewrun: a reviewer runs the pull request as a Fargate task and opens it from another address ---',
+    );
+    const s = stamp;
+    const { run } = await startRun(
+      `AWS preview ${s}`,
+      [
+        'Create two files and commit them. Do not change anything else and do not ask any questions.',
+        '',
+        `1. The file preview-${s}.mjs with exactly this content:`,
+        '```js',
+        "import http from 'node:http';",
+        'http.createServer(async (req, res) => {',
+        "  if (req.url === '/echo') return res.end(JSON.stringify({ headers: req.headers }));",
+        "  if (req.url === '/env') return res.end(JSON.stringify(Object.keys(process.env).filter((k) => /sdlc|token|secret|password|credential|preview_/i.test(k))));",
+        "  if (req.url === '/net') {",
+        '    const t = async (u) => fetch(u, { signal: AbortSignal.timeout(4000) }).then((r) => "HTTP " + r.status, (e) => "FAIL " + ((e.cause && e.cause.code) || e.name));',
+        "    return res.end(JSON.stringify({ internet: await t('https://example.com'), platform: await t('http://api.sdlc-dev.local:8080/healthz') }));",
+        '  }',
+        `  res.setHeader('set-cookie', 'seen=1; Path=/');`,
+        `  res.end('preview ${s}');`,
+        '}).listen(Number(process.env.PORT), process.env.HOST);',
+        '```',
+        '',
+        '2. The file .sdlc/preview.yaml with exactly this content:',
+        '```yaml',
+        `start: node preview-${s}.mjs`,
+        'port: 4000',
+        '```',
+      ].join('\n'),
+    );
+    const review = await waitFor(
+      'the review request',
+      () => open(run.id, ['review']),
+      420_000,
+      3000,
+    );
+    const before = await call('GET', `/api/interactions/${review.id}/preview`);
+    check(
+      before.platform.available === true && before.platform.state === 'none',
+      `6  the review offers to run it, and nothing runs yet (${before.platform.state})`,
+    );
+
+    const t1 = Date.now();
+    const started = await call('POST', `/api/interactions/${review.id}/preview/start`, {});
+    const ready = await waitFor(
+      'the preview is ready',
+      async () => {
+        const p = await call('GET', `/api/interactions/${review.id}/preview`);
+        if (p.platform.state === 'failed') throw new Error(`failed: ${p.platform.detail}`);
+        return p.platform.state === 'ready' ? p : null;
+      },
+      420_000,
+      4000,
+    );
+    check(
+      ready.state === 'ready' && ready.source === 'platform',
+      `6  the review pack shows it as ready, ${Math.round((Date.now() - t1) / 1000)} s after the click`,
+    );
+    check(
+      ready.url === `${base}/api/previews/${started.id}/open`,
+      `6  its link is the platform's door, not the preview's own address (${ready.url})`,
+    );
+
+    // The task: where it runs, and what it is.
+    const task = await (async () => {
+      const list = await aws<{ taskArns: string[] }>(
+        'ecs',
+        'list-tasks',
+        '--cluster',
+        NAME,
+        '--family',
+        `${NAME}-preview`,
+        '--desired-status',
+        'RUNNING',
+      );
+      const d = await aws<{ tasks: any[] }>(
+        'ecs',
+        'describe-tasks',
+        '--cluster',
+        NAME,
+        '--tasks',
+        ...list.taskArns,
+        '--include',
+        'TAGS',
+      );
+      return d.tasks.find((x) =>
+        x.tags?.some((g: any) => g.key === 'sdlc-preview' && g.value === started.id),
+      );
+    })();
+    check(Boolean(task), '6  a Fargate task runs the preview');
+    const eni = task.attachments
+      .flatMap((a: any) => a.details)
+      .find((d: any) => d.name === 'networkInterfaceId')?.value;
+    const ni = await aws<{ NetworkInterfaces: any[] }>(
+      'ec2',
+      'describe-network-interfaces',
+      '--network-interface-ids',
+      eni,
+    );
+    const groups = ni.NetworkInterfaces[0].Groups.map((g: any) => g.GroupName);
+    check(
+      groups.length === 1 && groups[0] === `${NAME}-preview`,
+      `6  it is in its own security group, not the runs' (${groups.join(', ')})`,
+    );
+    check(!ni.NetworkInterfaces[0].Association, '6  and has no public address');
+    const def = await aws<{ taskDefinition: any }>(
+      'ecs',
+      'describe-task-definition',
+      '--task-definition',
+      task.taskDefinitionArn,
+    );
+    check(!def.taskDefinition.taskRoleArn, '6  with no task role');
+
+    // Opening it: the link goes to another address, and the platform's cookie does not go with it.
+    const platformHost = new URL(base).host;
+    const door = await me.fetch(ready.url);
+    const finalUrl = new URL(door.url);
+    check(
+      finalUrl.host !== platformHost && finalUrl.pathname === `/${started.id}/`,
+      `6  the link ends on a different address (${finalUrl.host}) at the preview's own path`,
+    );
+    check(
+      door.status === 200 && door.text === `preview ${s}`,
+      `6  and shows the pull request's own code ("${door.text.slice(0, 40)}")`,
+    );
+    const origin = finalUrl.origin;
+    const stranger = new CookieJar();
+    check(
+      (await stranger.fetch(`${origin}/${started.id}/`)).status === 401,
+      '6  someone without the link is refused',
+    );
+    check(
+      (await stranger.fetch(`${origin}/${started.id}/?t=forged`)).status === 401,
+      '6  and so is a made-up link',
+    );
+    const echo = JSON.parse((await me.fetch(`${origin}/${started.id}/echo`)).text);
+    check(
+      !JSON.stringify(echo.headers).includes('sdlc_session'),
+      "6  the platform's session cookie never reaches the preview",
+    );
+    check(
+      echo.headers['x-forwarded-prefix'] === `/${started.id}`,
+      '6  the preview is told its folder',
+    );
+    check(
+      !('x-origin-verify' in echo.headers) && !('x-sdlc-surface' in echo.headers),
+      "6  and none of the platform's own headers",
+    );
+    check(
+      (await me.fetch(`${origin}/api/me`)).status === 404,
+      "6  the preview address does not serve the platform's API",
+    );
+    check(
+      (await me.fetch(`${base}/${started.id}/`)).status === 404,
+      '6  and the platform address does not serve previews',
+    );
+
+    // What the previewed code can see and reach.
+    const env = JSON.parse((await me.fetch(`${origin}/${started.id}/env`)).text);
+    check(
+      env.length === 0,
+      `6  its environment holds no token, key or address from the platform (${JSON.stringify(env)})`,
+    );
+    const net = JSON.parse((await me.fetch(`${origin}/${started.id}/net`)).text);
+    check(net.internet.startsWith('FAIL'), `6  it cannot reach the internet (${net.internet})`);
+    check(net.platform.startsWith('FAIL'), `6  or the platform's API (${net.platform})`);
+
+    // Stopping it.
+    await call('POST', `/api/previews/${started.id}/stop`, {});
+    const gone = await waitFor(
+      'the task stops',
+      async () => {
+        const t2 = await aws<{ tasks: any[] }>(
+          'ecs',
+          'describe-tasks',
+          '--cluster',
+          NAME,
+          '--tasks',
+          task.taskArn,
+        );
+        return t2.tasks[0]?.lastStatus === 'STOPPED' ? t2.tasks[0] : null;
+      },
+      120_000,
+      3000,
+    );
+    check(gone.lastStatus === 'STOPPED', '6  stopping the preview stops its task');
+    check(
+      (await me.fetch(`${origin}/${started.id}/`)).status === 404,
+      '6  and the link no longer opens anything',
+    );
+    const kept = await exec('aws', [
+      's3api',
+      'head-object',
+      '--bucket',
+      bucket,
+      '--key',
+      `previews/${started.id}/code.tgz`,
+      '--region',
+      REGION,
+    ]).then(
+      () => true,
+      () => false,
+    );
+    check(!kept, '6  the copy of the code is deleted');
+
+    await call('POST', `/api/interactions/${review.id}/answer`, {
+      decision: 'rejected',
+      answer: 'Only a preview check.',
+    });
+    const pr = review.contextCard.prNumber;
+    const branch = (await gh(`/repos/${REPO}/pulls/${pr}`)).head.ref;
+    for (const [m, u] of [
+      ['PATCH', `/repos/${REPO}/pulls/${pr}`],
+      ['DELETE', `/repos/${REPO}/git/refs/heads/${branch}`],
+    ] as const)
+      await fetch(`https://api.github.com${u}`, {
+        method: m,
+        headers: { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' },
+        body: m === 'PATCH' ? JSON.stringify({ state: 'closed' }) : undefined,
+      });
   }
 }
 

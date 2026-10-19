@@ -12,7 +12,7 @@ RUN apt-get update \
 
 # /work holds the checkout and the engine's session store. A named volume mounted here keeps it between a park and a resume.
 RUN mkdir -p /work /app && chown node:node /work
-COPY dist/runner.mjs dist/egress.mjs /app/
+COPY dist/runner.mjs dist/egress.mjs dist/preview.mjs /app/
 
 USER node
 WORKDIR /work

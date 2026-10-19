@@ -83,6 +83,11 @@ resource "aws_cloudfront_distribution" "edge" {
       name  = "X-Origin-Verify"
       value = random_password.origin_verify.result
     }
+    # Which address the request came in on. The API serves only previews to the other one.
+    custom_header {
+      name  = "X-Sdlc-Surface"
+      value = "platform"
+    }
   }
 
   default_cache_behavior {
@@ -92,6 +97,52 @@ resource "aws_cloudfront_distribution" "edge" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
     # Managed policies: CachingDisabled, and AllViewerExceptHostHeader.
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_no_host.id
+  }
+
+  restrictions {
+    geo_restriction { restriction_type = "none" }
+  }
+  viewer_certificate { cloudfront_default_certificate = true }
+}
+
+# A second address, only for previews. Code from a pull request is unreviewed, so it is served from an origin that does
+# not share cookies or scripts with the platform. It reaches the same load balancer, and the API serves only previews on it.
+resource "aws_cloudfront_distribution" "previews" {
+  enabled         = true
+  comment         = "${var.name} previews"
+  price_class     = "PriceClass_100"
+  http_version    = "http2"
+  is_ipv6_enabled = true
+
+  origin {
+    origin_id   = "alb"
+    domain_name = aws_lb.main.dns_name
+    custom_origin_config {
+      http_port                = 80
+      https_port               = 443
+      origin_protocol_policy   = "http-only"
+      origin_ssl_protocols     = ["TLSv1.2"]
+      origin_read_timeout      = 60
+      origin_keepalive_timeout = 30
+    }
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = random_password.origin_verify.result
+    }
+    custom_header {
+      name  = "X-Sdlc-Surface"
+      value = "preview"
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id         = "alb"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_no_host.id
   }

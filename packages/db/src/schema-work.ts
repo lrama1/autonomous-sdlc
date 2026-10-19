@@ -425,6 +425,8 @@ export const previewRun = pgTable(
     // starting | ready | failed | stopped | expired | unavailable (the repository has no .sdlc/preview.yaml)
     state: text('state').notNull().default('starting'),
     url: text('url'),
+    // Where the platform reaches the preview itself, when the reviewer goes through the platform's proxy (Fargate).
+    target: text('target'),
     hostPort: integer('host_port'),
     detail: text('detail'),
     startedBy: uuid('started_by').references(() => person.id),

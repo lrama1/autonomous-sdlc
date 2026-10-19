@@ -17,6 +17,8 @@ import { FargateRunner, S3StateStore } from './fargate-runner.js';
 import { DockerPreviewHost } from './docker-preview.js';
 import type { PreviewHost } from './docker-preview.js';
 import { PreviewService } from './previews.js';
+import { FargatePreviewHost, CloudWatchTaskLogs, S3CodeStore } from './fargate-preview.js';
+import { registerPreviewProxy } from './preview-proxy.js';
 import { ProcessRunner } from './launcher.js';
 import type { RunnerAdapter } from './launcher.js';
 import { loadRules } from './rules.js';
@@ -233,6 +235,7 @@ export async function buildApp({
     ttlMinutes: config.PREVIEW_TTL_MIN,
   });
   app.decorate('previews', () => previews);
+  registerPreviewProxy(app, db, { secret: config.SESSION_SECRET, origin: config.PREVIEW_ORIGIN });
   registerBuildRoutes(app, db);
   registerStageRoutes(app, db);
   registerBugRoutes(app, db, loadedAgents);
@@ -380,6 +383,31 @@ export async function buildApp({
               entry: config.RUNNER_ENTRY,
               cwd: process.cwd(),
             });
+    if (
+      !previewHost &&
+      config.RUNNER_ADAPTER === 'fargate' &&
+      config.FARGATE_PREVIEW_TASK_DEFINITION &&
+      config.FARGATE_PREVIEW_SECURITY_GROUPS &&
+      config.PREVIEW_ORIGIN
+    ) {
+      const list = (v?: string) =>
+        (v ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      await useHost(
+        new FargatePreviewHost({
+          cluster: config.FARGATE_CLUSTER!,
+          taskDefinition: config.FARGATE_PREVIEW_TASK_DEFINITION,
+          subnets: list(config.FARGATE_SUBNETS),
+          securityGroups: list(config.FARGATE_PREVIEW_SECURITY_GROUPS),
+          code: new S3CodeStore(config.FARGATE_STATE_BUCKET!),
+          logs: new CloudWatchTaskLogs(`/${config.FARGATE_CLUSTER}`),
+          openUrl: (id) => `${config.PUBLIC_URL}/api/previews/${id}/open`,
+          log: (l) => app.log.info(l),
+        }),
+      );
+    }
     if (!previewHost && config.RUNNER_ADAPTER === 'docker')
       await useHost(
         new DockerPreviewHost({

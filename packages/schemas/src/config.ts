@@ -75,6 +75,11 @@ export const apiConfigSchema = z.object({
   PREVIEW_TTL_MIN: z.coerce.number().int().min(1).max(240).default(30),
   PREVIEW_PORT_BASE: z.coerce.number().int().min(1024).max(65000).default(9100),
   PREVIEW_MEMORY: z.string().default('512m'),
+  // On Fargate: the task definition that runs a preview, and the second web address previews are served from.
+  FARGATE_PREVIEW_TASK_DEFINITION: z.string().optional(),
+  // Previews get their own security group: no route to the API or the gateway, unlike a run.
+  FARGATE_PREVIEW_SECURITY_GROUPS: z.string().optional(),
+  PREVIEW_ORIGIN: z.preprocess((v) => (v === '' ? undefined : v), url.optional()),
   // Hosts a preview may open HTTPS tunnels to while it installs. Nothing else leaves the sandbox.
   PREVIEW_EGRESS_ALLOW: z.string().default('registry.npmjs.org'),
   RUNNER_ENTRY: z.string().default('apps/runner/src/main.ts'),

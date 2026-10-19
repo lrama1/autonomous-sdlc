@@ -1,10 +1,11 @@
-// Bundles the runner and the egress proxy into single files, so the image needs no node_modules.
+// Bundles the runner, the egress proxy and the preview starter into single files, so the image needs no node_modules.
 import { build } from 'esbuild';
 
 await Promise.all(
   [
     ['src/main.ts', 'dist/runner.mjs'],
     ['src/egress-main.ts', 'dist/egress.mjs'],
+    ['src/preview-main.ts', 'dist/preview.mjs'],
   ].map(([entry, outfile]) =>
     build({
       entryPoints: [entry],
@@ -21,4 +22,4 @@ await Promise.all(
     }),
   ),
 );
-console.log('built dist/runner.mjs and dist/egress.mjs');
+console.log('built dist/runner.mjs, dist/egress.mjs and dist/preview.mjs');

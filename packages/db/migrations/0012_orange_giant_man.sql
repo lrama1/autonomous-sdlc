@@ -1,0 +1,1 @@
+ALTER TABLE "preview_run" ADD COLUMN "target" text;

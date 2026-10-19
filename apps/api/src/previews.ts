@@ -199,10 +199,17 @@ export class PreviewService {
 
       let port = row.hostPort!;
       let url: string | null = null;
+      let target: string | null = null;
       for (let attempt = 0; attempt < 5 && url === null; attempt++) {
         try {
-          url = (await host.start({ id: row.id, archive, config: parsed.config, hostPort: port }))
-            .url;
+          const started = await host.start({
+            id: row.id,
+            archive,
+            config: parsed.config,
+            hostPort: port,
+          });
+          url = started.url;
+          target = started.target ?? null;
         } catch (e) {
           if (!(e instanceof PreviewStartError && e.portBusy) || attempt === 4) throw e;
           const active = await this.deps.db
@@ -229,6 +236,7 @@ export class PreviewService {
       await this.update(row.id, {
         state: 'ready',
         url,
+        target,
         hostPort: port,
         readyAt,
         expiresAt: new Date(readyAt.getTime() + settings.ttlMinutes * 60_000),

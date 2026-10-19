@@ -15,6 +15,11 @@ output "cognito_domain" {
   value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com"
 }
 
+output "previews_url" {
+  value       = "https://${aws_cloudfront_distribution.previews.domain_name}"
+  description = "The address previews are served from. It is not the platform's."
+}
+
 output "runner_ecr_repository" {
   value = aws_ecr_repository.runner.repository_url
 }

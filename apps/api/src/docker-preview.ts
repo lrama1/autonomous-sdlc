@@ -15,7 +15,8 @@ export interface PreviewHost {
     archive: Buffer;
     config: PreviewConfig;
     hostPort: number;
-  }): Promise<{ url: string }>;
+  }): Promise<{ url: string; target?: string }>;
+  // `target` is where the platform itself reaches the preview, when a reviewer cannot (Fargate).
   /** Removes everything one preview created. Safe to call twice. */
   stop(id: string): Promise<void>;
   /** Removes previews left by an earlier API process. */
