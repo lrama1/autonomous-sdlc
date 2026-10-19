@@ -33,6 +33,11 @@ export interface SmokeGuard {
   blocks(row: InteractionRow): Promise<string | null>;
   /** One line about the smoke test for the approval on the pull request, or null. */
   evidence(row: InteractionRow): Promise<string | null>;
+  /**
+   * The Gate merged the base branch into the pull request, so the commit changed and nothing else did. A person's
+   * approval carries over to it; so does the smoke test's result.
+   */
+  carryOver?(row: InteractionRow, fromSha: string, toSha: string): Promise<void>;
 }
 
 export interface GateOptions {
@@ -73,7 +78,15 @@ export function createGate({
       .set({
         contextCard: sql`${interaction.contextCard} || jsonb_build_object('gate', ${JSON.stringify(info)}::jsonb)`,
       })
-      .where(eq(interaction.id, row.id));
+      .where(
+        and(
+          eq(interaction.id, row.id),
+          // A pull request that is merged stays merged: a slower look that saw it before the merge must not undo that.
+          info.state === 'merged'
+            ? sql`true`
+            : sql`coalesce(${interaction.contextCard} -> 'gate' ->> 'state', '') <> 'merged'`,
+        ),
+      );
   }
 
   async function finish(
@@ -185,6 +198,9 @@ export function createGate({
       action: 'gate.caught_up',
       detail: { from: card.headSha, to: next, prNumber: card.prNumber },
     });
+    await smoke()
+      ?.carryOver?.(row, card.headSha, next)
+      .catch((e) => log(`[gate] could not carry the smoke result over: ${String(e)}`));
     await setGate(row, {
       state: 'waiting_ci',
       since: new Date().toISOString(),
@@ -221,7 +237,7 @@ export function createGate({
   }
 
   /** Looks at one approved review and moves it forward. Safe to call repeatedly. */
-  async function evaluate(row: InteractionRow): Promise<GateState | null> {
+  async function evaluateOnce(row: InteractionRow): Promise<GateState | null> {
     if (!isPr(row)) return null;
     const card = row.contextCard as unknown as PrCard & { gate?: GateInfo };
     const since = card.gate?.since ?? new Date().toISOString();
@@ -362,6 +378,23 @@ export function createGate({
     }
   }
 
+  /**
+   * One look at a time per review. A person's approval and the worker's next pass can arrive together, and two looks that
+   * each approve and merge on GitHub, then disagree about what happened, leave the review in the wrong state.
+   */
+  const looking = new Map<string, Promise<GateState | null>>();
+  function evaluate(row: InteractionRow): Promise<GateState | null> {
+    const running = looking.get(row.id);
+    if (running) return running;
+    const p = evaluateOnce(row).finally(() => looking.delete(row.id));
+    looking.set(row.id, p);
+    return p;
+  }
+
+  /** How long to leave a failed review alone before asking GitHub whether it merged after all. */
+  const FAILED_RECHECK_MS = 60_000;
+  const lastChecked = new Map<string, number>();
+
   return {
     evaluate,
 
@@ -438,6 +471,37 @@ export function createGate({
           ),
         );
       for (const row of waiting) await evaluate(row);
+
+      // A review that says it failed may have been merged anyway (a look that failed after another one merged).
+      // Ask GitHub, not often, and only about whether it merged.
+      const failed = await db
+        .select()
+        .from(interaction)
+        .where(
+          and(
+            eq(interaction.type, 'review'),
+            eq(interaction.state, 'answered'),
+            sql`${interaction.contextCard} -> 'gate' ->> 'state' = 'failed'`,
+          ),
+        );
+      for (const row of failed) {
+        if (Date.now() - (lastChecked.get(row.id) ?? 0) < FAILED_RECHECK_MS) continue;
+        lastChecked.set(row.id, Date.now());
+        const card = row.contextCard as unknown as PrCard & { gate?: GateInfo };
+        if (!isPr(row)) continue;
+        const pr = await github.getPullRequest(card.repository, card.prNumber).catch(() => null);
+        if (pr?.merged)
+          await finish(
+            row,
+            {
+              state: 'merged',
+              since: card.gate?.since ?? new Date().toISOString(),
+              detail: 'merged (found merged after a failure was recorded)',
+            },
+            'pull_request.merged',
+            { prNumber: card.prNumber, reconciled: true },
+          );
+      }
       return waiting.length;
     },
   };

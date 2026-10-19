@@ -158,18 +158,22 @@ const FRAMEWORK_SINK = /dangerouslySetInnerHTML|\bv-html\b|\[innerHTML\]|\.html\
 const PLAIN_LITERAL = /^\s*(?:'[^'\\]*'|"[^"\\]*"|`[^`$\\]*`)\s*\)?\s*;?\s*(?:\/\/.*)?$/;
 const SANITIZED =
   /^\s*(?:escapeHtml|escapeHTML|escape|sanitize|sanitizeHtml|DOMPurify\.sanitize)\s*\(/;
+// An inline event handler written into markup with a value in it: the value ends up inside an attribute and inside script.
+const INLINE_HANDLER =
+  /\bon[a-z]{3,}\s*=\s*(?:\\?"[^"]*\$\{|'[^']*\$\{|\\?["'][^"']*['"]\s*\+\s*\w)/i;
 const STRING_LITERALS = /'[^'\\]*'|"[^"\\]*"|`[^`$\\]*`/g;
 
 /**
  * True if an added line hands a string that is not a fixed literal to the HTML parser: an `innerHTML` or `outerHTML`
- * assignment, `insertAdjacentHTML`, `document.write`, or a framework's raw-HTML escape hatch. It is a flag for a person
+ * assignment, `insertAdjacentHTML`, `document.write`, a framework's raw-HTML escape hatch, or an inline event handler
+ * (`onclick="...${value}..."`) built from a value. It is a flag for a person
  * to look, not a proof: a call to a function named escape-something on the right-hand side is taken as escaping.
  */
 export function writesUnescapedHtml(addedLines: string[]): boolean {
   return addedLines.some((raw) => {
     const line = raw.trim();
     if (line.startsWith('//') || line.startsWith('*') || line.startsWith('#')) return false;
-    if (FRAMEWORK_SINK.test(line)) return true;
+    if (FRAMEWORK_SINK.test(line) || INLINE_HANDLER.test(line)) return true;
     const assign = ASSIGN_SINK.exec(line);
     if (assign) return !PLAIN_LITERAL.test(assign[1]!) && !SANITIZED.test(assign[1]!);
     const call = CALL_SINK.exec(line);

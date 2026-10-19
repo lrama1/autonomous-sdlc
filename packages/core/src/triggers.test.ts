@@ -185,6 +185,17 @@ describe('writesUnescapedHtml', () => {
     expect(flags('$(el).html(body)')).toBe(true);
   });
 
+  it('flags an inline event handler built from a value, which the second dogfood run wrote', () => {
+    expect(
+      flags(
+        `<button onclick="handleDeletePerson('\${escapedName.replace(/'/g, "\\'")}')">Delete</button>`,
+      ),
+    ).toBe(true);
+    expect(flags(`<button onclick="del(' + id + ')">x</button>`)).toBe(true);
+    expect(flags(`<button onclick="handleSave()">Save</button>`)).toBe(false);
+    expect(flags(`<input onchange="update()" value="\${v}">`)).toBe(false);
+  });
+
   it('lets a fixed literal, an empty string, text, and escaped output through', () => {
     expect(flags(`list.innerHTML = '<div class="empty-state">No people added yet</div>';`)).toBe(
       false,

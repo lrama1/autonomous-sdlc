@@ -179,6 +179,49 @@ export class SmokeService {
     return null;
   }
 
+  /**
+   * The Gate brought the pull request up to date by merging the base branch into it. The reviewed code did not change, and
+   * a person's approval carries over to the new commit; so does a pass or an override, written as its own row for the new
+   * commit and saying so. A failed or missing result does not carry over: it was not letting anything through.
+   */
+  async carryOver(row: InteractionRow, fromSha: string, toSha: string): Promise<void> {
+    const card = row.contextCard as PrCard;
+    if (card.kind !== 'pull_request' || !card.repository || !card.prNumber) return;
+    const latest = await this.forCommit(card.repository, card.prNumber, fromSha);
+    if (!latest || (latest.state !== 'passed' && latest.state !== 'overridden')) return;
+    const { db } = this.deps;
+    await db.insert(smokeRun).values({
+      interactionId: latest.interactionId,
+      initiativeId: latest.initiativeId,
+      repository: latest.repository,
+      prNumber: latest.prNumber,
+      headSha: toSha,
+      state: latest.state,
+      results: latest.results,
+      detail: [
+        latest.detail,
+        `carried over from ${fromSha.slice(0, 7)}: the Gate merged the base branch`,
+      ]
+        .filter(Boolean)
+        .join(' - '),
+      startedBy: latest.startedBy,
+      finishedAt: new Date(),
+    });
+    await recordActivity(db, {
+      actorType: 'system',
+      initiativeId: latest.initiativeId ?? undefined,
+      interactionId: latest.interactionId ?? undefined,
+      action: 'smoke.carried_over',
+      detail: {
+        repository: card.repository,
+        prNumber: card.prNumber,
+        from: fromSha,
+        to: toSha,
+        state: latest.state,
+      },
+    });
+  }
+
   /** A person lets this commit through without a passing smoke test, and says why. Kept with the commit it is for. */
   async override(
     interactionId: string,

@@ -338,6 +338,29 @@ describe('approval', () => {
 });
 
 describe('when the base branch moved on', () => {
+  it('tells the smoke test when it merges the base branch, so the result follows the new commit', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    world.behind = true;
+    const carried: Array<[string, string]> = [];
+    const guard: SmokeGuard = {
+      blocks: async () => null,
+      evidence: async () => null,
+      carryOver: async (_row, from, to) => {
+        carried.push([from, to]);
+      },
+    };
+    const g = createGate({
+      db,
+      github: service,
+      log: () => {},
+      catchUpPollMs: 0,
+      smoke: () => guard,
+    });
+    expect(await g.afterDecision(row)).toBe('waiting_ci');
+    expect(carried).toEqual([['sha-reviewed', 'sha-updated-1']]);
+  });
+
   it('has GitHub bring the branch up to date, waits for the checks on the new commit, and then merges', async () => {
     const f = await setup();
     const row = await approvedReview(f);
@@ -629,6 +652,80 @@ describe('smoke test', () => {
       .from(activityEvent)
       .where(eq(activityEvent.interactionId, row.id));
     expect(log.map((l) => l.action)).toContain('gate.smoke_held');
+  });
+});
+
+describe('two looks at the same review', () => {
+  it('are one: a second look while the first is running waits for it and does not approve and merge again', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    const g = gate();
+    const [a, b] = await Promise.all([g.evaluate(row), g.evaluate(row)]);
+    expect([a, b]).toEqual(['merged', 'merged']);
+    expect(world.calls.filter((c) => c.url.endsWith('/reviews'))).toHaveLength(1);
+    expect(world.calls.filter((c) => c.url.endsWith('/merge'))).toHaveLength(1);
+  });
+
+  it('cannot undo a merge: a slower look that saw the pull request before it merged leaves "merged" alone', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    expect(await gate().evaluate(row)).toBe('merged');
+    // A stale look arrives: GitHub (as it was a moment ago) says open, and the check failed.
+    world.ci = 'failure';
+    world.pr.merged = false;
+    const stale = await db.select().from(interaction).where(eq(interaction.id, row.id));
+    await createGate({ db, github: service, log: () => {}, catchUpPollMs: 0 }).evaluate({
+      ...stale[0]!,
+      contextCard: {
+        ...(stale[0]!.contextCard as object),
+        gate: { state: 'waiting_ci', since: 'x' },
+      },
+    });
+    expect((await card(row.id)).gate.state).toBe('merged');
+  });
+
+  it('finds a review marked failed that GitHub says was merged, and corrects it', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    await db
+      .update(interaction)
+      .set({
+        contextCard: {
+          ...(row.contextCard as object),
+          gate: {
+            state: 'failed',
+            since: new Date().toISOString(),
+            detail: 'the branch is behind',
+          },
+        },
+      })
+      .where(eq(interaction.id, row.id));
+    world.pr.merged = true;
+    world.pr.state = 'closed';
+    await gate().tick();
+    expect((await card(row.id)).gate).toMatchObject({ state: 'merged' });
+    expect((await card(row.id)).gate.detail).toContain('found merged');
+    // Not asked again straight away.
+    const before = world.calls.length;
+    await gate().tick();
+    expect(world.calls.length).toBe(before);
+  });
+
+  it('leaves a failed review that is really not merged alone', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    await db
+      .update(interaction)
+      .set({
+        contextCard: {
+          ...(row.contextCard as object),
+          gate: { state: 'failed', since: new Date().toISOString(), detail: 'GitHub said no' },
+        },
+      })
+      .where(eq(interaction.id, row.id));
+    world.pr.merged = false;
+    await gate().tick();
+    expect((await card(row.id)).gate.state).toBe('failed');
   });
 });
 

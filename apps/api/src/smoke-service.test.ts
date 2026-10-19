@@ -454,3 +454,51 @@ describe('what the smoke test means for approving', () => {
     expect(await smoke.blocks(r.row)).toContain('restarted during the smoke test');
   });
 });
+
+describe('when the Gate merges the base branch into the pull request', () => {
+  const sha2 = () => 'd'.repeat(40);
+
+  it('carries a pass over to the new commit, and says so', async () => {
+    const r = await review();
+    const res = await smoke.start(r.id, null);
+    if (!res.ok) throw new Error(res.message);
+    await smoke.idle();
+    expect(await smoke.blocks(r.row)).toBeNull();
+    const next = { ...r.row, contextCard: { ...(r.row.contextCard as object), headSha: sha2() } };
+    expect(await smoke.blocks(next)).toContain('none has run on this commit');
+
+    await smoke.carryOver(r.row, gh.head, sha2());
+    expect(await smoke.blocks(next)).toBeNull();
+    expect(await smoke.evidence(next)).toBe('Smoke test passed (3 checks).');
+    const moved = await smoke.forCommit(r.repository, r.prNumber, sha2());
+    expect(moved!.detail).toContain('carried over from');
+    expect(await actions(r.initiativeId)).toContain('smoke.carried_over');
+  });
+
+  it('carries an override over too, with the reason and the person', async () => {
+    const r = await review();
+    await smoke.override(r.id, r.personId, 'The login page is behind a feature flag.');
+    await smoke.carryOver(r.row, gh.head, sha2());
+    const moved = await smoke.forCommit(r.repository, r.prNumber, sha2());
+    expect(moved).toMatchObject({ state: 'overridden', startedBy: r.personId });
+    expect(moved!.detail).toContain('The login page is behind a feature flag.');
+    expect(moved!.detail).toContain('carried over');
+  });
+
+  it('does not carry over a failure, a missing result, or something that is not a pull request', async () => {
+    host.exitCode = 1;
+    const failed = await review();
+    const a = await smoke.start(failed.id, null);
+    if (!a.ok) throw new Error(a.message);
+    await smoke.idle();
+    await smoke.carryOver(failed.row, gh.head, sha2());
+    expect(await smoke.forCommit(failed.repository, failed.prNumber, sha2())).toBeNull();
+
+    host.exitCode = 0;
+    const none = await review();
+    await smoke.carryOver(none.row, gh.head, sha2());
+    expect(await smoke.forCommit(none.repository, none.prNumber, sha2())).toBeNull();
+
+    await smoke.carryOver({ ...none.row, contextCard: {} }, gh.head, sha2());
+  });
+});
