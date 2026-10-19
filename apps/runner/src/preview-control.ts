@@ -20,36 +20,46 @@ export interface ExecResult {
 
 export type CommandRunner = (command: string, timeoutMs: number) => Promise<ExecResult>;
 
-/** Runs one command with `sh -c`. A command that overruns is killed and reported as exit -1. */
+/**
+ * Runs one command with `sh -c`. A command that overruns is killed with everything it started, and the answer does not
+ * wait for what is left of it: it is exit -1 at the limit.
+ */
 export function shellRunner(dir: string, env: Record<string, string>): CommandRunner {
   return (command, timeoutMs) =>
     new Promise((resolve) => {
+      // Its own process group, so the whole tree can be killed: a `sleep` under `sh` would otherwise outlive both.
       const child = spawn('sh', ['-c', command], {
         cwd: dir,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
       });
       let output = '';
       const keep = (b: Buffer) => (output = (output + b.toString()).slice(-MAX_OUTPUT));
       child.stdout.on('data', keep);
       child.stderr.on('data', keep);
-      let timedOut = false;
+      let settled = false;
+      const settle = (r: ExecResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(r);
+      };
       const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill('SIGKILL');
+        try {
+          process.kill(-child.pid!, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+        settle({
+          exitCode: -1,
+          output: `${output}\nstopped after ${Math.round(timeoutMs / 1000)} s`,
+        });
       }, timeoutMs);
-      child.on('error', (e) => {
-        clearTimeout(timer);
-        resolve({ exitCode: -1, output: `could not run the command: ${e.message}` });
-      });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        resolve(
-          timedOut
-            ? { exitCode: -1, output: `${output}\nstopped after ${Math.round(timeoutMs / 1000)} s` }
-            : { exitCode: code ?? -1, output },
-        );
-      });
+      child.on('error', (e) =>
+        settle({ exitCode: -1, output: `could not run the command: ${e.message}` }),
+      );
+      child.on('close', (code) => settle({ exitCode: code ?? -1, output }));
     });
 }
 
