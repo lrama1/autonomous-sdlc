@@ -182,4 +182,82 @@ describe('the Fargate preview host', () => {
     });
     expect(lines.join('\n')).toContain('stopped 2 preview task(s)');
   });
+
+  describe('commands for a smoke test', () => {
+    const control = async (fetchImpl: typeof fetch) => {
+      const ecs = new FakeEcs();
+      ecs.script = [running()];
+      const { host } = make(ecs, async () => 200, { fetchImpl });
+      await host.start(spec);
+      const [run] = ecs.of(RunTaskCommand);
+      const env = Object.fromEntries(
+        run!.input.overrides!.containerOverrides![0]!.environment!.map((e) => [e.name, e.value]),
+      );
+      return { host, env };
+    };
+
+    it("runs a command through the preview's control server, with the secret it was started with", async () => {
+      const calls: Array<{ url: string; auth: string; body: unknown }> = [];
+      const { host, env } = await control((async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          auth: (init.headers as Record<string, string>).authorization!,
+          body: JSON.parse(init.body as string),
+        });
+        return new Response(JSON.stringify({ exitCode: 2, output: 'no items' }));
+      }) as never);
+      expect(env.PREVIEW_CONTROL_PORT).toBe('38917');
+      expect(env.PREVIEW_CONTROL_TOKEN).toMatch(/^[0-9a-f]{48}$/);
+      expect(await host.exec(spec.id, 'npm run smoke', 5000)).toEqual({
+        exitCode: 2,
+        output: 'no items',
+      });
+      expect(calls).toEqual([
+        {
+          url: 'http://10.60.20.9:38917/exec',
+          auth: `Bearer ${env.PREVIEW_CONTROL_TOKEN}`,
+          body: { command: 'npm run smoke', timeoutMs: 5000 },
+        },
+      ]);
+    });
+
+    it('gives each preview its own secret', async () => {
+      const a = await control((async () => new Response('{}')) as never);
+      const b = await control((async () => new Response('{}')) as never);
+      expect(a.env.PREVIEW_CONTROL_TOKEN).not.toBe(b.env.PREVIEW_CONTROL_TOKEN);
+    });
+
+    it('says so when the preview cannot be reached, refuses, or is not running', async () => {
+      const down = await control((async () => {
+        throw new Error('connect ETIMEDOUT');
+      }) as never);
+      expect(await down.host.exec(spec.id, 'x', 1000)).toEqual({
+        exitCode: -1,
+        output: 'could not reach the preview to run the command: connect ETIMEDOUT',
+      });
+      const refused = await control((async () => new Response('no', { status: 401 })) as never);
+      expect(await refused.host.exec(spec.id, 'x', 1000)).toEqual({
+        exitCode: -1,
+        output: 'the preview refused the command (HTTP 401)',
+      });
+      const garbage = await control((async () => new Response('{"exitCode":"0"}')) as never);
+      expect(await garbage.host.exec(spec.id, 'x', 1000)).toEqual({ exitCode: -1, output: '' });
+      expect(await garbage.host.exec('someone-else', 'x', 1000)).toEqual({
+        exitCode: -1,
+        output: 'the preview is not running',
+      });
+      await garbage.host.stop(spec.id);
+      expect(await garbage.host.exec(spec.id, 'x', 1000)).toEqual({
+        exitCode: -1,
+        output: 'the preview is not running',
+      });
+    });
+
+    it('does not let the previewed program take the control port', async () => {
+      const { host } = make(new FakeEcs(), async () => 200);
+      await expect(
+        host.start({ ...spec, config: { ...spec.config, port: 38917 } }),
+      ).rejects.toThrow('port 38917 is reserved');
+    });
+  });
 });

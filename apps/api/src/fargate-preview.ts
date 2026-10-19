@@ -14,6 +14,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { randomBytes } from 'node:crypto';
 import type { PreviewStartConfig } from '@sdlc/core';
 import { PreviewStartError } from './docker-preview.js';
 import type { PreviewHost } from './docker-preview.js';
@@ -93,8 +94,14 @@ export interface FargatePreviewOptions {
   probe?: (url: string) => Promise<number | null>;
   pollMs?: number;
   startTimeoutMs?: number;
+  /** The port the preview's control server listens on, for a smoke test's commands. Not one the previewed program may use. */
+  controlPort?: number;
+  /** Calls the control server. For tests. */
+  fetchImpl?: typeof fetch;
   log?: (line: string) => void;
 }
+
+export const CONTROL_PORT = 38917;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tail = (text: string, lines = 12, chars = 900) =>
@@ -119,6 +126,8 @@ export class FargatePreviewHost implements PreviewHost {
   private readonly ecs: EcsLike;
   private readonly container: string;
   private readonly tasks = new Map<string, string>();
+  /** Where each preview's control server is, and the secret it answers to. */
+  private readonly control = new Map<string, { base: string; token: string }>();
 
   constructor(private readonly opts: FargatePreviewOptions) {
     this.ecs = opts.ecs ?? (new ECSClient({}) as unknown as EcsLike);
@@ -142,6 +151,12 @@ export class FargatePreviewHost implements PreviewHost {
     config: PreviewStartConfig;
     hostPort: number;
   }): Promise<{ url: string; target: string }> {
+    const controlPort = this.opts.controlPort ?? CONTROL_PORT;
+    if (spec.config.port === controlPort)
+      throw new PreviewStartError(
+        `port ${controlPort} is reserved by the platform. Use another port.`,
+      );
+    const token = randomBytes(24).toString('hex');
     const codeUrl = await this.opts.code.put(spec.id, spec.archive);
     try {
       const r = (await this.ecs.send(
@@ -166,6 +181,8 @@ export class FargatePreviewHost implements PreviewHost {
                   { name: 'PREVIEW_CODE_URL', value: codeUrl },
                   { name: 'PREVIEW_INSTALL', value: spec.config.install ?? '' },
                   { name: 'PREVIEW_START', value: spec.config.start },
+                  { name: 'PREVIEW_CONTROL_TOKEN', value: token },
+                  { name: 'PREVIEW_CONTROL_PORT', value: String(controlPort) },
                   { name: 'PORT', value: String(spec.config.port) },
                   { name: 'HOST', value: '0.0.0.0' },
                   { name: 'HOME', value: '/tmp' },
@@ -206,6 +223,7 @@ export class FargatePreviewHost implements PreviewHost {
           ?.flatMap((a) => a.details ?? [])
           .find((d) => d.name === 'privateIPv4Address')?.value;
         if (task.lastStatus === 'RUNNING' && ip) {
+          this.control.set(spec.id, { base: `http://${ip}:${controlPort}`, token });
           const status = await probe(`http://${ip}:${spec.config.port}${spec.config.readyPath}`);
           if (status !== null && status < 500)
             return { url: this.opts.openUrl(spec.id), target: `http://${ip}:${spec.config.port}` };
@@ -223,9 +241,41 @@ export class FargatePreviewHost implements PreviewHost {
     }
   }
 
+  /** Runs a smoke test's command inside the preview's task, through its control server. */
+  async exec(
+    id: string,
+    command: string,
+    timeoutMs: number,
+  ): Promise<{ exitCode: number; output: string }> {
+    const at = this.control.get(id);
+    if (!at) return { exitCode: -1, output: 'the preview is not running' };
+    try {
+      const res = await (this.opts.fetchImpl ?? fetch)(`${at.base}/exec`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${at.token}` },
+        body: JSON.stringify({ command, timeoutMs }),
+        // The command's own limit, and a little for the call.
+        signal: AbortSignal.timeout(timeoutMs + 10_000),
+      });
+      if (!res.ok)
+        return { exitCode: -1, output: `the preview refused the command (HTTP ${res.status})` };
+      const body = (await res.json()) as { exitCode?: unknown; output?: unknown };
+      return {
+        exitCode: typeof body.exitCode === 'number' ? body.exitCode : -1,
+        output: typeof body.output === 'string' ? body.output : '',
+      };
+    } catch (e) {
+      return {
+        exitCode: -1,
+        output: `could not reach the preview to run the command: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+  }
+
   async stop(id: string): Promise<void> {
     const arn = this.tasks.get(id);
     this.tasks.delete(id);
+    this.control.delete(id);
     if (arn)
       await this.ecs
         .send(

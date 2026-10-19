@@ -3,7 +3,8 @@
 // machine. Agent runs are Fargate tasks. Needs the deploy's outputs in the environment:
 //   SDLC_URL (the CloudFront address), SDLC_USER and SDLC_PASSWORD (a Cognito user with the platform admin role),
 //   GH_TOKEN (to look at and tidy the scratch repository), and AWS credentials for the stack's account.
-//   node --import tsx src/aws-accept.ts [smoke|resume|pipeline|previewrun|all]
+//   node --import tsx src/aws-accept.ts [smoke|resume|pipeline|previewrun|smokerun|all]
+// smokerun is not part of `all`: it runs the smoke test of two pull requests (one healthy, one broken) as Fargate tasks.
 // The pipeline phase runs on whichever engine the stack is set to (terraform apply -var agent_engine=copilot-cli).
 // The stack is expected to run with INDEPENDENT_REVIEW=false, since one person plays every part.
 import { execFile } from 'node:child_process';
@@ -737,6 +738,205 @@ async function main() {
         headers: { authorization: `Bearer ${ghToken}`, 'user-agent': 'sdlc-accept' },
         body: m === 'PATCH' ? JSON.stringify({ state: 'closed' }) : undefined,
       });
+  }
+  if (phase === 'smokerun') {
+    say(
+      '--- smokerun: the smoke test of a pull request runs as a Fargate task, its commands through the preview ---',
+    );
+    for (const broken of [false, true]) {
+      const tag = broken ? 'broken app' : 'healthy app';
+      const dir = `smoke-${stamp}${broken ? 'b' : 'g'}`;
+      const { run } = await startRun(
+        `AWS smoke test ${stamp} ${tag}`,
+        [
+          'Create three files and commit them. Do not change anything else and do not ask any questions.',
+          '',
+          `1. The file ${dir}/server.mjs with exactly this content:`,
+          '```js',
+          "import http from 'node:http';",
+          'http.createServer((req, res) => {',
+          broken
+            ? "  if (req.url === '/health') { res.statusCode = 500; return res.end('database is down'); }"
+            : "  if (req.url === '/health') return res.end('ok');",
+          "  if (req.url === '/items') return res.end(JSON.stringify({ items: [{ id: 1 }] }));",
+          "  if (req.url === '/who') return res.end(JSON.stringify({ port: process.env.PORT, token: process.env.PREVIEW_CONTROL_TOKEN ?? null }));",
+          '  res.statusCode = 404; res.end("nothing here");',
+          '}).listen(Number(process.env.PORT), process.env.HOST);',
+          '```',
+          '',
+          `2. The file ${dir}/check.mjs with exactly this content:`,
+          '```js',
+          `const r = await fetch('http://127.0.0.1:' + process.env.PORT + '/who');`,
+          'const who = await r.json();',
+          broken
+            ? "console.error('the cart page is missing'); process.exit(3);"
+            : "console.log('command ran in ' + process.cwd() + ', port ' + who.port + ', token ' + who.token); process.exit(0);",
+          '```',
+          '',
+          '3. The file .sdlc/preview.yaml with exactly this content:',
+          '```yaml',
+          `start: cd ${dir} && node server.mjs`,
+          'port: 4000',
+          'ready_path: /items',
+          'smoke:',
+          '  - get: /health',
+          '  - get: /items',
+          '    contains: items',
+          `  - run: cd ${dir} && node check.mjs`,
+          '```',
+        ].join('\n'),
+      );
+      const review = await waitFor(
+        'the review request',
+        () => open(run.id, ['review']),
+        420_000,
+        3000,
+      );
+      const smokeOf = () => call('GET', `/api/interactions/${review.id}/smoke`);
+      const raw = async (path: string, body?: object) => {
+        const r = await me.fetch(`${base}${path}`, {
+          method: 'POST',
+          body: body === undefined ? undefined : JSON.stringify(body),
+          headers: body === undefined ? {} : { 'content-type': 'application/json' },
+        });
+        let json: any = {};
+        try {
+          json = JSON.parse(r.text);
+        } catch {
+          // not JSON
+        }
+        return { status: r.status, json };
+      };
+      const pr = review.contextCard.prNumber;
+
+      const before = await smokeOf();
+      check(
+        before.available === true && before.required === 'required' && before.run === null,
+        `S (${tag})  the review shows three smoke checks as required, and none has run`,
+      );
+      check(
+        (await raw(`/api/interactions/${review.id}/answer`, { decision: 'approved', answer: 'ok' }))
+          .status === 409,
+        `S (${tag})  approving first is refused`,
+      );
+
+      const t1 = Date.now();
+      const click = await raw(`/api/interactions/${review.id}/smoke/start`);
+      check(click.status === 202, `S (${tag})  one click starts it (${click.status})`);
+      const during = await waitFor(
+        'a Fargate preview task exists',
+        async () => {
+          const list = await aws<{ taskArns: string[] }>(
+            'ecs',
+            'list-tasks',
+            '--cluster',
+            NAME,
+            '--family',
+            `${NAME}-preview`,
+            '--desired-status',
+            'RUNNING',
+          );
+          return list.taskArns.length > 0 ? list.taskArns : null;
+        },
+        300_000,
+        3000,
+      ).catch(() => null);
+      check(during !== null, `S (${tag})  a Fargate task runs the app for the test`);
+      const done = await waitFor(
+        'the smoke test finishes',
+        async () => {
+          const x = await smokeOf();
+          return x.run && x.run.state !== 'running' ? x : null;
+        },
+        480_000,
+        4000,
+      );
+      say(
+        `smoke result ${Math.round((Date.now() - t1) / 1000)} s after the click: ${done.run.state}\n${done.run.results.map((r: any) => `  ${r.ok ? 'ok  ' : 'FAIL'} ${r.label}: ${r.detail}`).join('\n')}`,
+      );
+      const r = done.run.results;
+      if (!broken) {
+        check(
+          done.run.state === 'passed' && r.length === 3 && r.every((x: any) => x.ok),
+          `S (${tag})  all three checks pass`,
+        );
+        check(
+          /command ran in \/work\/smoke-\w+, port 4000, token null/.test(r[2].detail),
+          `S (${tag})  the command ran inside the preview task, in its folder, and the app never saw the control secret ("${r[2].detail}")`,
+        );
+      } else {
+        check(done.run.state === 'failed', `S (${tag})  the broken app fails (${done.run.state})`);
+        check(
+          r.length === 3 && !r[0].ok && r[1].ok && !r[2].ok,
+          `S (${tag})  each check is judged on its own: ${r.map((x: any) => (x.ok ? 'pass' : 'FAIL')).join(', ')}`,
+        );
+        check(
+          /expected 200, got 500: database is down/.test(r[0].detail),
+          `S (${tag})  the failure says what the app answered ("${r[0].detail}")`,
+        );
+        check(
+          /exit 3: the cart page is missing/.test(r[2].detail),
+          `S (${tag})  and what the command printed ("${r[2].detail}")`,
+        );
+        check(
+          (
+            await raw(`/api/interactions/${review.id}/answer`, {
+              decision: 'approved',
+              answer: 'ok',
+            })
+          ).status === 409,
+          `S (${tag})  a failed commit cannot be approved`,
+        );
+        const over = await raw(`/api/interactions/${review.id}/smoke/override`, {
+          reason:
+            'The health route is rebuilt in the next pull request; the rest is verified here.',
+        });
+        check(over.status === 201, `S (${tag})  a reasoned override is accepted (${over.status})`);
+      }
+
+      // The task goes before the result is shown.
+      const left = await aws<{ taskArns: string[] }>(
+        'ecs',
+        'list-tasks',
+        '--cluster',
+        NAME,
+        '--family',
+        `${NAME}-preview`,
+        '--desired-status',
+        'RUNNING',
+      );
+      check(
+        left.taskArns.length === 0,
+        `S (${tag})  the preview task is already stopped when the result is shown`,
+      );
+
+      const ok = await raw(`/api/interactions/${review.id}/answer`, {
+        decision: 'approved',
+        answer: 'Looks good.',
+      });
+      check(ok.status === 200, `S (${tag})  the pull request is approved (${ok.status})`);
+      const merged = await waitFor(
+        'the Gate merges',
+        async () => {
+          const x = await call('GET', `/api/interactions/${review.id}`);
+          const gate = x.contextCard?.gate;
+          if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+            throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+          return gate?.state === 'merged' ? gate : null;
+        },
+        420_000,
+        5000,
+      );
+      check(Boolean(merged.mergedSha), `S (${tag})  the Gate merged it`);
+      const reviews: any[] = await gh(`/repos/${REPO}/pulls/${pr}/reviews`);
+      const note = reviews.map((x) => String(x.body)).find((b) => /Smoke test/.test(b)) ?? '';
+      check(
+        broken
+          ? note.includes('Smoke test overridden by')
+          : note.includes('Smoke test passed (3 checks)'),
+        `S (${tag})  GitHub shows what the smoke test said ("${note.slice(-90)}")`,
+      );
+    }
   }
 }
 
