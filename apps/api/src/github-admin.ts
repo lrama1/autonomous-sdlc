@@ -62,6 +62,32 @@ async function requireAdmin(
   return me;
 }
 
+/**
+ * Asks GitHub which repositories each registered App can see now, and keeps the answer. A person can add a repository
+ * to an App's installation on GitHub at any time, and GitHub sends nobody back here when they do.
+ */
+export async function refreshInstallations(
+  db: Db,
+  secrets: SecretsStore,
+  github: GitHubClient,
+): Promise<void> {
+  for (const row of await db.select().from(githubApp)) {
+    if (!row.installationId) continue;
+    const pem = await secrets.get(secretName(row.kind as AppKind, 'private_key'));
+    if (!pem) continue;
+    const token = await github.createInstallationToken(appJwt(row.appId, pem), row.installationId);
+    const repos = await github.listInstallationRepositories(token.token);
+    const names = repos.repositories.map((r) => r.full_name);
+    if (JSON.stringify(names) === JSON.stringify(row.installedOn)) continue;
+    await db.update(githubApp).set({ installedOn: names }).where(eq(githubApp.id, row.id));
+    await recordActivity(db, {
+      actorType: 'system',
+      action: 'github.installation_refreshed',
+      detail: { kind: row.kind, repositories: names },
+    });
+  }
+}
+
 export interface GitHubAdminDeps {
   db: Db;
   config: ApiConfig;
@@ -101,6 +127,23 @@ export function registerGitHubAdminRoutes(
           }
         : { kind, registered: false };
     });
+  });
+
+  // After a person adds or removes a repository on GitHub: ask GitHub again.
+  app.post('/api/admin/github/refresh', async (request, reply) => {
+    const me = await requireAdmin(db, request, reply);
+    if (!me) return;
+    try {
+      await refreshInstallations(db, secrets, github);
+    } catch (e) {
+      return reply.code(502).send({
+        error: {
+          code: 'github_unavailable',
+          message: e instanceof GitHubError ? e.message : 'GitHub did not answer.',
+        },
+      });
+    }
+    return (await rows()).map((r) => ({ kind: r.kind, installedOn: r.installedOn }));
   });
 
   app.get('/admin/github', async (request, reply) => {

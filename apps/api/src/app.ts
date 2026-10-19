@@ -26,7 +26,7 @@ import type { RunnerAdapter } from './launcher.js';
 import { loadRules } from './rules.js';
 import { createRunWorker } from './run-worker.js';
 import { registerRunnerRoutes } from './runner-routes.js';
-import { registerGitHubAdminRoutes } from './github-admin.js';
+import { refreshInstallations, registerGitHubAdminRoutes } from './github-admin.js';
 import { AwsSecrets } from './aws-secrets.js';
 import { FileSecrets } from './secrets.js';
 import type { SecretsStore } from './secrets.js';
@@ -162,7 +162,7 @@ export async function buildApp({
       : new FileSecrets(config.SECRETS_FILE));
   const ghService = new GitHubService(db, secretStore, ghClient);
   const apiUrl = `http://127.0.0.1:${config.API_PORT}`;
-  registerWorkRoutes(app, db, loadedAgents);
+  registerWorkRoutes(app, db, loadedAgents, () => refreshInstallations(db, secretStore, ghClient));
   const ruleSet = await loadRules(config.RULES_FILE);
   let smoke: SmokeService | null = null;
   const gate = createGate({

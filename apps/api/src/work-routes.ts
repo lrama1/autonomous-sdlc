@@ -63,6 +63,8 @@ export function registerWorkRoutes(
   app: FastifyInstance,
   db: Db,
   agents: Map<string, LoadedAgent>,
+  /** Asks GitHub which repositories the Apps can see now. Called once when a repository seems not to be installed. */
+  refreshApps: () => Promise<void> = async () => {},
 ): void {
   // ---- Repository Registry (spec 6.5) ----
   app.get('/api/repositories', async (request, reply) => {
@@ -82,8 +84,15 @@ export function registerWorkRoutes(
     }
     const body = repositoryCreateSchema.parse(request.body ?? {});
 
-    // Both Apps must be installed on the repository before agents may use it (spec 6.6).
-    const apps = await db.select().from(githubApp);
+    // Both Apps must be installed on the repository before agents may use it (spec 6.6). A repository a person added to
+    // an installation a moment ago is not known here yet, so look again before saying no.
+    let apps = await db.select().from(githubApp);
+    if (apps.some((a) => a.installationId && !a.installedOn.includes(body.fullName))) {
+      await refreshApps().catch((e) =>
+        request.log.warn({ err: e instanceof Error ? e.message : String(e) }, 'refresh failed'),
+      );
+      apps = await db.select().from(githubApp);
+    }
     for (const kind of ['agent', 'gate']) {
       const a = apps.find((x) => x.kind === kind);
       if (!a || !a.installationId) {

@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { activityEvent, createDb, githubApp, hat, person, runMigrations } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
@@ -91,6 +91,8 @@ let installation: { repository_selection: 'all' | 'selected' } = {
   repository_selection: 'selected',
 };
 let codeUsed: string | null = null;
+// The repositories the installation covers, as GitHub answers it.
+let listedRepos = ['lrama1/sdlc-scratch'];
 
 let devDb: DevDb;
 let dataDir: string;
@@ -168,8 +170,8 @@ beforeAll(async () => {
     if (url.startsWith('/installation/repositories')) {
       if (auth !== 'ghs_installation_token') return json(401, { message: 'bad token' });
       return json(200, {
-        total_count: 1,
-        repositories: [{ full_name: 'lrama1/sdlc-scratch', private: true }],
+        total_count: listedRepos.length,
+        repositories: listedRepos.map((full_name) => ({ full_name, private: true })),
       });
     }
     return json(404, { message: 'Not Found' });
@@ -423,6 +425,102 @@ describe('installing an App', () => {
     });
     expect(res.body).not.toContain('<script>alert(1)');
     expect(res.body).toContain('&lt;script&gt;');
+  });
+});
+
+describe('a repository added to an installation later', () => {
+  async function installed(kinds: Array<'agent' | 'gate'> = ['agent']) {
+    await db.delete(githubApp);
+    for (const kind of kinds) {
+      await db.insert(githubApp).values({
+        kind,
+        appId: 4242,
+        slug: `${kind}-app`,
+        name: kind,
+        ownerLogin: 'lrama1',
+        htmlUrl: 'https://x',
+        installationId: 777,
+        installedOn: ['lrama1/sdlc-scratch'],
+      });
+      await secrets.put(secretName(kind, 'private_key'), privateKey);
+    }
+    seen = [];
+  }
+  afterEach(() => {
+    listedRepos = ['lrama1/sdlc-scratch'];
+  });
+
+  it('is learned when an admin asks GitHub again, and logged', async () => {
+    await installed();
+    const admin = await login(['platform_admin']);
+    listedRepos = ['lrama1/sdlc-scratch', 'lrama1/dogfood-app'];
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/github/refresh',
+      headers: { cookie: admin.cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      { kind: 'agent', installedOn: ['lrama1/sdlc-scratch', 'lrama1/dogfood-app'] },
+    ]);
+    expect(seen).toEqual([
+      'POST /app/installations/777/access_tokens',
+      'GET /installation/repositories?per_page=100',
+    ]);
+    const log = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.action, 'github.installation_refreshed'));
+    expect(log.length).toBeGreaterThan(0);
+    // Nothing changed: nothing more is written.
+    const before = log.length;
+    await app.inject({
+      method: 'POST',
+      url: '/api/admin/github/refresh',
+      headers: { cookie: admin.cookie },
+    });
+    expect(
+      (
+        await db
+          .select()
+          .from(activityEvent)
+          .where(eq(activityEvent.action, 'github.installation_refreshed'))
+      ).length,
+    ).toBe(before);
+  });
+
+  it('is for Platform Admins only', async () => {
+    await installed();
+    const who = await login(['backend_engineer']);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/github/refresh',
+      headers: { cookie: who.cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(
+      (await app.inject({ method: 'POST', url: '/api/admin/github/refresh' })).statusCode,
+    ).toBe(401);
+  });
+
+  it('can be put in the registry at once, because the registry looks again before it says no', async () => {
+    await installed(['agent', 'gate']);
+    const admin = await login(['platform_admin']);
+    const add = (fullName: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/repositories',
+        headers: { cookie: admin.cookie },
+        payload: { fullName },
+      });
+    // Not on GitHub's list either: still refused.
+    const no = await add('lrama1/never-added');
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.code).toBe('not_installed');
+    // Added on GitHub a moment ago: accepted.
+    listedRepos = ['lrama1/sdlc-scratch', 'lrama1/dogfood-app'];
+    const yes = await add('lrama1/dogfood-app');
+    expect(yes.statusCode).toBe(201);
   });
 });
 
