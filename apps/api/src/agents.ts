@@ -9,8 +9,11 @@ export interface LoadedAgent {
   prompt: string;
 }
 
-/** Reads every agents/<id>/agent.yaml plus its prompt file. Invalid definitions stop start-up. */
-export async function loadAgents(dir: string): Promise<Map<string, LoadedAgent>> {
+/**
+ * Reads every agents/<id>/agent.yaml plus its prompt file. Invalid definitions stop start-up. `engine`, when given,
+ * replaces the engine of every agent, so a whole platform can move to the other engine without editing definitions.
+ */
+export async function loadAgents(dir: string, engine?: string): Promise<Map<string, LoadedAgent>> {
   const byRole = new Map<string, LoadedAgent>();
   let entries: string[];
   try {
@@ -38,7 +41,7 @@ export async function loadAgents(dir: string): Promise<Map<string, LoadedAgent>>
         `${file} is not a valid agent definition: ${parsed.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`,
       );
     }
-    const def = parsed.data;
+    const def = engine ? { ...parsed.data, engine } : parsed.data;
     if (def.id !== entry)
       throw new Error(`${file}: id "${def.id}" must match the folder name "${entry}"`);
     const prompt = await readFile(path.join(dir, entry, def.prompt_file), 'utf8');

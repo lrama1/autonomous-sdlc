@@ -241,6 +241,8 @@ resource "aws_vpc_endpoint" "s3" {
     Statement = [
       { Effect = "Allow", Principal = "*", Action = ["s3:GetObject"], Resource = ["arn:aws:s3:::prod-${var.region}-starport-layer-bucket/*"] },
       { Effect = "Allow", Principal = "*", Action = ["s3:GetObject", "s3:PutObject"], Resource = ["${aws_s3_bucket.state.arn}/*"] },
+      # Without this S3 answers 403, not 404, for an object that is not there (found on the first run on AWS).
+      { Effect = "Allow", Principal = "*", Action = ["s3:ListBucket"], Resource = [aws_s3_bucket.state.arn] },
     ]
   })
 }
@@ -365,10 +367,12 @@ resource "aws_ecs_task_definition" "runner" {
   execution_role_arn       = aws_iam_role.execution.arn
   ephemeral_storage { size_in_gib = 40 }
   container_definitions = jsonencode([{
-    name                   = "runner"
-    image                  = local.runner_image
-    essential              = true
-    linuxParameters        = { initProcessEnabled = true }
+    name            = "runner"
+    image           = local.runner_image
+    essential       = true
+    linuxParameters = { initProcessEnabled = true }
+    # Time to save a parked run's files when the task is told to stop (the most Fargate allows).
+    stopTimeout            = 120
     readonlyRootFilesystem = false
     environment = [
       { name = "SDLC_API_URL", value = local.api_private },

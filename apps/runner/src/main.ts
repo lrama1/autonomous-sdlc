@@ -1,5 +1,6 @@
 import { runnerEnvFrom } from './env.js';
 import { runOnce } from './run.js';
+import { saveOnTerminate } from './shutdown.js';
 import { restoreState, saveState } from './state.js';
 
 // Started by the platform. Everything else comes from the run spec (see env.ts for what is read here).
@@ -21,6 +22,16 @@ if (env.stateGetUrl) {
     );
     process.exit(1);
   }
+}
+
+// A stopped task (a cancel, a restart of the cluster) saves its files before it goes, if it can.
+if (env.statePutUrl) {
+  const putUrl = env.statePutUrl;
+  saveOnTerminate(
+    () => saveState(env.workDir, putUrl, { ...stateLog, attempts: 2 }),
+    (code) => process.exit(code),
+    stateLog.log,
+  );
 }
 
 const reason = await runOnce(env);

@@ -52,6 +52,11 @@ export const apiConfigSchema = z.object({
   GATEWAY_URL: url.default('http://127.0.0.1:8787'),
   // How runs are started: 'none' (only record them), 'process' (a child process on this machine, no isolation),
   // or 'docker' (an isolated container).
+  // Moves every agent to one engine, whatever their definitions say. Unset leaves each agent on its own.
+  AGENT_ENGINE: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['claude-code', 'copilot-cli']).optional(),
+  ),
   RUNNER_ADAPTER: z.enum(['none', 'process', 'docker', 'fargate']).default('none'),
   // RUNNER_ADAPTER=fargate: where each run starts (see infra/aws/runner.tf). Lists are comma separated.
   FARGATE_CLUSTER: z.string().optional(),

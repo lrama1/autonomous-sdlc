@@ -149,7 +149,7 @@ export async function buildApp({
     return meSchema.parse(me);
   });
 
-  const loadedAgents = agents ?? (await loadAgents(config.AGENTS_DIR));
+  const loadedAgents = agents ?? (await loadAgents(config.AGENTS_DIR, config.AGENT_ENGINE));
   const ghClient = github ?? new GitHubClient(config.GITHUB_API_URL);
   const secretStore =
     secrets ??

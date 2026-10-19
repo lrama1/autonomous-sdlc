@@ -19,6 +19,18 @@ variable "bootstrap_admin_email" {
   description = "The person who signs in first and gets the platform admin hat."
 }
 
+variable "independent_review" {
+  type        = bool
+  default     = true
+  description = "Whether the person who started a run may not review it. Turn off only for a stack used by one person."
+}
+
+variable "agent_engine" {
+  type        = string
+  default     = ""
+  description = "claude-code or copilot-cli moves every agent to that engine. Empty leaves each agent on its own."
+}
+
 variable "image_tag" {
   type    = string
   default = "dev"
