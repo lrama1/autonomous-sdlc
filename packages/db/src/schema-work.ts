@@ -349,6 +349,10 @@ export const buildPlan = pgTable(
     state: text('state').notNull(), // awaiting_start | active | done | cancelled | invalid
     detail: text('detail'),
     errors: jsonb('errors').$type<string[]>().notNull().default([]),
+    // What the design says the running app must prove (its sdlc-smoke block), or null for a plan made before that existed.
+    smoke: jsonb('smoke').$type<
+      { kind: 'checks'; checks: unknown[] } | { kind: 'none'; reason: string }
+    >(),
     // Sponsor of the runs it starts: whoever approved the design, or whoever clicked start.
     startedBy: uuid('started_by').references(() => person.id),
     createdAt: createdAt(),

@@ -1,0 +1,1 @@
+ALTER TABLE "build_plan" ADD COLUMN "smoke" jsonb;

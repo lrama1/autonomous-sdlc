@@ -1,7 +1,14 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agentRun, buildPlan, buildTask, initiative, interaction, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
-import { parseDesignTasks, planProgress, readyTasks, taskPrompt } from '@sdlc/core';
+import {
+  parseDesignSmoke,
+  parseDesignTasks,
+  planProgress,
+  readyTasks,
+  taskPrompt,
+} from '@sdlc/core';
+import type { DesignSmoke } from '@sdlc/core';
 import type { DesignTask, TaskState } from '@sdlc/core';
 import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
@@ -80,6 +87,7 @@ export async function ensurePlans(deps: BuildDeps): Promise<number> {
       init.autonomyMode === 'guided' || !fresh ? 'awaiting_start' : 'active';
     let errors: string[] = [];
     let tasks: DesignTask[] = [];
+    let smoke: DesignSmoke | null = null;
 
     if (!designPath || !sha || !card.repository) {
       state = 'invalid';
@@ -100,11 +108,13 @@ export async function ensurePlans(deps: BuildDeps): Promise<number> {
         errors = [`${designPath} is not in the repository at the merged commit.`];
       } else {
         const parsed = parseDesignTasks(text);
-        if (!parsed.ok) {
+        const proof = parseDesignSmoke(text);
+        if (!parsed.ok || !proof.ok) {
           state = 'invalid';
-          errors = parsed.errors;
+          errors = [...(parsed.ok ? [] : parsed.errors), ...(proof.ok ? [] : proof.errors)];
         } else {
           tasks = parsed.tasks;
+          smoke = proof.smoke;
           const unstaffed = [...new Set(tasks.map((t) => t.role))].filter(
             (r) => !deps.agents.has(r),
           );
@@ -125,6 +135,7 @@ export async function ensurePlans(deps: BuildDeps): Promise<number> {
         ...base,
         state,
         errors,
+        smoke,
         detail:
           state === 'invalid'
             ? 'The design cannot be built as written.'
@@ -360,6 +371,7 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
           task.detail === REDO
             ? 'It conflicted with changes that merged in the meantime.'
             : undefined,
+          plan.smoke as DesignSmoke | null,
         ),
         sponsorPersonId: sponsor,
       });

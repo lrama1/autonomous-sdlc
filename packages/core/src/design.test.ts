@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { isTestPath, parseDesignTasks, validateDesignTasks } from './design.js';
+import {
+  describeSmokeCheck,
+  isTestPath,
+  parseDesignSmoke,
+  parseDesignTasks,
+  validateDesignTasks,
+} from './design.js';
 
 const task = (o: Record<string, unknown> = {}) => ({
   id: 'T1',
@@ -165,5 +171,63 @@ describe('the Architect agent prompt', () => {
     const r = parseDesignTasks(prompt);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.tasks[0]!.doneWhen[0]).toContain('{"version"');
+  });
+});
+
+describe('parseDesignSmoke', () => {
+  const doc = (body: string) => `# Design\n\n\`\`\`sdlc-smoke\n${body}\`\`\`\n`;
+  const errors = (md: string) => {
+    const r = parseDesignSmoke(md);
+    if (r.ok) throw new Error('expected errors');
+    return r.errors.join(' | ');
+  };
+
+  it('reads the checks the running app must pass', () => {
+    const r = parseDesignSmoke(
+      doc('- get: /health\n- get: /items\n  status: 200\n  contains: id\n- run: npm run smoke\n'),
+    );
+    expect(r).toEqual({
+      ok: true,
+      smoke: {
+        kind: 'checks',
+        checks: [
+          { kind: 'get', path: '/health', status: 200, contains: null },
+          { kind: 'get', path: '/items', status: 200, contains: 'id' },
+          { kind: 'run', command: 'npm run smoke' },
+        ],
+      },
+    });
+  });
+
+  it('reads an explicit none with its reason', () => {
+    expect(parseDesignSmoke(doc('none: A library with no server to start.\n'))).toEqual({
+      ok: true,
+      smoke: { kind: 'none', reason: 'A library with no server to start.' },
+    });
+  });
+
+  it('refuses a design that does not say', () => {
+    expect(errors('# Design\n\nNothing about it.\n')).toContain('no ```sdlc-smoke block');
+    expect(errors(`${doc('- get: /a\n')}\n${doc('- get: /b\n')}`)).toContain('more than one');
+  });
+
+  it('refuses a block that is neither a list of checks nor a reasoned none', () => {
+    expect(errors(doc('[]\n'))).toContain('at least one check');
+    expect(errors(doc('\n'))).toContain('at least one check');
+    expect(errors(doc('none: n/a\n'))).toContain('a reason of at least 10');
+    expect(errors(doc('none: ok\nextra: 1\n'))).toContain('single line: none');
+    expect(errors(doc('checks: []\n'))).toContain('single line: none');
+    expect(errors(doc('- get: nope\n'))).toContain('smoke check 1 get must be a path');
+    expect(errors(doc('- [unclosed\n'))).toContain('not valid YAML');
+  });
+
+  it('describes a check as one line', () => {
+    expect(describeSmokeCheck({ kind: 'get', path: '/a', status: 200, contains: null })).toBe(
+      'get: /a (status 200)',
+    );
+    expect(describeSmokeCheck({ kind: 'get', path: '/a', status: 404, contains: 'gone' })).toBe(
+      'get: /a (status 404, body contains "gone")',
+    );
+    expect(describeSmokeCheck({ kind: 'run', command: 'npm test' })).toBe('run: npm test');
   });
 });

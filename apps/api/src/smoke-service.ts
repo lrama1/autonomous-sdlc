@@ -365,70 +365,79 @@ export class SmokeService {
     });
   }
 
+  /**
+   * Runs one smoke test to its end. The sandbox this run started is removed before the result is recorded, so a person
+   * who sees "passed" knows nothing is still running. One somebody else started stays up for them.
+   */
   private async execute(
     row: SmokeRow,
     checks: SmokeCheck[],
     interactionId: string,
     by: string | null,
   ): Promise<void> {
-    const { previews, host } = this.deps;
-    let startedHere = false;
-    let previewId: string | null = null;
+    const { previews } = this.deps;
+    const started: { here: boolean; id: string | null } = { here: false, id: null };
+    let outcome: SmokeOutcome;
     try {
-      const started = await previews.start(interactionId, by);
-      if (!started.ok) return await this.finish(row, 'error', [], started.message);
-      startedHere = !started.existing;
-      previewId = started.row.id;
-      if (started.row.headSha !== row.headSha)
-        return await this.finish(
-          row,
-          'error',
-          [],
-          'The pull request has a new commit. Run it again.',
-        );
-
-      const deadline = Date.now() + (this.deps.readyTimeoutMs ?? 300_000);
-      let preview = started.row;
-      while (preview.state === 'starting') {
-        if (Date.now() > deadline) {
-          return await this.finish(row, 'error', [], 'The preview did not become ready in time.');
-        }
-        await new Promise((r) => setTimeout(r, this.deps.pollMs ?? 500));
-        const now = await previews.get(previewId);
-        if (!now) return await this.finish(row, 'error', [], 'The preview disappeared.');
-        preview = now;
-      }
-      if (preview.state !== 'ready')
-        return await this.finish(
-          row,
-          'error',
-          [],
-          preview.detail ?? `The preview ended as ${preview.state}.`,
-        );
-
-      const base = (preview.target ?? preview.url ?? '').replace(/\/+$/, '');
-      const id = preview.id;
-      const { passed, results } = await runSmoke({
-        baseUrl: base,
-        checks,
-        exec: host.exec ? (command, ms) => host.exec!(id, command, ms) : undefined,
-        getTimeoutMs: this.deps.getTimeoutMs,
-        runTimeoutMs: this.deps.runTimeoutMs,
-      });
-      await this.finish(row, passed ? 'passed' : 'failed', results, null);
+      outcome = await this.check(row, checks, interactionId, by, started);
     } catch (e) {
-      await this.finish(
-        row,
-        'error',
-        [],
-        `could not run the smoke test: ${e instanceof Error ? e.message : String(e)}`,
-      ).catch(() => {});
-    } finally {
-      // A preview someone else started stays up for them. One this run started goes as soon as the checks are done.
-      if (startedHere && previewId)
-        await previews
-          .stop(previewId, 'stopped', 'The smoke test finished.')
-          .catch((e) => this.deps.log?.(`[smoke] stop failed: ${String(e)}`));
+      outcome = {
+        state: 'error',
+        results: [],
+        detail: `could not run the smoke test: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
+    if (started.here && started.id)
+      await previews
+        .stop(started.id, 'stopped', 'The smoke test finished.')
+        .catch((e) => this.deps.log?.(`[smoke] stop failed: ${String(e)}`));
+    await this.finish(row, outcome.state, outcome.results, outcome.detail).catch((e) =>
+      this.deps.log?.(`[smoke] could not record the result: ${String(e)}`),
+    );
   }
+
+  private async check(
+    row: SmokeRow,
+    checks: SmokeCheck[],
+    interactionId: string,
+    by: string | null,
+    started: { here: boolean; id: string | null },
+  ): Promise<SmokeOutcome> {
+    const { previews, host } = this.deps;
+    const error = (detail: string): SmokeOutcome => ({ state: 'error', results: [], detail });
+    const begun = await previews.start(interactionId, by);
+    if (!begun.ok) return error(begun.message);
+    started.here = !begun.existing;
+    started.id = begun.row.id;
+    if (begun.row.headSha !== row.headSha)
+      return error('The pull request has a new commit. Run it again.');
+
+    const deadline = Date.now() + (this.deps.readyTimeoutMs ?? 300_000);
+    let preview = begun.row;
+    while (preview.state === 'starting') {
+      if (Date.now() > deadline) return error('The preview did not become ready in time.');
+      await new Promise((r) => setTimeout(r, this.deps.pollMs ?? 500));
+      const now = await previews.get(begun.row.id);
+      if (!now) return error('The preview disappeared.');
+      preview = now;
+    }
+    if (preview.state !== 'ready')
+      return error(preview.detail ?? `The preview ended as ${preview.state}.`);
+
+    const id = preview.id;
+    const { passed, results } = await runSmoke({
+      baseUrl: (preview.target ?? preview.url ?? '').replace(/\/+$/, ''),
+      checks,
+      exec: host.exec ? (command, ms) => host.exec!(id, command, ms) : undefined,
+      getTimeoutMs: this.deps.getTimeoutMs,
+      runTimeoutMs: this.deps.runTimeoutMs,
+    });
+    return { state: passed ? 'passed' : 'failed', results, detail: null };
+  }
+}
+
+interface SmokeOutcome {
+  state: 'passed' | 'failed' | 'error';
+  results: SmokeResult[];
+  detail: string | null;
 }

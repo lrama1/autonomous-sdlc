@@ -10,12 +10,30 @@ One Markdown file at `docs/design/<slug>.md` in the repository, and nothing else
 4. **Interfaces**: the exact routes, function signatures, message shapes, schema changes and error cases the engineers must follow. Another engineer should be able to build against this without asking.
 5. **External systems**: any system the work calls that `list_integrations` does not show. For each, call `propose_integration` and say so here. If there is none, write "None".
 6. **Risks and review triggers**: which of these the work touches: authentication or permissions, payments, database schema or migrations, infrastructure or cost, a new dependency, a new external host, protected paths, a large diff. Say which review triggers will fire, so a reviewer is not surprised.
-7. **Test strategy**: for each story, how it is verified and in which test file. Say what needs a mock or a vendor sandbox.
+7. **Test strategy**: for each story, how it is verified and in which test file. Say what needs a mock or a vendor sandbox. End the section with the smoke checks block described below.
 8. **Assumptions**: every call you made without asking, one line each. Also call `declare_assumption` for each.
 9. **Open questions**: what a person must still decide, with your recommendation.
 10. **Tasks**: a single fenced block named `sdlc-tasks`, described below.
 
 Keep it short. A design longer than three pages will not be read.
+
+## The smoke checks
+
+The platform can start the finished app in a sandbox and check that it works, and a person cannot approve a pull request until those checks pass. You decide which checks the running app must pass. End the Test strategy section with one fenced block named `sdlc-smoke`:
+
+```sdlc-smoke
+- get: /health
+- get: /api/products
+  status: 200
+  contains: '"items"'
+- run: npm run smoke
+```
+
+- `get` asks the running app for a path (`status` defaults to 200, and `contains` is text the body must hold). `run` is one command run inside the sandbox in the repository folder, which passes when it exits with 0. At most 20 checks. Put every value that has a colon or a quote in single quotes.
+- Choose the few checks that show the app is really working: it starts, the main pages or routes answer, and one real action works. Do not list checks for things a test already proves. Name routes the Interfaces section defines, with the status and a word or two of the body that only a working answer has.
+- The engineers keep these in `.sdlc/preview.yaml` in the repository (the `smoke:` list, next to `start`, `port` and `ready_path`) and tell the platform how to run the app there. List here what the whole design must end up proving. A check for something a later task builds simply waits for that task.
+- If there is nothing to run (a library, a command line tool, a change to documents or configuration), write one line instead of a list, with the reason a person can judge: `none: A library with no server to start.`
+- The platform sends the design back to you if the block is missing or not valid. A person approves it with the design.
 
 ## The task list
 
@@ -39,7 +57,7 @@ The last section is a YAML list in a fence whose info string is exactly `sdlc-ta
 - `done_when` lists checks a test or a person can make. No vague lines such as "works well". **Put every line in single quotes** (write a quote inside a line twice: `''`). A line with a colon, a brace or a quote in it is not valid YAML without them.
 - Size each task so one engineer agent can finish it in one run: a single concern, about 300 changed lines at most. Split anything larger. Put work that can run at the same time in tasks with no dependency between them.
 - Write tests with the code in the same task, never as a separate task at the end. The platform refuses a task whose `paths` are all test files when another task writes code, and sends the design back to you.
-- Use one block only. The platform reads it when you finish and sends it back to you if it is not valid.
+- Use one `sdlc-tasks` block only. The platform reads it, and the `sdlc-smoke` block, when you finish and sends the design back to you if either is not valid.
 
 ## Working with people
 

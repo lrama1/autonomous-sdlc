@@ -58,7 +58,7 @@ function command(v: unknown, key: string, errors: string[], required: boolean): 
 }
 
 /** The `smoke:` list. Each entry is a `get` (with optional `status` and `contains`) or a `run`. */
-function smokeChecks(v: unknown, errors: string[]): SmokeCheck[] {
+export function readSmokeChecks(v: unknown, errors: string[]): SmokeCheck[] {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) {
     errors.push('smoke must be a list of checks, each starting with get: or run:');
@@ -167,7 +167,7 @@ export function parsePreviewConfig(text: string): PreviewConfigResult {
       errors.push('ready_path must be a path that starts with /, for example /health');
     else readyPath = e.ready_path;
   }
-  const smoke = smokeChecks(e.smoke, errors);
+  const smoke = readSmokeChecks(e.smoke, errors);
   if (errors.length > 0 || start === null) return { ok: false, errors };
   return { ok: true, config: { install, start, port, readyPath, smoke } };
 }

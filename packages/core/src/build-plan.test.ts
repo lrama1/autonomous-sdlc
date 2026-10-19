@@ -151,6 +151,20 @@ describe('taskPrompt', () => {
     expect(taskPrompt({ path: 'x' }, a, [a, b])).not.toContain('new attempt');
   });
 
+  it('tells the engineer what the design requires of the running app, only when it does', () => {
+    const checks = {
+      kind: 'checks' as const,
+      checks: [{ kind: 'get' as const, path: '/health', status: 200, contains: null }],
+    };
+    const p = taskPrompt({ path: 'docs/design/x.md' }, a, [a, b], undefined, checks);
+    expect(p).toContain('The design requires these smoke checks');
+    expect(p).toContain('- get: /health (status 200)');
+    expect(p).toContain('.sdlc/preview.yaml');
+    const none = { kind: 'none' as const, reason: 'A library with nothing to start.' };
+    expect(taskPrompt({ path: 'x' }, a, [a, b], undefined, none)).not.toContain('smoke');
+    expect(taskPrompt({ path: 'x' }, a, [a, b])).not.toContain('smoke');
+  });
+
   it('says what was merged before, and leaves out an empty story line', () => {
     const p = taskPrompt({ path: 'docs/design/x.md' }, b, [a, b, c]);
     expect(p).toContain('Already merged before you started: T1 (Add the route)');

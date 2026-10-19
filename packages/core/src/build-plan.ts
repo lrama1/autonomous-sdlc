@@ -1,4 +1,5 @@
-import type { DesignTask } from './design.js';
+import { describeSmokeCheck } from './design.js';
+import type { DesignSmoke, DesignTask } from './design.js';
 
 // The build plan: the approved design's task list, built one run at a time (spec 8.2, "start the next stage"). Pure.
 // A task waits until everything it depends on is merged or skipped, so it builds on real code.
@@ -102,6 +103,8 @@ export function taskPrompt(
   others: DesignTask[],
   /** Set when an earlier attempt could not merge, and says why. */
   redo?: string,
+  /** What the approved design says the running app must prove. */
+  smoke?: DesignSmoke | null,
 ): string {
   const lines = [
     `${task.id}: ${task.title}`,
@@ -118,6 +121,26 @@ export function taskPrompt(
     lines.push(
       '',
       `This is a new attempt. An earlier attempt's pull request could not merge: ${redo} Start from the current main branch, which already holds the changes other tasks merged meanwhile, and do this task again on top of it. Do not undo or rewrite what is already there.`,
+    );
+  }
+  if (smoke?.kind === 'checks') {
+    lines.push(
+      '',
+      'The design requires these smoke checks of the running app. The platform runs the `smoke:` list in `.sdlc/preview.yaml` on this pull request, and nobody can approve it until they pass (or a person overrides them with a reason):',
+      ...smoke.checks.map((c) => `- ${describeSmokeCheck(c)}`),
+      'Keep `.sdlc/preview.yaml` (create it if it is not there yet) so that every check above that this task makes true is in the `smoke:` list, and passes. Do not weaken or remove one that is already there. A check for something a later task builds waits for that task. The file has exactly these keys and no others:',
+      '```yaml',
+      'start: node server.js   # one line: how to start the app, from the repository folder',
+      'port: 3000             # the port it listens on (it is also given PORT, and HOST=0.0.0.0)',
+      'ready_path: /health    # the path that answers (not with a 5xx) when it is up',
+      'smoke:',
+      '  - get: /health       # a path; optional status (default 200) and contains (text the body must hold)',
+      '  - get: /api/items',
+      '    status: 200',
+      `    contains: '"items"'`,
+      '  - run: npm run smoke # one line, run in the repository folder, passes when it exits with 0',
+      '```',
+      'Any other key (such as body_contains) makes the file invalid and the smoke test cannot run.',
     );
   }
   const before = others.filter((o) => task.dependsOn.includes(o.id));

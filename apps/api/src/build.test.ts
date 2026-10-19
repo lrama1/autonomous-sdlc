@@ -57,7 +57,9 @@ const deps = (o: Partial<BuildDeps> = {}): BuildDeps => ({
   ...o,
 });
 
-const block = (tasks: string) => `# Design\n\n\`\`\`sdlc-tasks\n${tasks}\`\`\`\n`;
+const SMOKE = '- get: /health\n- get: /api/items\n  contains: items\n';
+const block = (tasks: string, smoke: string | null = SMOKE) =>
+  `# Design\n\n\`\`\`sdlc-tasks\n${tasks}\`\`\`\n${smoke === null ? '' : `\n\`\`\`sdlc-smoke\n${smoke}\`\`\`\n`}`;
 const task = (
   id: string,
   o: { dependsOn?: string[]; role?: string; done?: string; paths?: string } = {},
@@ -312,6 +314,15 @@ describe('making a plan from an approved design', () => {
     const b = await planOf(unstaffed.initiativeId);
     expect(b.plan).toMatchObject({ state: 'invalid' });
     expect(b.plan!.errors[0]).toContain('frontend_engineer');
+
+    // A design that lists tasks but says nothing about what the running app must prove is sent back too.
+    designText = block(task('T1'), null);
+    const silent = await approvedDesign();
+    await buildTick(deps());
+    const c = await planOf(silent.initiativeId);
+    expect(c.plan).toMatchObject({ state: 'invalid' });
+    expect(c.plan!.errors).toHaveLength(1);
+    expect(c.plan!.errors[0]).toContain('no ```sdlc-smoke block');
     expect(
       await db.select().from(agentRun).where(eq(agentRun.initiativeId, bad.initiativeId)),
     ).toHaveLength(1);
@@ -319,6 +330,42 @@ describe('making a plan from an approved design', () => {
 });
 
 describe('running the plan', () => {
+  it('keeps what the design requires of the running app, and tells each engineer', async () => {
+    designText = THREE;
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const { plan } = await planOf(f.initiativeId);
+    expect(plan!.smoke).toEqual({
+      kind: 'checks',
+      checks: [
+        { kind: 'get', path: '/health', status: 200, contains: null },
+        { kind: 'get', path: '/api/items', status: 200, contains: 'items' },
+      ],
+    });
+    const run = (
+      await db.select().from(agentRun).where(eq(agentRun.initiativeId, f.initiativeId))
+    ).find((r) => r.id !== f.runId);
+    expect(run!.task).toContain('The design requires these smoke checks');
+    expect(run!.task).toContain('- get: /health (status 200)');
+    expect(run!.task).toContain('- get: /api/items (status 200, body contains "items")');
+    expect(run!.task).toContain('.sdlc/preview.yaml');
+  });
+
+  it('accepts a design that says no smoke checks, with a reason, and leaves the tasks as they were', async () => {
+    designText = block(task('T1'), 'none: A command line tool with no server to start.\n');
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const { plan } = await planOf(f.initiativeId);
+    expect(plan).toMatchObject({
+      state: 'active',
+      smoke: { kind: 'none', reason: 'A command line tool with no server to start.' },
+    });
+    const run = (
+      await db.select().from(agentRun).where(eq(agentRun.initiativeId, f.initiativeId))
+    ).find((r) => r.id !== f.runId);
+    expect(run!.task).not.toContain('smoke');
+  });
+
   it('starts only what has nothing to wait for, with the task as the title', async () => {
     designText = THREE;
     const f = await approvedDesign();

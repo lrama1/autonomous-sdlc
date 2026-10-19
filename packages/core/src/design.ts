@@ -1,4 +1,6 @@
 import { parse } from 'yaml';
+import { readSmokeChecks } from './preview-config.js';
+import type { SmokeCheck } from './preview-config.js';
 
 // The task breakdown in a design document (spec 8.2, checkpoint G1 for the Architect). The Architect agent writes it
 // as a fenced block named sdlc-tasks. Engineer runs are later started from it, so it has to be exact. Pure.
@@ -164,3 +166,75 @@ export function parseDesignTasks(markdown: string): DesignTasksResult {
   }
   return validateDesignTasks(raw);
 }
+
+/**
+ * What the design says the running app must prove (mvp-contract section 16, smoke test). Either the checks every
+ * engineer keeps in `.sdlc/preview.yaml`, or an explicit "none" with the reason: a library, a command line tool, a
+ * change to documents. The design checkpoint is where a person approves which.
+ */
+export type DesignSmoke =
+  { kind: 'checks'; checks: SmokeCheck[] } | { kind: 'none'; reason: string };
+
+export type DesignSmokeResult = { ok: true; smoke: DesignSmoke } | { ok: false; errors: string[] };
+
+const SMOKE_FENCE = /^```sdlc-smoke[ \t]*\r?\n([\s\S]*?)^```[ \t]*\r?$/gm;
+const MIN_NONE_REASON = 10;
+
+/** Finds the one sdlc-smoke block in a design document and validates it. */
+export function parseDesignSmoke(markdown: string): DesignSmokeResult {
+  const blocks = [...markdown.matchAll(SMOKE_FENCE)];
+  if (blocks.length === 0)
+    return {
+      ok: false,
+      errors: [
+        'the design has no ```sdlc-smoke block. List the checks the running app must pass, or write none: and the reason',
+      ],
+    };
+  if (blocks.length > 1)
+    return { ok: false, errors: ['the design has more than one ```sdlc-smoke block'] };
+  let raw: unknown;
+  try {
+    raw = parse(blocks[0]![1]!);
+  } catch (e) {
+    return {
+      ok: false,
+      errors: [
+        `the sdlc-smoke block is not valid YAML: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`,
+      ],
+    };
+  }
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const keys = Object.keys(raw);
+    const reason = (raw as Record<string, unknown>).none;
+    if (keys.length !== 1 || keys[0] !== 'none')
+      return {
+        ok: false,
+        errors: [
+          'the sdlc-smoke block is either a list of checks or a single line: none: <reason>',
+        ],
+      };
+    if (typeof reason !== 'string' || reason.trim().length < MIN_NONE_REASON)
+      return {
+        ok: false,
+        errors: [
+          `none: needs a reason of at least ${MIN_NONE_REASON} characters, for the person who approves the design`,
+        ],
+      };
+    return { ok: true, smoke: { kind: 'none', reason: reason.trim() } };
+  }
+  if (!Array.isArray(raw) || raw.length === 0)
+    return {
+      ok: false,
+      errors: ['the sdlc-smoke block must list at least one check, or say none: and the reason'],
+    };
+  const errors: string[] = [];
+  const checks = readSmokeChecks(raw, errors);
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, smoke: { kind: 'checks', checks } };
+}
+
+/** A check as one line, the way an engineer reads it. */
+export const describeSmokeCheck = (c: SmokeCheck): string =>
+  c.kind === 'run'
+    ? `run: ${c.command}`
+    : `get: ${c.path} (status ${c.status}${c.contains ? `, body contains "${c.contains}"` : ''})`;

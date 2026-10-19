@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import pg from 'pg';
-import { parseDesignTasks } from '@sdlc/core';
+import { parseDesignTasks, taskPrompt } from '@sdlc/core';
 import type { CookieJar } from './signin.js';
 import { signInAs } from './signin.js';
 import { startStack } from './stack.js';
@@ -15,6 +15,9 @@ import { startStack } from './stack.js';
 //   node --import tsx src/accept.ts [happy|resume|both|standing|autopilot|release|compare|preview|previewrun|design|build|bigbuild|mixedbuild|overlap|pipeline|pipeline2|bug|catchup|all]
 //   PREVIEW_VARIANT=deployment makes the preview phase report through a GitHub Deployment instead of a commit status.
 //   PREVIEW_VARIANT=install makes the previewrun phase install a real package from the registry before it starts.
+//   smokerun: a reviewer runs the smoke test of a pull request. By default the engineer agent writes the checks the design requires,
+//   and the run is approved and merged. SMOKE_VARIANT=broken uses an app that fails its checks, then overrides with a reason.
+//   SMOKE_PAUSE_S=120 keeps the stack up that long after the first result, to look at the page.
 //   BUG_VARIANT=norepro makes the bug phase report a bug that does not exist, to see the agent stop without a pull request. [docker]
 // Set ACCEPT_ENGINE=copilot-cli to run the same phases with the agents switched to another engine.
 const REPO = 'lrama1/sdlc-scratch';
@@ -2516,6 +2519,249 @@ try {
       method: 'DELETE',
       headers: auth,
     });
+  }
+  // ---------------- Smoke test: the platform runs the checks of a pull request, and the review waits for them ----------------
+  if (phase === 'smokerun') {
+    const broken = process.env.SMOKE_VARIANT === 'broken';
+    say(
+      `--- smokerun${broken ? ' (broken app)' : ''}: the platform starts the pull request's app, runs its checks, and the review cannot be approved until they pass or are overridden ---`,
+    );
+    if (!ghToken) throw new Error('GH_TOKEN is needed to read the pull request');
+    const s = stamp;
+    const dir = `smoke-${s}`;
+    let task: string;
+    if (broken) {
+      const server = [
+        `import http from 'node:http';`,
+        `http.createServer((req, res) => {`,
+        `  if (req.url === '/health') { res.statusCode = 500; return res.end('database is down'); }`,
+        `  if (req.url === '/items') return res.end(JSON.stringify({ items: [{ id: 1 }] }));`,
+        `  res.statusCode = 404; res.end('nothing here');`,
+        `}).listen(Number(process.env.PORT), process.env.HOST);`,
+      ];
+      task = [
+        `Create three files and commit them. Do not change anything else and do not ask any questions.`,
+        ``,
+        `1. The file ${dir}/server.mjs with exactly this content:`,
+        '```js',
+        ...server,
+        '```',
+        ``,
+        `2. The file ${dir}/check.mjs with exactly this content:`,
+        '```js',
+        `console.error('the cart page is missing');`,
+        `process.exit(3);`,
+        '```',
+        ``,
+        `3. The file .sdlc/preview.yaml with exactly this content:`,
+        '```yaml',
+        `start: cd ${dir} && node server.mjs`,
+        `port: 4000`,
+        `ready_path: /items`,
+        `smoke:`,
+        `  - get: /health`,
+        `  - get: /items`,
+        `    contains: items`,
+        `  - run: cd ${dir} && node check.mjs`,
+        '```',
+      ].join('\n');
+    } else {
+      // The same text the build plan gives an engineer, with the design's required checks in it.
+      const required = {
+        kind: 'checks' as const,
+        checks: [
+          { kind: 'get' as const, path: '/health', status: 200, contains: 'ok' },
+          { kind: 'get' as const, path: '/api/items', status: 200, contains: '"items"' },
+        ],
+      };
+      const t1 = {
+        id: 'T1',
+        title: `Add a small items service in ${dir}`,
+        role: 'backend_engineer' as const,
+        stories: [],
+        dependsOn: [],
+        paths: [`${dir}/server.js`, '.sdlc/preview.yaml'],
+        doneWhen: [
+          `${dir}/server.js is a plain Node http server (no dependencies) that listens on process.env.PORT and process.env.HOST`,
+          `GET /health answers 200 with the text ok`,
+          `GET /api/items answers 200 with JSON like {"items":[{"id":1,"name":"widget"}]}`,
+          `anything else answers 404`,
+        ],
+      };
+      task = taskPrompt({ path: '(none)' }, t1, [t1], undefined, required).replace(
+        /You are building one task[^\n]*\n/,
+        'This task is self-contained: there is no design file to read. Do not ask any questions.\n',
+      );
+    }
+    const { run } = await startRun(`Smoke test ${s}${broken ? ' broken' : ''}`, task, 'guided');
+    const review = await waitFor(
+      'the review request',
+      () => openFor(bob, run.id, ['review']),
+      600_000,
+    );
+    const prNumber: number = review.contextCard.prNumber;
+    const smoke = () => call(bob, 'GET', `/api/interactions/${review.id}/smoke`);
+    /** A request whose status matters, so a refusal is a result and not a thrown error. */
+    const raw = async (path: string, body?: object) => {
+      const r = await bob.fetch(`${stack.publicUrl}${path}`, {
+        method: 'POST',
+        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      });
+      let json: any = {};
+      try {
+        json = JSON.parse(r.text);
+      } catch {
+        // not JSON
+      }
+      return { status: r.status, json };
+    };
+    const approve = (body: object) => raw(`/api/interactions/${review.id}/answer`, body);
+
+    // What the agent wrote.
+    const branch: string = (await gh(`/repos/${REPO}/pulls/${prNumber}`)).head.ref;
+    const yaml: string = Buffer.from(
+      (await gh(`/repos/${REPO}/contents/.sdlc/preview.yaml?ref=${encodeURIComponent(branch)}`))
+        .content,
+      'base64',
+    ).toString('utf8');
+    say(`.sdlc/preview.yaml on the branch:\n${yaml}`);
+    check(/^smoke:/m.test(yaml), 'S  the agent wrote a smoke: list in .sdlc/preview.yaml');
+    if (!broken)
+      check(
+        /get:\s*\/health/.test(yaml) && /get:\s*\/api\/items/.test(yaml),
+        'S  and it lists both checks the design required',
+      );
+
+    const before = await smoke();
+    check(
+      before.available === true && before.required === 'required' && before.run === null,
+      `S  the review shows the smoke checks as required, and not yet run on this commit`,
+    );
+    check(
+      typeof before.blocks === 'string' && before.blocks.length > 0,
+      `S  and says why it cannot be approved yet ("${String(before.blocks).slice(0, 90)}...")`,
+    );
+    const early = await approve({ decision: 'approved', answer: 'Looks good.' });
+    check(
+      early.status === 409 && early.json.error?.code === 'smoke_required',
+      `S  approving before the smoke test is refused (${early.status})`,
+    );
+
+    const t0 = Date.now();
+    const click = await raw(`/api/interactions/${review.id}/smoke/start`);
+    check(click.status === 202, `S  one click starts it (${click.status})`);
+    const done = await waitFor(
+      'the smoke test finishes',
+      async () => {
+        const x = await smoke();
+        return x.run && x.run.state !== 'running' ? x : null;
+      },
+      300_000,
+      2000,
+    );
+    say(
+      `smoke result after ${Math.round((Date.now() - t0) / 1000)}s: ${done.run.state}\n${done.run.results.map((r: any) => `  ${r.ok ? 'ok  ' : 'FAIL'} ${r.label}: ${r.detail}`).join('\n')}`,
+    );
+    const leftovers = async () =>
+      (await exec('docker', ['ps', '-aq', '--filter', 'label=sdlc.preview'])).stdout.trim();
+    check((await leftovers()) === '', 'S  the sandbox the smoke test started is already gone');
+    const pause = Number(process.env.SMOKE_PAUSE_S ?? 0);
+    if (pause > 0) {
+      say(`Pausing ${pause}s so the page can be looked at: ${stack.publicUrl}/#/queue`);
+      await new Promise((r) => setTimeout(r, pause * 1000));
+    }
+
+    let overrideReason = '';
+    if (!broken) {
+      check(
+        done.run.state === 'passed' &&
+          done.run.results.length >= 2 &&
+          done.run.results.every((r: any) => r.ok),
+        `S  the agent's own checks pass against its own app (${done.run.results.length} checks)`,
+      );
+      check(done.blocks === null, 'S  and the review can now be approved');
+    } else {
+      const r = done.run.results;
+      check(
+        done.run.state === 'failed',
+        `S  the broken app fails its smoke test (${done.run.state})`,
+      );
+      check(
+        r.length === 3 && r[0].ok === false && r[1].ok === true && r[2].ok === false,
+        `S  each check is judged on its own: ${r.map((x: any) => (x.ok ? 'pass' : 'FAIL')).join(', ')}`,
+      );
+      check(
+        /expected 200, got 500: database is down/.test(r[0].detail),
+        `S  the failure says what the app answered ("${r[0].detail}")`,
+      );
+      check(
+        /exit 3: the cart page is missing/.test(r[2].detail),
+        `S  a command's exit code and output are shown ("${r[2].detail}")`,
+      );
+      const held = await approve({ decision: 'approved', answer: 'Looks good.' });
+      check(held.status === 409, `S  approving a failed commit is refused (${held.status})`);
+      const noReason = await raw(`/api/interactions/${review.id}/smoke/override`, { reason: 'ok' });
+      check(noReason.status === 400, `S  an override needs a real reason (${noReason.status})`);
+      const reason =
+        'The health route is rebuilt in the next pull request; the rest is verified here.';
+      const over = await raw(`/api/interactions/${review.id}/smoke/override`, { reason });
+      check(over.status === 201, `S  a person overrides it with a reason (${over.status})`);
+      const after = await smoke();
+      check(
+        after.run.state === 'overridden' && after.blocks === null,
+        'S  the review can then be approved',
+      );
+      overrideReason = reason;
+    }
+
+    const ok = await approve({ decision: 'approved', answer: 'Looks good.' });
+    check(ok.status === 200, `S  Bob approves the pull request (${ok.status})`);
+    const merged = await waitFor(
+      'the Gate merges',
+      async () => {
+        const row = await db.query(
+          "select context_card -> 'gate' as gate from interaction where id = $1",
+          [review.id],
+        );
+        const gate = row.rows[0]?.gate;
+        if (gate && !['waiting_ci', 'merged'].includes(gate.state))
+          throw new Error(`gate ended as ${gate.state}: ${gate.detail}`);
+        return gate?.state === 'merged' ? gate : null;
+      },
+      300_000,
+      4000,
+    );
+    check(
+      Boolean(merged.mergedSha),
+      `S  the Gate merged the pull request (${String(merged.mergedSha).slice(0, 7)})`,
+    );
+    const reviews: any[] = await gh(`/repos/${REPO}/pulls/${prNumber}/reviews`);
+    const note = reviews.map((r) => String(r.body)).find((b) => /Smoke test/.test(b)) ?? '';
+    say(`the Gate's approval on GitHub: ${note}`);
+    check(
+      broken
+        ? note.includes('Smoke test overridden by') && note.includes(overrideReason)
+        : note.includes('Smoke test passed ('),
+      broken
+        ? 'S  GitHub shows who overrode the smoke test, and why'
+        : 'S  GitHub shows that the smoke test passed',
+    );
+    const log = await db.query(
+      "select action from activity_event where interaction_id = $1 and action like 'smoke.%' order by ts",
+      [review.id],
+    );
+    const actions = log.rows.map((r: any) => r.action);
+    check(
+      JSON.stringify(actions) ===
+        JSON.stringify(
+          broken
+            ? ['smoke.started', 'smoke.failed', 'smoke.overridden']
+            : ['smoke.started', 'smoke.passed'],
+        ),
+      `S  the activity log has the whole story (${actions.join(', ')})`,
+    );
+    check((await leftovers()) === '', 'S  nothing is left running');
   }
 } catch (e) {
   say(`ERROR: ${e instanceof Error ? e.message : String(e)}`);

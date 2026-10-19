@@ -34,6 +34,9 @@ class ListeningHost implements PreviewHost {
   execs: Array<{ id: string; command: string }> = [];
   failStart: Error | null = null;
   hold: Promise<void> | null = null;
+  /** While set, stopping a preview waits for it. */
+  stopHold: Promise<void> | null = null;
+  stopping = false;
   healthy = true;
   exitCode = 0;
   async start(spec: { id: string; config: PreviewStartConfig; hostPort: number }) {
@@ -53,6 +56,8 @@ class ListeningHost implements PreviewHost {
     return { exitCode: this.exitCode, output: this.exitCode ? 'it broke' : 'fine' };
   }
   async stop(id: string) {
+    this.stopping = true;
+    if (this.stopHold) await this.stopHold;
     this.stopped.push(id);
     const s = this.servers.get(id);
     this.servers.delete(id);
@@ -176,6 +181,20 @@ describe('a smoke test of a pull request', () => {
     expect(prev).toMatchObject({ state: 'stopped', detail: 'The smoke test finished.' });
     expect(host.stopped).toEqual([prev!.id]);
     expect(await actions(r.initiativeId)).toEqual(['smoke.started', 'smoke.passed']);
+  });
+
+  it('removes the preview before it records a result, so "passed" means nothing is left running', async () => {
+    let release!: () => void;
+    host.stopHold = new Promise((resolve) => (release = resolve));
+    const r = await review();
+    const res = await smoke.start(r.id, null);
+    if (!res.ok) throw new Error(res.message);
+    for (let i = 0; i < 200 && !host.stopping; i++) await new Promise((x) => setTimeout(x, 20));
+    expect(host.stopping).toBe(true);
+    expect((await rowOf(res.row.id)).state).toBe('running');
+    release();
+    await smoke.idle();
+    expect((await rowOf(res.row.id)).state).toBe('passed');
   });
 
   it('records a failure with every check, and still removes the preview', async () => {
