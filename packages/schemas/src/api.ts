@@ -323,6 +323,39 @@ export const previewSchema = z.object({
 });
 export type PreviewDto = z.infer<typeof previewSchema>;
 
+// The smoke test of a pull request's code at the commit under review (mvp-contract section 16).
+export const smokeResultSchema = z.object({
+  kind: z.enum(['get', 'run']),
+  label: z.string(),
+  ok: z.boolean(),
+  detail: z.string(),
+  ms: z.number(),
+});
+export const smokeSchema = z.object({
+  // False when this platform cannot run previews, so it cannot run smoke tests and does not ask for them.
+  available: z.boolean(),
+  required: z.enum(['none', 'required', 'invalid']),
+  // Why the config is invalid, or what stops the test from being read.
+  detail: z.string().nullable(),
+  commit: z.string(),
+  run: z
+    .object({
+      id: z.string(),
+      state: z.enum(['running', 'passed', 'failed', 'error', 'overridden']),
+      results: z.array(smokeResultSchema),
+      // The reason, for an override; what went wrong, for an error.
+      detail: z.string().nullable(),
+      by: z.string().nullable(),
+      startedAt: z.string(),
+      finishedAt: z.string().nullable(),
+    })
+    .nullable(),
+  // Why the review cannot be approved yet, or null when it can.
+  blocks: z.string().nullable(),
+});
+export type SmokeDto = z.infer<typeof smokeSchema>;
+export type SmokeResultDto = z.infer<typeof smokeResultSchema>;
+
 // The build plan of an initiative: the approved design's tasks, and where each one is.
 export const buildTaskStateSchema = z.enum([
   'waiting',

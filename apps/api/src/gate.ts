@@ -27,9 +27,19 @@ export interface GateInfo {
   catchUps?: number;
 }
 
+/** What the Gate asks about a repository's smoke test (mvp-contract section 16). Null from the getter means the platform cannot run one. */
+export interface SmokeGuard {
+  /** Why this review may not be approved or merged yet, or null. */
+  blocks(row: InteractionRow): Promise<string | null>;
+  /** One line about the smoke test for the approval on the pull request, or null. */
+  evidence(row: InteractionRow): Promise<string | null>;
+}
+
 export interface GateOptions {
   db: Db;
   github: GitHubService;
+  /** Late-bound: the smoke test service is made after the Gate, and only when the platform can run previews. */
+  smoke?: () => SmokeGuard | null;
   /** How long to wait for the required check before giving up. */
   waitForCiMs?: number;
   /** How long to wait between looks when GitHub updates a branch. */
@@ -52,6 +62,7 @@ const answerOf = (row: InteractionRow) =>
 export function createGate({
   db,
   github,
+  smoke = () => null,
   waitForCiMs = 30 * 60_000,
   catchUpPollMs = 1000,
   log = (l) => console.log(l),
@@ -294,14 +305,34 @@ export function createGate({
         return 'ci_failed';
       }
 
+      // The review was held until the smoke test passed or a person overrode it. This is the same question asked again
+      // at the last moment, so an approval that slipped past (or a result that changed) still cannot merge.
+      const guard = smoke();
+      const held = guard ? await guard.blocks(row) : null;
+      if (held) {
+        await finish(
+          row,
+          {
+            state: 'failed',
+            since,
+            detail: `the smoke test has not passed: ${held}`.slice(0, 500),
+          },
+          'gate.smoke_held',
+        );
+        return 'failed';
+      }
+      const proof = guard ? await guard.evidence(row) : null;
+
       const a = answerOf(row);
       const byRule = (row.answer as { source?: string } | null)?.source === 'policy';
       await github.gateApprove(
         card.repository,
         card.prNumber,
-        byRule
-          ? `Approved by the platform's rules, not by a person. ${a.text ?? ''} "${required}" passed. Review ${row.id}.`
-          : `Approved by the platform: a person approved this change${a.text ? ` ("${a.text.slice(0, 200)}")` : ''} and "${required}" passed. Review ${row.id}.`,
+        `${
+          byRule
+            ? `Approved by the platform's rules, not by a person. ${a.text ?? ''} "${required}" passed. Review ${row.id}.`
+            : `Approved by the platform: a person approved this change${a.text ? ` ("${a.text.slice(0, 200)}")` : ''} and "${required}" passed. Review ${row.id}.`
+        }${proof ? ` ${proof}` : ''}`,
       );
       let merged: { sha: string };
       try {
@@ -334,6 +365,12 @@ export function createGate({
   return {
     evaluate,
 
+    /** Why a person may not approve this review yet because of the smoke test, or null. */
+    async smokeBlocks(row: InteractionRow): Promise<string | null> {
+      if (row.type !== 'review' || !isPr(row)) return null;
+      return (await smoke()?.blocks(row)) ?? null;
+    },
+
     /**
      * The platform approves a pull request by rule (spec 6.1, 6.2), then the same checks as for a person apply:
      * the required check must be green and the commit must be the one that was reviewed.
@@ -344,6 +381,8 @@ export function createGate({
       why: { reason: string; rule: string | null },
     ): Promise<GateState | null> {
       if (row.type !== 'review' || !isPr(row)) return null;
+      // A change with smoke checks always waits for a person to run them: the rules do not click for anyone.
+      if (await smoke()?.blocks(row)) return null;
       const settled = await settleByPolicy(db, row.id, {
         decision: 'approved',
         reason: why.reason,

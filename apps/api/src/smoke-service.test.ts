@@ -96,10 +96,22 @@ async function review(state = 'open') {
       title: `Review PR #${prNumber}`,
       roleNeeded: 'backend_engineer',
       state,
-      contextCard: { kind: 'pull_request', repository: repo!.fullName, prNumber },
+      contextCard: {
+        kind: 'pull_request',
+        repository: repo!.fullName,
+        prNumber,
+        headSha: gh.head,
+      },
     })
     .returning();
-  return { id: row!.id, initiativeId: f.initiativeId, prNumber, repository: repo!.fullName };
+  return {
+    id: row!.id,
+    row: row!,
+    personId: f.personId,
+    initiativeId: f.initiativeId,
+    prNumber,
+    repository: repo!.fullName,
+  };
 }
 
 const rowOf = async (id: string) =>
@@ -275,5 +287,151 @@ describe('a smoke test of a pull request', () => {
     if (!res.ok) throw new Error(res.message);
     await smoke.idle();
     expect((await smoke.forPullRequest(r.repository, r.prNumber))!.id).toBe(res.row.id);
+  });
+});
+
+describe('what the smoke test means for approving', () => {
+  it('asks nothing of a repository with no smoke checks or no preview file', async () => {
+    const r = await review();
+    gh.config = CONFIG('');
+    expect(await smoke.blocks(r.row)).toBeNull();
+    gh.config = null;
+    const r2 = await review();
+    expect(await smoke.blocks(r2.row)).toBeNull();
+  });
+
+  it('holds a commit that has checks and no result, then lets it through when they pass', async () => {
+    const r = await review();
+    expect(await smoke.blocks(r.row)).toContain('3 smoke checks, and none has run on this commit');
+    const res = await smoke.start(r.id, null);
+    if (!res.ok) throw new Error(res.message);
+    expect(await smoke.blocks(r.row)).toContain('still running');
+    await smoke.idle();
+    expect(await smoke.blocks(r.row)).toBeNull();
+    expect(await smoke.evidence(r.row)).toBe('Smoke test passed (3 checks).');
+  });
+
+  it('holds a failed run and a run that could not start, and asks for another try or an override', async () => {
+    host.exitCode = 1;
+    const r = await review();
+    const a = await smoke.start(r.id, null);
+    if (!a.ok) throw new Error(a.message);
+    await smoke.idle();
+    expect(await smoke.blocks(r.row)).toContain('failed on this commit');
+    expect(await smoke.evidence(r.row)).toBeNull();
+
+    host.exitCode = 0;
+    host.failStart = new PreviewStartError('no room for it');
+    const b = await smoke.start(r.id, null);
+    if (!b.ok) throw new Error(b.message);
+    await smoke.idle();
+    expect(await smoke.blocks(r.row)).toContain('could not run (no room for it)');
+
+    // The newest result decides: a pass after a failure lets it through.
+    host.failStart = null;
+    const c = await smoke.start(r.id, null);
+    if (!c.ok) throw new Error(c.message);
+    await smoke.idle();
+    expect(await smoke.blocks(r.row)).toBeNull();
+  });
+
+  it('counts a file it cannot read as required, because the checks may be hidden in the mistake', async () => {
+    gh.config = CONFIG('smoke:\n  - get: nope\n');
+    const r = await review();
+    expect(await smoke.blocks(r.row)).toContain('cannot be read');
+    expect(await smoke.blocks(r.row)).toContain('get must be a path');
+  });
+
+  it('holds when GitHub cannot be asked, rather than letting a change through unchecked', async () => {
+    const r = await review();
+    const broken = new SmokeService({
+      db,
+      github: {
+        ...github,
+        readFile: async () => {
+          throw new Error('GitHub is down');
+        },
+      },
+      previews,
+      host,
+    });
+    expect(await broken.blocks(r.row)).toContain('GitHub is down');
+  });
+
+  it('lets a person override with a reason that stays, and records it', async () => {
+    const r = await review();
+    const out = await smoke.override(r.id, r.personId, 'The login page is behind a feature flag.');
+    if (!out.ok) throw new Error(out.message);
+    expect(out.row).toMatchObject({
+      state: 'overridden',
+      headSha: gh.head,
+      startedBy: r.personId,
+      detail: 'The login page is behind a feature flag.',
+    });
+    expect(await smoke.blocks(r.row)).toBeNull();
+    expect(await smoke.evidence(r.row)).toMatch(
+      /^Smoke test overridden by .+: The login page is behind a feature flag\.$/,
+    );
+    expect(await actions(r.initiativeId)).toEqual(['smoke.overridden']);
+    const [event] = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.interactionId, r.id));
+    expect(event!.detail).toMatchObject({
+      reason: 'The login page is behind a feature flag.',
+      was: 'not run',
+    });
+  });
+
+  it('refuses an override that makes no sense', async () => {
+    const r = await review();
+    gh.config = CONFIG('');
+    expect(await smoke.override(r.id, r.personId, 'because I said so')).toMatchObject({
+      ok: false,
+      code: 'not_required',
+    });
+    gh.config = CONFIG(GOOD);
+    const r2 = await review();
+    const first = await smoke.override(r2.id, r2.personId, 'a good enough reason');
+    expect(first.ok).toBe(true);
+    expect(await smoke.override(r2.id, r2.personId, 'again, for luck')).toMatchObject({
+      ok: false,
+      code: 'not_needed',
+    });
+    const decided = await review('approved');
+    expect(
+      await smoke.override(decided.id, decided.personId, 'a good enough reason'),
+    ).toMatchObject({
+      ok: false,
+      code: 'review_decided',
+    });
+    expect(
+      await smoke.override('00000000-0000-4000-8000-000000000000', r.personId, 'x'.repeat(12)),
+    ).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+
+  it('does not let an override carry over to a new commit', async () => {
+    const r = await review();
+    await smoke.override(r.id, r.personId, 'a good enough reason');
+    const next = {
+      ...r.row,
+      contextCard: { ...(r.row.contextCard as object), headSha: 'f'.repeat(40) },
+    };
+    expect(await smoke.blocks(next)).toContain('none has run on this commit');
+  });
+
+  it('marks a test that was running when the platform stopped', async () => {
+    const r = await review();
+    const [row] = await db
+      .insert(smokeRun)
+      .values({ repository: r.repository, prNumber: r.prNumber, headSha: gh.head })
+      .returning();
+    expect(await smoke.blocks(r.row)).toContain('still running');
+    await smoke.recover();
+    expect((await rowOf(row!.id)).state).toBe('error');
+    expect(await smoke.blocks(r.row)).toContain('restarted during the smoke test');
   });
 });

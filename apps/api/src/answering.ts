@@ -25,6 +25,11 @@ export const REASONS: Record<string, { status: number; message: string }> = {
     message: 'A decision applies only to checkpoints and reviews.',
   },
   unknown_option: { status: 400, message: 'That is not one of the options.' },
+  smoke_required: {
+    status: 409,
+    message:
+      'This change has smoke checks that have not passed. Run the smoke test, or override it with a reason.',
+  },
 };
 
 export const factsOf = (r: InteractionRow): InteractionFacts => ({
@@ -89,6 +94,12 @@ export async function answerAsPerson(
     deps.rules,
   );
   if (!verdict.ok) return refuse(verdict.reason);
+
+  // Approving a pull request that has smoke checks needs a passing smoke test (or an override) for this commit.
+  if (body.decision === 'approved' && deps.gate) {
+    const held = await deps.gate.smokeBlocks(row);
+    if (held) return { ok: false, status: 409, code: 'smoke_required', message: held };
+  }
 
   let text = body.answer;
   if (body.optionId) {

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AssumptionDto, AttentionProfile, InteractionDto, PreviewDto } from '@sdlc/schemas';
+import type {
+  AssumptionDto,
+  AttentionProfile,
+  InteractionDto,
+  PreviewDto,
+  SmokeDto,
+} from '@sdlc/schemas';
 import {
   ApiProblem,
   answerInteraction,
@@ -7,6 +13,9 @@ import {
   didntNeedToAsk,
   getAssumptions,
   getPreview,
+  getSmoke,
+  overrideSmoke,
+  startSmoke,
   startPlatformPreview,
   stopPlatformPreview,
   getProfile,
@@ -171,6 +180,149 @@ function PreviewLine({ id }: { id: string }) {
   );
 }
 
+const SMOKE_WORDS: Record<NonNullable<SmokeDto['run']>['state'], string> = {
+  running: 'Running',
+  passed: 'Passed',
+  failed: 'Failed',
+  error: 'Could not run',
+  overridden: 'Overridden',
+};
+
+/**
+ * The smoke test of the commit under review. The repository lists the checks; a person starts them; the review cannot be
+ * approved until they pass or a person overrides them with a reason that stays with the pull request.
+ */
+function SmokeLine({ id }: { id: string }) {
+  const [s, setS] = useState<SmokeDto | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [overriding, setOverriding] = useState(false);
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const next = await getSmoke(id);
+        if (stop) return;
+        setS(next);
+        if (next.run?.state === 'running') timer = setTimeout(load, 2_000);
+      } catch {
+        // The preview line already says GitHub could not be asked. Nothing to add here.
+      }
+    };
+    void load();
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [id, tick]);
+
+  const act = async (what: () => Promise<unknown>) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await what();
+      setOverriding(false);
+      setReason('');
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'That did not work.');
+    } finally {
+      setBusy(false);
+      setTick((t) => t + 1);
+    }
+  };
+
+  if (!s || !s.available || s.required === 'none') return null;
+  const run = s.run;
+  const state = run?.state ?? 'none';
+  const done = run?.results.filter((r) => r.ok).length ?? 0;
+  const letThrough = state === 'passed' || state === 'overridden';
+  return (
+    <div data-testid="smoke" data-state={state}>
+      <b>Smoke test</b>
+      <span data-testid="smoke-state">
+        {run
+          ? `${SMOKE_WORDS[run.state]}${run.results.length > 0 ? ` (${done} of ${run.results.length})` : ''}`
+          : 'Not run on this commit'}
+      </span>{' '}
+      {run?.state === 'overridden' && (
+        <span className="muted" data-testid="smoke-override">
+          {run.by ? `${run.by}: ` : ''}
+          {run.detail}
+        </span>
+      )}
+      {run?.state === 'error' && run.detail && (
+        <span className="callout warn" role="alert">
+          {run.detail}
+        </span>
+      )}
+      {s.required === 'invalid' && s.detail && (
+        <span className="callout warn" role="alert">
+          The smoke checks cannot be read: {s.detail}
+        </span>
+      )}
+      {run && run.results.length > 0 && (
+        <ul className="small" data-testid="smoke-results">
+          {run.results.map((r, n) => (
+            <li key={n} data-ok={r.ok}>
+              {r.ok ? '✓' : '✗'} <code>{r.label}</code> <span className="muted">{r.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="row wrap">
+        {s.required === 'required' && (
+          <button
+            type="button"
+            disabled={busy || run?.state === 'running'}
+            onClick={() => void act(() => startSmoke(id))}
+          >
+            {run ? 'Run the smoke test again' : 'Run the smoke test'}
+          </button>
+        )}
+        {!letThrough && run?.state !== 'running' && !overriding && (
+          <button type="button" disabled={busy} onClick={() => setOverriding(true)}>
+            Override with a reason
+          </button>
+        )}
+        {s.blocks && !letThrough && (
+          <span className="muted" data-testid="smoke-blocks">
+            {s.blocks}
+          </span>
+        )}
+      </span>
+      {overriding && (
+        <span className="row wrap">
+          <textarea
+            aria-label="Why the smoke test is overridden"
+            placeholder="Why can this merge without a passing smoke test? (10 characters or more)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={busy || reason.trim().length < 10}
+            onClick={() => void act(() => overrideSmoke(id, reason.trim()))}
+          >
+            Override
+          </button>
+          <button type="button" disabled={busy} onClick={() => setOverriding(false)}>
+            Cancel
+          </button>
+        </span>
+      )}
+      {problem && (
+        <span role="alert" className="callout warn">
+          {problem}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Waiting({ i }: { i: InteractionDto }) {
   const n = i.blocks.length;
   if (i.type === 'review') return <span className="pill wait">Blocks the merge</span>;
@@ -321,6 +473,7 @@ function Ask({
             </div>
           )}
           {c.prUrl && <PreviewLine id={i.id} />}
+          {c.prUrl && <SmokeLine id={i.id} />}
         </div>
       ) : (
         <div className="ctx">

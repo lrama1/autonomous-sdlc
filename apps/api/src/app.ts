@@ -17,6 +17,8 @@ import { FargateRunner, S3StateStore } from './fargate-runner.js';
 import { DockerPreviewHost } from './docker-preview.js';
 import type { PreviewHost } from './docker-preview.js';
 import { PreviewService } from './previews.js';
+import { registerSmokeRoutes } from './smoke-routes.js';
+import { SmokeService } from './smoke-service.js';
 import { FargatePreviewHost, CloudWatchTaskLogs, S3CodeStore } from './fargate-preview.js';
 import { registerPreviewProxy } from './preview-proxy.js';
 import { ProcessRunner } from './launcher.js';
@@ -162,7 +164,13 @@ export async function buildApp({
   const apiUrl = `http://127.0.0.1:${config.API_PORT}`;
   registerWorkRoutes(app, db, loadedAgents);
   const ruleSet = await loadRules(config.RULES_FILE);
-  const gate = createGate({ db, github: ghService, log: (l) => app.log.info(l) });
+  let smoke: SmokeService | null = null;
+  const gate = createGate({
+    db,
+    github: ghService,
+    smoke: () => smoke,
+    log: (l) => app.log.info(l),
+  });
   registerRunnerRoutes(app, {
     db,
     config,
@@ -207,6 +215,14 @@ export async function buildApp({
       log: (l) => app.log.info(l),
     });
     await previews.recover();
+    smoke = new SmokeService({
+      db,
+      github: ghService,
+      previews,
+      host,
+      log: (l) => app.log.info(l),
+    });
+    await smoke.recover();
     if (workers) {
       let busy = false;
       const timer = setInterval(() => {
@@ -222,6 +238,7 @@ export async function buildApp({
       app.addHook('onClose', async () => {
         clearInterval(timer);
         await previews?.idle();
+        await smoke?.idle();
       });
     }
     app.addHook('onClose', async () => {
@@ -234,6 +251,7 @@ export async function buildApp({
   registerPreviewRoutes(app, db, ghService, () => previews, {
     ttlMinutes: config.PREVIEW_TTL_MIN,
   });
+  registerSmokeRoutes(app, db, rules, () => smoke);
   app.decorate('previews', () => previews);
   registerPreviewProxy(app, db, { secret: config.SESSION_SECRET, origin: config.PREVIEW_ORIGIN });
   registerBuildRoutes(app, db);

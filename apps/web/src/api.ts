@@ -13,6 +13,7 @@ import {
   interruptionMetricsSchema,
   meSchema,
   previewSchema,
+  smokeSchema,
   readySchema,
   stageStartSchema,
   standingDecisionSchema,
@@ -34,6 +35,7 @@ import type {
   Me,
   MonthlyBudgetDto,
   PreviewDto,
+  SmokeDto,
   Ready,
   StageStartDto,
   StandingDecisionDto,
@@ -127,6 +129,23 @@ export const stopPlatformPreview = (previewId: string) =>
   call(`/api/previews/${previewId}/stop`, z.object({ id: z.string(), state: z.string() }), {
     method: 'POST',
   });
+
+export const getSmoke = (id: string): Promise<SmokeDto> =>
+  call(`/api/interactions/${id}/smoke`, smokeSchema);
+
+export const startSmoke = (interactionId: string) =>
+  call(
+    `/api/interactions/${interactionId}/smoke/start`,
+    z.object({ id: z.string(), state: z.string() }),
+    { method: 'POST' },
+  );
+
+export const overrideSmoke = (interactionId: string, reason: string) =>
+  call(
+    `/api/interactions/${interactionId}/smoke/override`,
+    z.object({ id: z.string(), state: z.string() }),
+    { method: 'POST', body: { reason } },
+  );
 
 export const getAssumptions = (): Promise<AssumptionDto[]> =>
   call('/api/assumptions', z.array(assumptionSchema));

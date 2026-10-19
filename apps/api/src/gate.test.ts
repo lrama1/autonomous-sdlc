@@ -26,6 +26,8 @@ import type { DevDb } from '@sdlc/dev-db';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createGate } from './gate.js';
+import type { SmokeGuard } from './gate.js';
+import { answerAsPerson } from './answering.js';
 import { GitHubClient, secretName } from './github-app.js';
 import { GitHubService } from './github-service.js';
 import { settleWithAnswer } from './interactions.js';
@@ -500,6 +502,133 @@ describe('approval by rule', () => {
       })
       .returning();
     expect(await gate().autoApprove(note!, why)).toBeNull();
+  });
+});
+
+describe('smoke test', () => {
+  /** A smoke test service that answers from what the test says. */
+  const guard = (state: {
+    blocks: string | null;
+    evidence?: string | null;
+  }): (() => SmokeGuard) => {
+    const g: SmokeGuard = {
+      blocks: async () => state.blocks,
+      evidence: async () => state.evidence ?? null,
+    };
+    return () => g;
+  };
+  const withSmoke = (smoke: (() => SmokeGuard | null) | undefined) =>
+    createGate({ db, github: service, log: () => {}, catchUpPollMs: 0, smoke });
+  const why = { reason: 'It fits the pre-approved type "docs-only".', rule: 'docs-only' };
+
+  async function openReview(f: Awaited<ReturnType<typeof setup>>) {
+    const [row] = await db
+      .insert(interaction)
+      .values({
+        initiativeId: f.initiativeId,
+        runId: f.runId,
+        type: 'review',
+        checkpointId: 'G3',
+        title: 'Review PR #7: Add a page',
+        roleNeeded: 'backend_engineer',
+        contextCard: {
+          kind: 'pull_request',
+          repository: f.repo.fullName,
+          prNumber: 7,
+          prUrl: 'https://github.com/o/r/pull/7',
+          headSha: 'sha-reviewed',
+        },
+      })
+      .returning();
+    return row!;
+  }
+
+  it('leaves a review that the rules would approve for a person when the smoke test has not passed', async () => {
+    const f = await setup();
+    const row = await openReview(f);
+    expect(
+      await withSmoke(guard({ blocks: 'The smoke test has not run.' })).autoApprove(row, why),
+    ).toBeNull();
+    const [after] = await db.select().from(interaction).where(eq(interaction.id, row.id));
+    expect(after).toMatchObject({ state: 'open' });
+    expect(world.calls.filter((c) => c.url.endsWith('/reviews'))).toHaveLength(0);
+
+    // Once it is let through, the rules approve as before.
+    expect(await withSmoke(guard({ blocks: null })).autoApprove(row, why)).toBe('merged');
+  });
+
+  it('does not change a repository that has no smoke checks, or a platform that cannot run one', async () => {
+    const f = await setup();
+    expect(await withSmoke(guard({ blocks: null })).autoApprove(await openReview(f), why)).toBe(
+      'merged',
+    );
+    reset();
+    const g = withSmoke(() => null);
+    expect(await g.autoApprove(await openReview(await setup()), why)).toBe('merged');
+    expect(await g.smokeBlocks(await openReview(await setup()))).toBeNull();
+  });
+
+  it('refuses to approve through the answer path until it is satisfied, and says why', async () => {
+    const f = await setup();
+    const row = await openReview(f);
+    const held = withSmoke(
+      guard({ blocks: 'Run the smoke test first, or override it with a reason.' }),
+    );
+    const me = { id: f.personId, roles: ['backend_engineer' as const] };
+    const rest = {
+      makeStanding: false,
+      standingScope: 'initiative' as const,
+      didntNeedToAsk: false,
+    };
+    const body = { answer: 'looks fine', decision: 'approved' as const, ...rest };
+    const refused = await answerAsPerson(
+      { db, rules: { independentReview: false }, gate: held },
+      row.id,
+      me,
+      'workspace',
+      body,
+    );
+    expect(refused).toMatchObject({ ok: false, status: 409, code: 'smoke_required' });
+    expect(refused.ok === false && refused.message).toContain('Run the smoke test first');
+    expect((await db.select().from(interaction).where(eq(interaction.id, row.id)))[0]!.state).toBe(
+      'open',
+    );
+    // Asking for changes or rejecting is not held up by a smoke test.
+    const changes = await answerAsPerson(
+      { db, rules: { independentReview: false }, gate: held },
+      row.id,
+      me,
+      'workspace',
+      { answer: 'not yet', decision: 'changes_requested', ...rest },
+    );
+    expect(changes.ok).toBe(true);
+  });
+
+  it('approves and merges once satisfied, and puts what the smoke test said on the approval', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    const g = withSmoke(guard({ blocks: null, evidence: 'Smoke test passed (3 checks).' }));
+    expect(await g.afterDecision(row)).toBe('merged');
+    const review = world.calls.find((c) => c.url.endsWith('/reviews'))!;
+    expect(review.body.body).toContain('Smoke test passed (3 checks).');
+  });
+
+  it('does not merge at the last moment when the smoke test is no longer satisfied', async () => {
+    const f = await setup();
+    const row = await approvedReview(f);
+    expect(
+      await withSmoke(guard({ blocks: 'The smoke test failed on this commit.' })).afterDecision(
+        row,
+      ),
+    ).toBe('failed');
+    expect(calledPaths()).not.toContain('PUT /pulls/7/merge');
+    expect(world.calls.filter((c) => c.url.endsWith('/reviews'))).toHaveLength(0);
+    expect((await card(row.id)).gate.detail).toContain('the smoke test has not passed');
+    const log = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.interactionId, row.id));
+    expect(log.map((l) => l.action)).toContain('gate.smoke_held');
   });
 });
 
