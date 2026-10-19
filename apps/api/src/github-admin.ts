@@ -8,7 +8,7 @@ import { recordActivity } from './activity.js';
 import type { ApiConfig } from './config.js';
 import { GitHubError, appJwt, buildManifest, secretName, storeAppSecrets } from './github-app.js';
 import type { AppKind, GitHubClient } from './github-app.js';
-import { requirePerson } from './people.js';
+import { currentPerson, requirePerson } from './people.js';
 import type { Signed } from './people.js';
 import type { SecretsStore } from './secrets.js';
 
@@ -37,6 +37,14 @@ async function requireAdmin(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<Signed | null> {
+  // A person who opens this page in a browser without being signed in is sent to sign in, and back here.
+  if (
+    !(await currentPerson(db, request)) &&
+    String(request.headers.accept ?? '').includes('text/html')
+  ) {
+    await reply.redirect(`/auth/login?next=${encodeURIComponent(request.url.split('?')[0]!)}`);
+    return null;
+  }
   const me = await requirePerson(db, request, reply);
   if (!me) return null;
   if (!me.roles.includes('platform_admin')) {

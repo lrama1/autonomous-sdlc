@@ -24,11 +24,12 @@ export function registerAuthRoutes(app: FastifyInstance, config: ApiConfig, db: 
   const redirectUri = `${config.PUBLIC_URL}/auth/callback`;
   const secure = config.PUBLIC_URL.startsWith('https://');
 
-  app.get('/auth/login', async (_request, reply) => {
+  app.get('/auth/login', async (request, reply) => {
+    const next = safeNext((request.query as { next?: string }).next);
     const cfg = await getOidc();
     const verifier = oidc.randomPKCECodeVerifier();
     const state = oidc.randomState();
-    reply.setCookie(FLOW_COOKIE, JSON.stringify({ verifier, state }), {
+    reply.setCookie(FLOW_COOKIE, JSON.stringify({ verifier, state, next }), {
       signed: true,
       httpOnly: true,
       sameSite: 'lax',
@@ -54,7 +55,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: ApiConfig, db: 
         .code(400)
         .send({ error: { code: 'login_expired', message: 'Sign-in session expired. Try again.' } });
     }
-    const flow = JSON.parse(unsigned.value) as { verifier: string; state: string };
+    const flow = JSON.parse(unsigned.value) as { verifier: string; state: string; next?: string };
     reply.clearCookie(FLOW_COOKIE, { path: '/auth' });
 
     const cfg = await getOidc();
@@ -119,11 +120,18 @@ export function registerAuthRoutes(app: FastifyInstance, config: ApiConfig, db: 
       detail: { subject: sub },
     });
     startSession(reply, row.id, secure);
-    return reply.redirect(config.PUBLIC_URL);
+    return reply.redirect(`${config.PUBLIC_URL}${safeNext(flow.next) ?? ''}`);
   });
 
   app.post('/auth/logout', async (_request, reply) => {
     endSession(reply);
     return { ok: true };
   });
+}
+
+/** Where to go after signing in: a path on this site, nothing else (never another address). */
+export function safeNext(v: string | undefined): string | undefined {
+  return typeof v === 'string' && /^\/[A-Za-z0-9._~\-/]{0,199}$/.test(v) && !v.includes('//')
+    ? v
+    : undefined;
 }

@@ -181,6 +181,16 @@ test('a review shows the preview the repository reported, and warns when it is o
   await expect(card(page, title).getByTestId('preview')).toHaveAttribute('data-state', 'ready');
 });
 
+test('opening an admin page without being signed in sends you to sign in, and back to the page', async ({
+  page,
+}) => {
+  await page.goto('/admin/github');
+  // The identity provider's page, not an error.
+  await page.getByRole('button', { name: /Dev Admin/ }).click();
+  await expect(page).toHaveURL(/\/admin\/github$/);
+  await expect(page.getByRole('heading', { name: /GitHub/i }).first()).toBeVisible();
+});
+
 test('a reviewer can run the pull request in a sandbox from the review, and stop it', async ({
   page,
 }) => {
