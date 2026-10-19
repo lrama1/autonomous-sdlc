@@ -8,6 +8,7 @@ Three throwaway experiments that test the riskiest assumptions in `spec.md` (§1
 | [s2-mcp-ask-human](./s2-mcp-ask-human) | `ask_human` over MCP from a headless run: block, default, non-blocking, park and resume, steering | **Pass** |
 | [s5 (below)](#spike-5-the-github-copilot-cli-as-a-second-engine-2026-10-18) | Copilot CLI as a second engine, through our gateway with BYOK | **Pass on this machine** (not yet in the sandbox image) |
 | [s3-fargate](./s3-fargate) | Fargate runner with a PostgreSQL sidecar, egress control, no AWS credentials | **Pass** (with one gap closed by DNS Firewall) |
+| [s6-fargate-runner](./s6-fargate-runner) | The pieces the platform's own Fargate runner needs, with the real runner image: private names, a proxy with a changing allowlist, S3 state, a reachable port | **Pass** (two fixes found, see below) |
 
 All AWS resources were created with Terraform and destroyed afterwards. The account was verified clean (the default VPC only). Total cost is a few cents.
 
@@ -131,3 +132,28 @@ Design consequences:
 - The Gate App approves only when the platform says so: a person approved at G3 (or the change type is pre-approved), CI is green, and no trigger fired. After approval, either App can perform the merge. The approval is what matters.
 - Without branch protection (no GitHub Pro on a private repository), the Gate role cannot be enforced against a determined agent. This is a limit of the platform on that repository.
 - Not tested: whether a human admin bypasses protection (`enforce_admins` is off, so the repository owner can).
+
+## Spike 6: what the platform's Fargate runner needs (2026-10-18)
+
+Setup (`spikes/s6-fargate-runner`, Terraform plus a Node driver, destroyed afterwards; the account was checked clean: no VPC, repository, endpoint or bucket left): the **real runner image** (`sdlc-runner:dev`) pushed to ECR; a VPC with a public subnet (a stand-in for the platform API, and the egress proxy) and an isolated subnet with no internet route (the runner); Cloud Map private names (`api.` and `egress.`); the VPC endpoints for ECR and logs and an S3 gateway endpoint whose policy allows the ECR layer bucket and one state bucket; a Route 53 DNS Firewall that allows only the private namespace and `amazonaws.com`; a runner task of 2 vCPU and 4 GB with no task role. A probe ran inside the runner task, four times.
+
+| Check | Result |
+|---|---|
+| The runner reaches the platform by a private Cloud Map name, with DNS Firewall on | **Pass** (no load balancer needed) |
+| The VPC resolver refuses `github.com` and `example.com` | **Pass** (NXDOMAIN) |
+| **The proxy still reaches `github.com`, because it resolves with its own public resolver (1.1.1.1), which the DNS Firewall does not see** | **Pass** (TLS verified through the tunnel) |
+| An unlisted host through the proxy | **Pass** (403) |
+| **The proxy's allowlist changes at run time** (it reads it from the platform every 3 s) | **Pass**: a host added was allowed 1 s later, no redeploy |
+| The runner cannot bypass the proxy or the DNS Firewall (direct 1.1.1.1 on 443 and on 53) | **Pass** (blocked) |
+| No AWS credentials in the task | **Pass** (no task role, no credentials variable) |
+| A 50 MB state snapshot to S3 and back by **presigned URLs**, through the gateway endpoint | **Pass** (0.6 s each way, content verified) |
+| A presigned URL for a bucket the policy does not allow | **Pass** (403) |
+| The platform connects to a port the runner opens (what a preview proxy would do) | **Pass** (security group rule from the platform to the runner) |
+| Image pull and start | About 8 s to pull the 330 MB (compressed) image; **26 to 33 s from request to running**. Much better than spike 3's estimate of 70 to 120 s, which pulled public images through a cache. |
+| Fargate vCPU quota | 64 vCPU, so about 30 concurrent 2-vCPU runs |
+
+Two fixes the spike found, both for the real build:
+- **The endpoints' security group must allow the whole VPC.** The ECR and CloudWatch Logs endpoints use private DNS, and that applies to every task in the VPC, not only runners. With the group open only to the runner group, the proxy task (public subnet) **stopped shipping logs after a few minutes**. This is also why spike 3 saw no ALLOW lines. After allowing the VPC's address range, the proxy's ALLOW and DENY lines (with the resolved address) appeared in CloudWatch. The platform's own tasks need the same.
+- **The first runner task after the endpoints were created failed** with `CannotPullContainerError` (a timeout to the ECR endpoint address). The next three starts worked. The adapter should retry a start that fails that way, a few times.
+
+Not covered: Claude Code or the Copilot CLI running in Fargate (the probe used the runner image but not an engine), a real `npm install` or git push through the proxy, the real API and gateway, a parked run resumed from a snapshot by the runner itself, and runs at scale.
