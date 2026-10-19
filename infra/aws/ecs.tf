@@ -122,6 +122,7 @@ resource "aws_ecs_task_definition" "api" {
       { name = "SECRETS_PREFIX", value = local.runtime_prefix },
       { name = "GATEWAY_URL", value = "http://gateway.${aws_service_discovery_private_dns_namespace.main.name}:8787" },
       { name = "RUNNER_ADAPTER", value = "fargate" },
+      { name = "RUNNER_EGRESS_ALLOW", value = var.runner_egress_allow },
       { name = "FARGATE_CLUSTER", value = aws_ecs_cluster.main.name },
       { name = "FARGATE_TASK_DEFINITION", value = aws_ecs_task_definition.runner.family },
       { name = "FARGATE_SUBNETS", value = aws_subnet.runner.id },

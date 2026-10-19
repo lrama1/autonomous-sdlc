@@ -16,6 +16,17 @@ describe('runnerEnvFrom', () => {
     });
   });
 
+  it('passes the addresses of the saved state through, when given', () => {
+    expect(
+      runnerEnvFrom({
+        ...base,
+        SDLC_STATE_GET_URL: 'https://s3/get',
+        SDLC_STATE_PUT_URL: 'https://s3/put',
+      }),
+    ).toMatchObject({ stateGetUrl: 'https://s3/get', statePutUrl: 'https://s3/put' });
+    expect(runnerEnvFrom(base)).toMatchObject({ stateGetUrl: undefined, statePutUrl: undefined });
+  });
+
   it('passes the sandbox gateway and tool addresses through', () => {
     const env = runnerEnvFrom({
       ...base,

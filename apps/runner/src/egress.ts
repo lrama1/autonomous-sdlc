@@ -1,3 +1,4 @@
+import dns from 'node:dns';
 import http from 'node:http';
 import net from 'node:net';
 
@@ -14,8 +15,18 @@ export interface Forward {
 }
 
 export interface EgressConfig {
-  /** Hostnames a CONNECT tunnel may reach, on port 443 only. A leading dot allows subdomains. */
-  allowHosts: string[];
+  /**
+   * Hostnames a CONNECT tunnel may reach, on port 443 only. A leading dot allows subdomains. A function is asked for
+   * every tunnel, so a list that changes while the proxy runs applies at once.
+   */
+  allowHosts: string[] | (() => string[]);
+  /** Finds the address of a host. The system resolver when not given. */
+  resolve?: (host: string) => Promise<string>;
+  /**
+   * A tunnel to a private, loopback or link-local address is refused, whatever the name says, so an allowed name
+   * cannot be pointed at the platform's own network. Tests that tunnel to this machine turn it off.
+   */
+  allowPrivateTargets?: boolean;
   forwards: Forward[];
   proxyPort: number;
   log?: (line: string) => void;
@@ -28,6 +39,45 @@ export function hostAllowed(host: string, allow: string[]): boolean {
     return x.startsWith('.') ? h.endsWith(x) || h === x.slice(1) : h === x;
   });
 }
+
+/** True for the addresses a tunnel must never reach: this host, private networks, link-local (cloud metadata), and the like. */
+export function isPrivateAddress(ip: string): boolean {
+  if (net.isIPv6(ip)) {
+    const v = ip.toLowerCase();
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v);
+    if (mapped) return isPrivateAddress(mapped[1]!);
+    return (
+      v === '::' || v === '::1' || v.startsWith('fe80:') || v.startsWith('fc') || v.startsWith('fd')
+    );
+  }
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b] = p as [number, number, number, number];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    a >= 224
+  );
+}
+
+/** A resolver that asks these servers (not the system's, which may be firewalled to an allowlist). */
+export function dnsResolver(servers: string[]): (host: string) => Promise<string> {
+  const r = new dns.promises.Resolver();
+  r.setServers(servers);
+  return async (host) => {
+    const [ip] = await r.resolve4(host);
+    if (!ip) throw new Error(`no address for ${host}`);
+    return ip;
+  };
+}
+
+const systemResolve = async (host: string) =>
+  (await dns.promises.lookup(host, { family: 4 })).address;
 
 /** Parses `8080=host.docker.internal:8080,8787=host.docker.internal:8787`. */
 export function parseForwards(text: string): Forward[] {
@@ -49,6 +99,8 @@ export interface RunningEgress {
 
 export async function startEgress(cfg: EgressConfig): Promise<RunningEgress> {
   const log = cfg.log ?? ((l) => console.log(l));
+  const allowed = () => (typeof cfg.allowHosts === 'function' ? cfg.allowHosts() : cfg.allowHosts);
+  const resolve = cfg.resolve ?? systemResolve;
   const servers: Array<net.Server | http.Server> = [];
   const sockets = new Set<net.Socket>();
   const track = (s: net.Socket) => {
@@ -77,28 +129,43 @@ export async function startEgress(cfg: EgressConfig): Promise<RunningEgress> {
     res.end('only HTTPS tunnels to allowed hosts');
   });
   proxy.on('connect', (req, rawSocket, head) => {
-    const clientSocket = rawSocket as net.Socket;
-    track(clientSocket);
-    const [host = '', portText = ''] = (req.url ?? '').split(':');
-    const port = Number(portText);
-    if (port !== 443 || !hostAllowed(host, cfg.allowHosts)) {
-      log(`DENY ${req.url}`);
-      clientSocket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
-      return;
-    }
-    const up = net.connect(port, host, () => {
-      log(`ALLOW ${req.url}`);
-      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      if (head.length) up.write(head);
-      up.pipe(clientSocket);
-      clientSocket.pipe(up);
-    });
-    track(up);
-    up.on('error', () => clientSocket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'));
+    void (async () => {
+      const clientSocket = rawSocket as net.Socket;
+      track(clientSocket);
+      const [host = '', portText = ''] = (req.url ?? '').split(':');
+      const port = Number(portText);
+      if (port !== 443 || !hostAllowed(host, allowed())) {
+        log(`DENY ${req.url}`);
+        clientSocket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+        return;
+      }
+      let ip: string;
+      try {
+        ip = net.isIP(host) ? host : await resolve(host);
+      } catch (e) {
+        log(`DNSFAIL ${req.url} ${(e as { code?: string }).code ?? ''}`.trim());
+        clientSocket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+        return;
+      }
+      if (!cfg.allowPrivateTargets && isPrivateAddress(ip)) {
+        log(`DENY ${req.url} resolves to ${ip}, a private address`);
+        clientSocket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+        return;
+      }
+      const up = net.connect(port, ip, () => {
+        log(`ALLOW ${req.url} -> ${ip}`);
+        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (head.length) up.write(head);
+        up.pipe(clientSocket);
+        clientSocket.pipe(up);
+      });
+      track(up);
+      up.on('error', () => clientSocket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'));
+    })();
   });
   await new Promise<void>((r) => proxy.listen(cfg.proxyPort, '0.0.0.0', r));
   servers.push(proxy);
-  log(`proxy :${cfg.proxyPort}, allow ${cfg.allowHosts.join(', ') || 'nothing'}`);
+  log(`proxy :${cfg.proxyPort}, allow ${allowed().join(', ') || 'nothing'}`);
 
   return {
     proxyPort: (proxy.address() as net.AddressInfo).port,

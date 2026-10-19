@@ -419,6 +419,12 @@ resource "aws_iam_role_policy" "api_runs" {
         Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = ["${aws_s3_bucket.state.arn}/*"]
       },
+      {
+        # Without this, S3 answers 403 instead of 404 for an object that is not there, and a fresh run looks like a refusal.
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [aws_s3_bucket.state.arn]
+      },
     ]
   })
 }

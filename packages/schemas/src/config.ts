@@ -59,6 +59,8 @@ export const apiConfigSchema = z.object({
   FARGATE_SUBNETS: z.string().optional(),
   FARGATE_SECURITY_GROUPS: z.string().optional(),
   FARGATE_STATE_BUCKET: z.string().optional(),
+  // A shared secret the egress proxy sends to read the hosts agents may reach. Without it the route is off.
+  EGRESS_ALLOW_TOKEN: z.string().min(16).optional(),
   RUNNER_IMAGE: z.string().default('sdlc-runner:dev'),
   // Hosts a sandbox may open HTTPS tunnels to. The platform itself is reached through fixed ports, not this list.
   RUNNER_EGRESS_ALLOW: z.string().default('github.com,registry.npmjs.org'),

@@ -30,6 +30,9 @@ export interface RunnerEnv {
   /** Where the engine reaches the Model Gateway and the platform tools from here. Inside a sandbox these differ from the spec. */
   gatewayUrl?: string;
   mcpUrl?: string;
+  /** Signed addresses for the run's parked files. Given on Fargate, where nothing survives a task. */
+  stateGetUrl?: string;
+  statePutUrl?: string;
   log?: (line: string) => void;
 }
 

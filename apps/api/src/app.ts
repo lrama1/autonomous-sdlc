@@ -33,6 +33,7 @@ import { loadAttentionPolicy } from './attention-policy.js';
 import { registerAttentionRoutes } from './attention-routes.js';
 import { registerAutopilotRoutes } from './autopilot-routes.js';
 import { registerMapRoutes } from './map-routes.js';
+import { registerEgressRoutes } from './egress-routes.js';
 import { registerPreviewRoutes } from './preview-routes.js';
 import { buildTick } from './build.js';
 import { registerBuildRoutes } from './build-routes.js';
@@ -240,6 +241,10 @@ export async function buildApp({
     alertPercent: config.BUDGET_ALERT_PERCENT,
   };
   registerCostRoutes(app, db, budget);
+  registerEgressRoutes(app, db, {
+    token: config.EGRESS_ALLOW_TOKEN,
+    fixed: config.RUNNER_EGRESS_ALLOW,
+  });
   registerPortfolioRoutes(app, db);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {

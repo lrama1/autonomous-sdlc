@@ -21,5 +21,7 @@ export function runnerEnvFrom(
     copilotBin: e.COPILOT_BIN ?? 'copilot',
     gatewayUrl: e.SDLC_GATEWAY_URL || undefined,
     mcpUrl: e.SDLC_MCP_URL || undefined,
+    stateGetUrl: e.SDLC_STATE_GET_URL || undefined,
+    statePutUrl: e.SDLC_STATE_PUT_URL || undefined,
   };
 }
