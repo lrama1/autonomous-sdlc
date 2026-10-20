@@ -251,6 +251,26 @@ export function parseDesignSmoke(markdown: string): DesignSmokeResult {
 }
 
 /** A check as one line, the way an engineer reads it. */
+const samePath = (a: string, b: string) =>
+  (a.length > 1 ? a.replace(/\/+$/, '') : a) === (b.length > 1 ? b.replace(/\/+$/, '') : b);
+
+/** Whether a check in a repository's smoke list does what the design requires: the same request, at least as strict. */
+export function satisfiesCheck(listed: SmokeCheck, required: SmokeCheck): boolean {
+  if (required.kind === 'run')
+    return listed.kind === 'run' && listed.command.trim() === required.command.trim();
+  return (
+    listed.kind === 'get' &&
+    samePath(listed.path, required.path) &&
+    listed.status === required.status &&
+    (required.contains === null || (listed.contains?.includes(required.contains) ?? false))
+  );
+}
+
+/** The checks the design requires that no check in the repository's smoke list satisfies. */
+export function missingChecks(required: SmokeCheck[], listed: SmokeCheck[]): SmokeCheck[] {
+  return required.filter((r) => !listed.some((l) => satisfiesCheck(l, r)));
+}
+
 export const describeSmokeCheck = (c: SmokeCheck): string =>
   c.kind === 'run'
     ? `run: ${c.command}`

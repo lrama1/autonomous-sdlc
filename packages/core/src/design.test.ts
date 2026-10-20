@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   describeSmokeCheck,
+  missingChecks,
   isTestPath,
   parseDesignSmoke,
   parseDesignTasks,
@@ -213,6 +214,30 @@ describe('the Architect agent prompt', () => {
       expect(r.smoke.checks.some((c) => c.kind === 'run' && c.command === 'npm run smoke')).toBe(
         true,
       );
+  });
+});
+
+describe('missingChecks', () => {
+  const get = (path: string, over: Record<string, unknown> = {}) =>
+    ({ kind: 'get', path, status: 200, contains: null, ...over }) as const;
+  it('finds what the design requires and the list lacks', () => {
+    const listed = [
+      get('/health', { contains: 'ok' }),
+      { kind: 'run', command: 'npm test' } as const,
+    ];
+    expect(missingChecks([get('/health'), get('/api/items')], listed)).toEqual([get('/api/items')]);
+    expect(missingChecks([{ kind: 'run', command: ' npm test ' }], listed)).toEqual([]);
+    expect(missingChecks([{ kind: 'run', command: 'npm run smoke' }], listed)).toHaveLength(1);
+  });
+  it('takes a listed check that asks the same and at least as much', () => {
+    expect(missingChecks([get('/health', { contains: 'ok' })], [get('/health/')])).toHaveLength(1);
+    expect(
+      missingChecks(
+        [get('/health', { contains: 'ok' })],
+        [get('/health/', { contains: 'all ok' })],
+      ),
+    ).toEqual([]);
+    expect(missingChecks([get('/x')], [get('/x', { status: 201 })])).toHaveLength(1);
   });
 });
 

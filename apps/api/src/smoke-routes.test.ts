@@ -10,6 +10,8 @@ import {
   createDb,
   createRunFixture,
   githubApp,
+  buildPlan,
+  buildTask,
   hat,
   interaction,
   person,
@@ -369,6 +371,113 @@ describe('the smoke test on a review', () => {
       payload: { decision: 'approved', answer: 'fine' },
     });
     expect(ok.statusCode).toBe(200);
+  });
+
+  /** Makes this review the pull request of a build task, in a plan whose design requires the given checks. */
+  async function asBuildTask(
+    reviewId: string,
+    smoke: unknown,
+    others: Array<'merged' | 'running' | 'skipped'> = ['merged'],
+  ) {
+    const [r] = await db.select().from(interaction).where(eq(interaction.id, reviewId));
+    const [design] = await db
+      .insert(interaction)
+      .values({
+        initiativeId: r!.initiativeId,
+        type: 'review',
+        checkpointId: 'G1',
+        state: 'answered',
+        title: 'Review the design',
+        roleNeeded: 'backend_engineer',
+        contextCard: {},
+      })
+      .returning();
+    const [plan] = await db
+      .insert(buildPlan)
+      .values({
+        initiativeId: r!.initiativeId,
+        designInteractionId: design!.id,
+        designPath: 'docs/design/x.md',
+        designSha: 'abc',
+        state: 'active',
+        smoke: smoke as never,
+      })
+      .returning();
+    const row = (key: string, position: number, state: string, runId: string | null) => ({
+      planId: plan!.id,
+      key,
+      position,
+      title: key,
+      role: 'backend_engineer',
+      state,
+      runId,
+    });
+    await db
+      .insert(buildTask)
+      .values([
+        row('T9', 9, 'review', r!.runId),
+        ...others.map((s, i) => row(`T${i + 1}`, i, s, null)),
+      ]);
+  }
+  const required = {
+    kind: 'checks',
+    checks: [
+      { kind: 'get', path: '/items', status: 200, contains: 'items' },
+      { kind: 'get', path: '/api/items', status: 200, contains: null },
+    ],
+  };
+
+  it('holds the pull request that finishes the build to every check the design requires', async () => {
+    const r = await review();
+    await asBuildTask(r.id, required);
+    const who = await newPerson();
+    const before = (await get(who.headers, r.id)).json();
+    expect(before.blocks).toContain('The design requires 1 smoke check');
+    expect(before.blocks).toContain('/api/items');
+
+    // Everything the file lists passes, and the one it lacks fails the run.
+    const done = await runAndWait(who.headers, r.id);
+    expect(done.run.state).toBe('failed');
+    const lacking = done.run.results.find((x: { ok: boolean }) => !x.ok);
+    expect(lacking).toMatchObject({ label: 'GET /api/items', ok: false });
+    expect(lacking.detail).toContain('the design requires it');
+    expect(done.run.results.filter((x: { ok: boolean }) => x.ok)).toHaveLength(3);
+    expect((await approve(who.headers, r.id)).statusCode).toBe(409);
+
+    const res = await override(who.headers, r.id, 'The route lands with the next pull request.');
+    expect(res.statusCode).toBe(201);
+    expect((await approve(who.headers, r.id)).statusCode).toBe(200);
+  });
+
+  it('asks for the design checks even when the repository lists none', async () => {
+    gh.config = 'start: node server.js\nport: 3000\n';
+    const r = await review();
+    await asBuildTask(r.id, required);
+    const who = await newPerson();
+    expect((await get(who.headers, r.id)).json()).toMatchObject({ required: 'required' });
+    const done = await runAndWait(who.headers, r.id);
+    expect(done.run.state).toBe('failed');
+    expect(done.run.results.map((x: { label: string }) => x.label)).toEqual([
+      'GET /items',
+      'GET /api/items',
+    ]);
+  });
+
+  it('leaves an earlier task alone, since a later one may build the check', async () => {
+    const r = await review();
+    await asBuildTask(r.id, required, ['merged', 'running']);
+    const who = await newPerson();
+    expect((await get(who.headers, r.id)).json().blocks).toContain('none has run');
+    const done = await runAndWait(who.headers, r.id);
+    expect(done.run.state).toBe('passed');
+  });
+
+  it('asks nothing extra when the design says none', async () => {
+    gh.config = 'start: node server.js\nport: 3000\n';
+    const r = await review();
+    await asBuildTask(r.id, { kind: 'none', reason: 'a library' });
+    const who = await newPerson();
+    expect((await get(who.headers, r.id)).json()).toMatchObject({ required: 'none', blocks: null });
   });
 
   it('needs a signed-in person with a role, and a pull request review', async () => {

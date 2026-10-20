@@ -1,7 +1,13 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { interaction, person, smokeRun } from '@sdlc/db';
+import { buildPlan, buildTask, interaction, person, smokeRun } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
-import { parsePreviewConfig, PREVIEW_CONFIG_PATH } from '@sdlc/core';
+import {
+  describeSmokeCheck,
+  missingChecks,
+  parsePreviewConfig,
+  PREVIEW_CONFIG_PATH,
+} from '@sdlc/core';
+import type { DesignSmoke } from '@sdlc/core';
 import type { SmokeCheck } from '@sdlc/core';
 import { recordActivity } from './activity.js';
 import type { PreviewHost } from './docker-preview.js';
@@ -21,7 +27,9 @@ export type SmokeStartResult =
 
 /** Whether a repository asks for smoke checks at a commit. */
 export type SmokeRequirement =
-  { kind: 'none' } | { kind: 'required'; checks: number } | { kind: 'invalid'; message: string };
+  | { kind: 'none' }
+  | { kind: 'required'; checks: number; missing?: SmokeCheck[] }
+  | { kind: 'invalid'; message: string };
 
 export type SmokeOverrideResult =
   { ok: true; row: SmokeRow } | { ok: false; status: number; code: string; message: string };
@@ -65,6 +73,7 @@ export class SmokeService {
   ) {}
 
   private readonly required_ = new Map<string, SmokeRequirement>();
+  private readonly listed_ = new Map<string, SmokeCheck[]>();
 
   /** Marks tests that were running when an earlier process stopped: nobody is running them now. */
   async recover(): Promise<void> {
@@ -110,10 +119,45 @@ export class SmokeService {
       if (!parsed.ok) out = { kind: 'invalid', message: parsed.errors.join('; ') };
       else if (parsed.config.smoke.length > 0)
         out = { kind: 'required', checks: parsed.config.smoke.length };
+      if (parsed.ok) this.listed_.set(key, parsed.config.smoke);
     }
-    if (this.required_.size > 500) this.required_.clear();
+    if (this.required_.size > 500) {
+      this.required_.clear();
+      this.listed_.clear();
+    }
     this.required_.set(key, out);
     return out;
+  }
+
+  /**
+   * The checks the approved design requires that this pull request's smoke list does not have. Only the pull request that
+   * finishes the build is held to the whole list: an earlier task may leave a check to a later one. Nothing is required of
+   * a pull request that is not a build task, or of a plan made before designs stated their checks.
+   */
+  async designGap(review: InteractionRow, sha: string): Promise<SmokeCheck[]> {
+    const { db } = this.deps;
+    const card = review.contextCard as PrCard;
+    if (!review.runId || !card.repository) return [];
+    const [task] = await db.select().from(buildTask).where(eq(buildTask.runId, review.runId));
+    if (!task) return [];
+    const [plan] = await db.select().from(buildPlan).where(eq(buildPlan.id, task.planId));
+    const smoke = plan?.smoke as DesignSmoke | null | undefined;
+    if (!plan || !smoke || smoke.kind !== 'checks') return [];
+    const all = await db.select().from(buildTask).where(eq(buildTask.planId, plan.id));
+    if (!all.every((t) => t.id === task.id || t.state === 'merged' || t.state === 'skipped'))
+      return [];
+    await this.requirement(card.repository, sha);
+    return missingChecks(smoke.checks, this.listed_.get(`${card.repository}@${sha}`) ?? []);
+  }
+
+  /** What the repository asks for at this review's commit, and what the design asks for on top of that. */
+  async requirementFor(review: InteractionRow): Promise<SmokeRequirement> {
+    const card = review.contextCard as PrCard;
+    const base = await this.requirement(card.repository!, card.headSha!);
+    if (base.kind === 'invalid') return base;
+    const missing = await this.designGap(review, card.headSha!);
+    if (missing.length === 0) return base;
+    return { kind: 'required', checks: base.kind === 'required' ? base.checks : 0, missing };
   }
 
   /** The newest result for one commit of a pull request. */
@@ -143,7 +187,7 @@ export class SmokeService {
       return null;
     let req: SmokeRequirement;
     try {
-      req = await this.requirement(card.repository, card.headSha);
+      req = await this.requirementFor(row);
     } catch (e) {
       return `Could not check whether this repository requires a smoke test (${e instanceof Error ? e.message : String(e)}). Try again.`;
     }
@@ -153,6 +197,8 @@ export class SmokeService {
     const how = 'Run the smoke test again, or override it with a reason.';
     if (req.kind === 'invalid')
       return `${PREVIEW_CONFIG_PATH} cannot be read, so its smoke checks cannot run (${req.message}). Fix it, or override the smoke test with a reason.`;
+    if (!latest && req.missing)
+      return `The design requires ${req.missing.length} smoke check${req.missing.length === 1 ? '' : 's'} that ${PREVIEW_CONFIG_PATH} does not list (${req.missing.map(describeSmokeCheck).join('; ')}), and this is the pull request that finishes the build. Run the smoke test to see the whole result, or override it with a reason.`;
     if (!latest)
       return `This repository has ${req.checks} smoke check${req.checks === 1 ? '' : 's'}, and none has run on this commit. Run the smoke test first, or override it with a reason.`;
     if (latest.state === 'running')
@@ -251,7 +297,7 @@ export class SmokeService {
         code: 'review_decided',
         message: 'That review has been decided, so there is nothing to override.',
       };
-    const req = await this.requirement(card.repository, card.headSha);
+    const req = await this.requirementFor(review);
     if (req.kind === 'none')
       return {
         ok: false,
@@ -324,17 +370,19 @@ export class SmokeService {
     if (pr.state !== 'open')
       return fail(409, 'pull_request_closed', 'That pull request is no longer open.');
 
+    const gap = await this.designGap(review, pr.head.sha);
     const text = await github.readFile(repository, PREVIEW_CONFIG_PATH, pr.head.sha);
-    if (text === null)
+    if (text === null && gap.length === 0)
       return fail(
         422,
         'no_config',
         `This repository has no ${PREVIEW_CONFIG_PATH}, so there is nothing to run or check.`,
       );
-    const parsed = parsePreviewConfig(text);
-    if (!parsed.ok)
+    const parsed = text === null ? null : parsePreviewConfig(text);
+    if (parsed && !parsed.ok)
       return fail(422, 'bad_config', `${PREVIEW_CONFIG_PATH}: ${parsed.errors.join('; ')}`);
-    if (parsed.config.smoke.length === 0)
+    const listed = parsed?.ok ? parsed.config.smoke : [];
+    if (listed.length === 0 && gap.length === 0)
       return fail(
         422,
         'no_smoke_checks',
@@ -372,9 +420,15 @@ export class SmokeService {
       initiativeId: review.initiativeId,
       interactionId: review.id,
       action: 'smoke.started',
-      detail: { repository, prNumber, sha: pr.head.sha, checks: parsed.config.smoke.length },
+      detail: {
+        repository,
+        prNumber,
+        sha: pr.head.sha,
+        checks: listed.length,
+        ...(gap.length > 0 ? { missingFromDesign: gap.map(describeSmokeCheck) } : {}),
+      },
     });
-    const job = this.execute(row!, parsed.config.smoke, interactionId, by).finally(() =>
+    const job = this.execute(row!, listed, gap, interactionId, by).finally(() =>
       this.running.delete(job),
     );
     this.running.add(job);
@@ -415,6 +469,7 @@ export class SmokeService {
   private async execute(
     row: SmokeRow,
     checks: SmokeCheck[],
+    gap: SmokeCheck[],
     interactionId: string,
     by: string | null,
   ): Promise<void> {
@@ -422,7 +477,11 @@ export class SmokeService {
     const started: { here: boolean; id: string | null } = { here: false, id: null };
     let outcome: SmokeOutcome;
     try {
-      outcome = await this.check(row, checks, interactionId, by, started);
+      // With nothing listed there is nothing to run: only what the design requires and the file lacks is reported.
+      outcome =
+        checks.length === 0
+          ? { state: 'passed', results: [], detail: null }
+          : await this.check(row, checks, interactionId, by, started);
     } catch (e) {
       outcome = {
         state: 'error',
@@ -430,6 +489,21 @@ export class SmokeService {
         detail: `could not run the smoke test: ${e instanceof Error ? e.message : String(e)}`,
       };
     }
+    if (gap.length > 0 && outcome.state !== 'error')
+      outcome = {
+        state: 'failed',
+        results: [
+          ...outcome.results,
+          ...gap.map((c) => ({
+            kind: c.kind,
+            label: c.kind === 'get' ? `GET ${c.path}` : `run ${c.command}`,
+            ok: false,
+            detail: `the design requires it, and ${PREVIEW_CONFIG_PATH} does not list it`,
+            ms: 0,
+          })),
+        ],
+        detail: null,
+      };
     if (started.here && started.id)
       await previews
         .stop(started.id, 'stopped', 'The smoke test finished.')

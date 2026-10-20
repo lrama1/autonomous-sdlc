@@ -63,7 +63,7 @@ export function registerSmokeRoutes(
     }
     let req;
     try {
-      req = await svc.requirement(review.repository, review.headSha);
+      req = await svc.requirementFor(review.row);
     } catch (e) {
       request.log.warn({ err: e instanceof Error ? e.message : String(e) }, 'smoke lookup failed');
       return reply.code(502).send({
