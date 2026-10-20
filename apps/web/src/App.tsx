@@ -39,6 +39,7 @@ import { BudgetBanner, Costs } from './Costs';
 import { Portfolio } from './Portfolio';
 import { Integrations } from './Integrations';
 import { MapPage } from './MapPage';
+import { Landing, SignInCard } from './Landing';
 import { Interruptions } from './Interruptions';
 import { Queue } from './Queue';
 import { getHealth, getMe, getReady, signOut } from './api';
@@ -218,7 +219,7 @@ export function App() {
       )}
       <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: { xs: 2, md: 3 } }}>
         <Toolbar />
-        <Container maxWidth={atHome ? 'md' : 'xl'} disableGutters>
+        <Container maxWidth={atHome ? (signedIn ? 'md' : 'lg') : 'xl'} disableGutters>
           {signedIn && state.phase === 'ready' && state.me?.roles.includes('platform_admin') && (
             <BudgetBanner />
           )}
@@ -253,7 +254,7 @@ export function App() {
           {state.phase === 'ready' && state.me && route.page === 'map' && (
             <MapPage initiativeId={route.initiativeId} me={state.me} />
           )}
-          {state.phase === 'ready' && (!state.me || route.page === 'home') && (
+          {state.phase === 'ready' && !state.me && route.page === 'home' && (
             <Stack spacing={2}>
               <Card aria-label="Status">
                 <CardContent>
@@ -264,7 +265,21 @@ export function App() {
                   </Typography>
                 </CardContent>
               </Card>
-              {state.me ? (
+              <Landing signIn={<SignInCard />} />
+            </Stack>
+          )}
+          {state.phase === 'ready' && state.me && route.page === 'home' && (
+            <Stack spacing={2}>
+              <Card aria-label="Status">
+                <CardContent>
+                  <Typography data-testid="api-status">
+                    API: <strong>{state.health.status}</strong> {'\u00b7'} database:{' '}
+                    <strong>{state.ready.checks.database}</strong> {'\u00b7'} v
+                    {state.health.version}
+                  </Typography>
+                </CardContent>
+              </Card>
+              {state.me && (
                 <>
                   <Card aria-label="Signed in">
                     <CardContent>
@@ -301,20 +316,6 @@ export function App() {
                     </CardContent>
                   </Card>
                 </>
-              ) : (
-                <Card aria-label="Signed out">
-                  <CardContent>
-                    <Typography gutterBottom>You are not signed in.</Typography>
-                    <Button
-                      variant="contained"
-                      component="a"
-                      href="/auth/login"
-                      data-testid="sign-in"
-                    >
-                      Sign in
-                    </Button>
-                  </CardContent>
-                </Card>
               )}
             </Stack>
           )}
