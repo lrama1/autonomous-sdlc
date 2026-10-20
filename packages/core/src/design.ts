@@ -26,6 +26,8 @@ export type DesignTasksResult =
 const ID = /^T\d{1,3}$/;
 const STORY = /^US-\d{1,3}$/;
 const MAX_TASKS = 20;
+/** More files than this is more than one engineer run can do well. */
+const MAX_TASK_PATHS = 6;
 
 const TEST_PATH =
   /(^|\/)(tests?|__tests__|e2e|specs?)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py|rb)$|(^|\/)test_[^/]+\.py$/i;
@@ -80,6 +82,10 @@ export function validateDesignTasks(raw: unknown): DesignTasksResult {
     if (dependsOn === null) errors.push(`${label}: depends_on must be a list of task ids`);
     const paths = strings(e.paths);
     if (paths === null) errors.push(`${label}: paths must be a list of the files it touches`);
+    if (paths !== null && paths.length > MAX_TASK_PATHS)
+      errors.push(
+        `${label}: lists ${paths.length} files, and one engineer run can do about ${MAX_TASK_PATHS}. Split it by files: one module and its tests per task, and the file that wires them together in the last task`,
+      );
     const doneWhen = strings(e.done_when);
     if (doneWhen === null) {
       errors.push(

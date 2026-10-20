@@ -263,6 +263,23 @@ try {
         });
         return false;
       }
+      // DOGFOOD_SENDBACK=1: the first review with a high finding is sent back to the engineer instead of being dismissed,
+      // to see the task redone with the findings in its prompt.
+      if (
+        process.env.DOGFOOD_SENDBACK &&
+        !securitySeen.has('sentback') &&
+        sc.run.findings.some((f: any) => !f.dismissed && ['critical', 'high'].includes(f.severity))
+      ) {
+        securitySeen.set('sentback', q.id);
+        say(`SENDING BACK "${q.title.slice(0, 80)}" with its security findings`);
+        findings.push(
+          `${q.title.slice(0, 80)} - sent back to the engineer with the security findings`,
+        );
+        await call(bob, 'POST', `/api/interactions/${q.id}/security/send-back`, {}).catch((e) =>
+          say(`send-back failed: ${e.message.slice(0, 200)}`),
+        );
+        return false;
+      }
       for (const f of sc.run.findings) {
         if (f.dismissed || securitySeen.has(`${key}:${f.id}`)) continue;
         securitySeen.set(`${key}:${f.id}`, 'noted');

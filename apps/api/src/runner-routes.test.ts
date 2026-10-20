@@ -283,7 +283,7 @@ describe('GET /runner/spec', () => {
         verifyCommand: 'npm run verify',
         protectedPaths: ['.github/workflows/**', 'scripts/**'],
       },
-      limits: { maxTurns: 60, maxVerifyAttempts: 3 },
+      limits: { maxTurns: 100, maxVerifyAttempts: 3 },
       tools: { denied: ['web_fetch'] },
     });
     expect(spec.repo.branch).toBe(`agent/${f.runId}/add-a-health-endpoint`);

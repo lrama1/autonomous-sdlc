@@ -84,6 +84,19 @@ describe('validateDesignTasks', () => {
     ).toBe(true);
   });
 
+  it('refuses a task that lists more files than one engineer run can do', () => {
+    const files = [
+      'src/a.js',
+      'src/b.js',
+      'src/c.js',
+      'test/a.test.js',
+      'test/b.test.js',
+      'test/c.test.js',
+    ];
+    expect(validateDesignTasks([task({ paths: files })]).ok).toBe(true);
+    expect(errorsOf([task({ paths: [...files, 'src/d.js'] })])).toContain('lists 7 files');
+  });
+
   it('names what is wrong with a task', () => {
     expect(errorsOf([task({ id: 'one' })])).toContain('id must look like T1');
     expect(errorsOf([task(), task()])).toContain('used twice');

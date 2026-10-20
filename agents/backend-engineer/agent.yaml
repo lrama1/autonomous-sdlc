@@ -19,7 +19,7 @@ tools:
   engine_builtin: [read, edit, write, bash, grep, glob]
   denied: [web_fetch]
 limits:
-  max_turns: 60
+  max_turns: 100
   max_wall_seconds: 1800
   budget_usd: 2.00
 asks: [peer_engineer]
