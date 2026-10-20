@@ -122,6 +122,23 @@ export function validateDesignTasks(raw: unknown): DesignTasksResult {
       }
     }
   }
+  // A task that has no code file of its own (every one it lists is also listed by another task) ends up with nothing to
+  // do: the engineer of the first task builds the whole feature, and this one finishes without a pull request. Splitting
+  // the work by layers of the same file does that. Tests, the preview config and documents do not count as code.
+  const codeOf = (t: DesignTask) =>
+    t.paths.filter(
+      (p) => !isTestPath(p) && !p.replace(/\\/g, '/').startsWith('.sdlc/') && !/\.md$/i.test(p),
+    );
+  tasks.forEach((t, i) => {
+    const mine = codeOf(t);
+    if (mine.length === 0) return;
+    const earlier = tasks.slice(0, i);
+    if (!mine.every((p) => earlier.some((u) => u.paths.includes(p)))) return;
+    const by = earlier.filter((u) => mine.some((p) => u.paths.includes(p))).map((u) => u.id);
+    errors.push(
+      `${t.id}: every code file it lists (${mine.join(', ')}) is also listed by ${by.join(', ')}, which comes first and would build it all, so this task would end with nothing to change. Merge ${t.id} into it, or give ${t.id} a file of its own`,
+    );
+  });
   if (errors.length > 0) return { ok: false, errors };
 
   // Kahn's algorithm, keeping the order the author wrote tasks in whenever dependencies allow.

@@ -507,7 +507,7 @@ describe('tasks that touch the same files', () => {
   it('runs tasks that declare the same file one after another', async () => {
     designText = block(
       task('T1', { paths: 'src/server.js' }) +
-        task('T2', { paths: 'src/server.js, test/a.js' }) +
+        task('T2', { paths: 'src/server.js, src/routes.js, test/a.js' }) +
         task('T3', { paths: 'src/other.js' }),
     );
     const f = await approvedDesign();

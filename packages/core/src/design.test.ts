@@ -14,7 +14,8 @@ const task = (o: Record<string, unknown> = {}) => ({
   role: 'backend_engineer',
   stories: ['US-1'],
   depends_on: [],
-  paths: ['src/server.js'],
+  // Each task writes a file of its own unless a test says otherwise.
+  paths: [`src/${String(o.id ?? 'T1').toLowerCase()}.js`],
   done_when: ['GET /x answers 200'],
   ...o,
 });
@@ -52,6 +53,34 @@ describe('validateDesignTasks', () => {
     expect(validateDesignTasks({ id: 'T1' }).ok).toBe(false);
     const many = Array.from({ length: 21 }, (_, i) => task({ id: `T${i + 1}` }));
     expect(errorsOf(many)).toContain('at most 20');
+  });
+
+  it('refuses a task whose code files another task already writes, and says which to merge', () => {
+    const err = errorsOf([
+      task({ id: 'T1', paths: ['public/index.html', 'public/client.js', 'test/ui.test.js'] }),
+      task({ id: 'T2', depends_on: ['T1'], paths: ['public/client.js', 'test/ui.test.js'] }),
+    ]);
+    expect(err).toContain('T2: every code file it lists (public/client.js) is also listed by T1');
+    expect(err).toContain('Merge T2 into it');
+    // The same files in both tasks: only the later one is sent back.
+    expect(
+      errorsOf([task({ id: 'T1', paths: ['src/a.js'] }), task({ id: 'T2', paths: ['src/a.js'] })]),
+    ).not.toContain('T1:');
+  });
+
+  it('does not count tests, the preview config or documents as a code file of its own', () => {
+    const err = errorsOf([
+      task({ id: 'T1', paths: ['src/main.js', 'test/main.test.js'] }),
+      task({ id: 'T2', paths: ['src/main.js', '.sdlc/preview.yaml'] }),
+    ]);
+    expect(err).toContain('T2: every code file it lists (src/main.js)');
+    // A task with a file of its own may also touch a shared one.
+    expect(
+      validateDesignTasks([
+        task({ id: 'T1', paths: ['src/main.js'] }),
+        task({ id: 'T2', paths: ['src/main.js', 'src/extra.js'] }),
+      ]).ok,
+    ).toBe(true);
   });
 
   it('names what is wrong with a task', () => {
