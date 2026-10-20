@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Edge } from '@xyflow/react';
 import type { SecurityDto, SmokeDto } from '@sdlc/schemas';
-import { FlowCanvas } from '../flow/FlowCanvas';
+import { FlowCanvas } from '../flow/LazyFlow';
 import type { StepNodeType, StepState } from '../flow/StepNode';
 
 interface Props {

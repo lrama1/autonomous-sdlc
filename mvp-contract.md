@@ -925,6 +925,15 @@ A reviewer asks the Security agent to read a pull request before approving it. D
 - *Fifth run. All of it worked together, 3 of 3 tasks merged, $3.40, 20 minutes.* The Architect wrote three tasks, each with a file of its own. The Security agent read every pull request. On T1's first pull request it found a high stored XSS (a person's id put into an `onclick` attribute); the run sent it back with one click; the task was redone with the findings in its prompt, and the second pull request had no XSS finding. The second pull request had a new high finding of its own (a path-traversal guard that uses `startsWith` without a separator, which lets a sibling folder through); the script dismissed it with a reason and wrote it down. The smoke test ran on every pull request, and the final one carried every check the design required. Not seen in this run: a missing required check, and "send back to the Architect" (nothing was unbuildable).
 - *What it shows.* The review found a different hole after the first was fixed, so one pass is not a guarantee. The export endpoint is where an agent got something wrong that a person could easily miss, and the review caught it.
 
+**Web interface (2026-10-20). Rebuilt on Material UI with React Flow diagrams. Every page converted; the 17 browser tests pass unchanged.**
+
+- **Look.** One theme (`apps/web/src/theme.ts`) for light and dark, following the computer's setting with no toggle and no flash. A top bar, a side menu (a drawer under 900 px), and Material UI components on every page; the old stylesheet is gone. Page text, labels, roles and `data-testid` hooks are as before, so the browser tests did not change.
+- **Diagrams** (`apps/web/src/flow/`, React Flow `@xyflow/react`, loaded only when a page draws one so they are not in every page's first load). Read-only; the mouse wheel stays with the page.
+  - **Home:** how work moves between people, agents and the platform, from a goal to a release (the same on every deployment).
+  - **Map:** the initiative's stages as a pipeline with live state and links to the asks waiting on people; the build plan as a graph of tasks and what each waits for, coloured by state, above the task list that still carries Retry, Skip, Start and Send back.
+  - **Queue:** on a pull request review, what stands between it and a merge (the agent's own checks, the smoke test, the security review, your decision, CI, the merge), drawing only the checks that repository has.
+- **Not done.** No unit tests for components (the browser tests are the proof); the diagrams are not keyboard-navigable beyond their links; no way to switch the theme against the computer's setting; the main bundle is about 760 kB (230 kB compressed) because of Material UI.
+
 ## 17. Test strategy
 
 - **Unit** (`packages/core`): state machines, rules evaluation, ranking, routing. No I/O.

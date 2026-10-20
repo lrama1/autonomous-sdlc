@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { Edge } from '@xyflow/react';
-import { FlowCanvas } from './FlowCanvas';
+import { FlowCanvas } from './LazyFlow';
 import type { StageNodeType, StageView } from './StageNode';
 
 /** The stages of one initiative in order, with the arrows between them. Rebuilt only when a stage changes. */

@@ -1,5 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AssumptionDto, StandingDecisionDto } from '@sdlc/schemas';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Chip from '@mui/material/Chip';
+import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import Tabs from '@mui/material/Tabs';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import {
   ApiProblem,
   createStandingDecision,
@@ -10,6 +27,7 @@ import {
   retireStandingDecision,
 } from './api';
 import { roleLabel } from './labels';
+import { PageHeader, StatusChip } from './ui';
 
 const SCOPE_LABEL: Record<string, string> = {
   global: 'Everywhere',
@@ -32,9 +50,10 @@ function AddStanding({ onAdded }: { onAdded: () => void }) {
   }, []);
 
   return (
-    <form
-      className="card form"
-      onSubmit={async (e) => {
+    <Card
+      component="form"
+      sx={{ mt: 2 }}
+      onSubmit={async (e: React.FormEvent) => {
         e.preventDefault();
         setProblem(null);
         try {
@@ -51,50 +70,59 @@ function AddStanding({ onAdded }: { onAdded: () => void }) {
         }
       }}
     >
-      <h3>Add a standing decision</h3>
-      <p className="small muted">
-        Agents search these before they ask. The topic is the key an agent uses when it asks, for
-        example
-        <code> date-library</code>.
-      </p>
-      <div className="row wrap">
-        <input
-          aria-label="Topic"
-          placeholder="Topic, for example date-library"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          required
-        />
-        <input
-          aria-label="Decision"
-          placeholder="Use date-fns for dates and times"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          required
-          className="wide"
-        />
-        <select
-          aria-label="Applies to"
-          value={scopeId}
-          onChange={(e) => setScopeId(e.target.value)}
+      <CardContent>
+        <Typography component="h3" variant="h3" gutterBottom>
+          Add a standing decision
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Agents search these before they ask. The topic is the key an agent uses when it asks, for
+          example <code>date-library</code>.
+        </Typography>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={1.5}
+          sx={{ alignItems: 'flex-start' }}
         >
-          <option value="">Everywhere</option>
-          {initiatives.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.title}
-            </option>
-          ))}
-        </select>
-        <button className="primary" type="submit">
-          Save
-        </button>
-      </div>
-      {problem && (
-        <p role="alert" className="callout warn">
-          {problem}
-        </p>
-      )}
-    </form>
+          <TextField
+            label="Topic"
+            placeholder="Topic, for example date-library"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            required
+          />
+          <TextField
+            label="Decision"
+            placeholder="Use date-fns for dates and times"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            required
+            sx={{ minWidth: 280 }}
+          />
+          <TextField
+            select
+            label="Applies to"
+            value={scopeId}
+            onChange={(e) => setScopeId(e.target.value)}
+            slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+          >
+            <option value="">Everywhere</option>
+            {initiatives.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.title}
+              </option>
+            ))}
+          </TextField>
+          <Button variant="contained" type="submit" sx={{ mt: 0.25 }}>
+            Save
+          </Button>
+        </Stack>
+        {problem && (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            {problem}
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -124,132 +152,159 @@ export function Assumptions() {
     await decideAssumption(a.id, verb);
     setResult(
       verb === 'accept'
-        ? `“${a.text}” is accepted.`
-        : `“${a.text}” is rejected. The person who started the run has been asked what to redo.`,
+        ? `\u201c${a.text}\u201d is accepted.`
+        : `\u201c${a.text}\u201d is rejected. The person who started the run has been asked what to redo.`,
     );
     await load();
   };
 
   return (
     <>
-      <div className="page-head">
-        <div className="row">
-          <h1>Assumptions and decisions</h1>
-          {assumptions && assumptions.length > 0 && (
-            <span className="pill wait">{assumptions.length} to review</span>
-          )}
-        </div>
-        <p className="muted">
-          Agents make small calls and say so. You can accept or reject them any time, and agents
-          stop asking about things you have already settled.
-        </p>
-      </div>
+      <PageHeader
+        title="Assumptions and decisions"
+        chip={
+          assumptions &&
+          assumptions.length > 0 && (
+            <StatusChip tone="wait" label={`${assumptions.length} to review`} />
+          )
+        }
+        subtitle="Agents make small calls and say so. You can accept or reject them any time, and agents stop asking about things you have already settled."
+      />
       {error && (
-        <p role="alert" className="callout warn">
+        <Alert severity="warning" sx={{ mb: 2 }}>
           {error}
-        </p>
+        </Alert>
       )}
-      <div className="tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === 'assumptions'}
-          onClick={() => setTab('assumptions')}
-        >
-          Assumptions <span className="count">{assumptions?.length ?? 0}</span>
-        </button>
-        <button role="tab" aria-selected={tab === 'standing'} onClick={() => setTab('standing')}>
-          Standing decisions <span className="count">{standing?.length ?? 0}</span>
-        </button>
-      </div>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab
+          value="assumptions"
+          label={
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <span>Assumptions</span>
+              <Chip className="count" label={assumptions?.length ?? 0} />
+            </Stack>
+          }
+        />
+        <Tab
+          value="standing"
+          label={
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <span>Standing decisions</span>
+              <Chip className="count" label={standing?.length ?? 0} />
+            </Stack>
+          }
+        />
+      </Tabs>
 
       {tab === 'assumptions' && (
         <>
-          <table className="t" data-testid="assumptions">
-            <thead>
-              <tr>
-                <th>Assumption</th>
-                <th>Declared by</th>
-                <th>Initiative</th>
-                <th>Your call</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assumptions?.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="muted">
-                    Nothing to review.
-                  </td>
-                </tr>
-              )}
-              {assumptions?.map((a) => (
-                <tr key={a.id}>
-                  <td>{a.text}</td>
-                  <td>
-                    <span className="chip agent">{roleLabel(a.agentRole)}</span>
-                  </td>
-                  <td className="small">{a.initiativeTitle}</td>
-                  <td>
-                    <button onClick={() => decide(a, 'accept')}>Accept</button>{' '}
-                    <button onClick={() => decide(a, 'reject')}>Reject</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Card>
+            <TableContainer>
+              <Table size="small" data-testid="assumptions">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Assumption</TableCell>
+                    <TableCell>Declared by</TableCell>
+                    <TableCell>Initiative</TableCell>
+                    <TableCell>Your call</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {assumptions?.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} sx={{ color: 'text.secondary' }}>
+                        Nothing to review.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {assumptions?.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell>{a.text}</TableCell>
+                      <TableCell>
+                        <Chip color="secondary" variant="outlined" label={roleLabel(a.agentRole)} />
+                      </TableCell>
+                      <TableCell>{a.initiativeTitle}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        <Button size="small" variant="outlined" onClick={() => decide(a, 'accept')}>
+                          Accept
+                        </Button>{' '}
+                        <Button size="small" variant="outlined" onClick={() => decide(a, 'reject')}>
+                          Reject
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
           {result && (
-            <p className="callout ok" data-testid="result">
+            <Alert severity="success" data-testid="result" sx={{ mt: 2 }}>
               {result}
-            </p>
+            </Alert>
           )}
-          <p className="small muted">
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
             Accepting records the call. Rejecting asks the person who started the run what to redo,
             so nothing is forgotten.
-          </p>
+          </Typography>
         </>
       )}
 
       {tab === 'standing' && (
         <>
-          <table className="t" data-testid="standing">
-            <thead>
-              <tr>
-                <th>Topic</th>
-                <th>Decision</th>
-                <th>Applies to</th>
-                <th>Set by</th>
-                <th>Answered since</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {standing?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="muted">
-                    None yet. Answer an ask and tick “Use this answer from now on”.
-                  </td>
-                </tr>
-              )}
-              {standing?.map((s) => (
-                <tr key={s.id}>
-                  <td className="mono">{s.topic}</td>
-                  <td>{s.text}</td>
-                  <td className="small">{SCOPE_LABEL[s.scope] ?? s.scope}</td>
-                  <td className="small">{s.createdByName ?? 'n/a'}</td>
-                  <td>{s.answeredSince}</td>
-                  <td>
-                    <button
-                      onClick={async () => {
-                        await retireStandingDecision(s.id);
-                        await load();
-                      }}
-                    >
-                      Retire
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Card>
+            <TableContainer>
+              <Table size="small" data-testid="standing">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Topic</TableCell>
+                    <TableCell>Decision</TableCell>
+                    <TableCell>Applies to</TableCell>
+                    <TableCell>Set by</TableCell>
+                    <TableCell>Answered since</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {standing?.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>
+                        None yet. Answer an ask and tick {'\u201c'}Use this answer from now on
+                        {'\u201d'}.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {standing?.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell>
+                        <Box component="code">{s.topic}</Box>
+                      </TableCell>
+                      <TableCell>{s.text}</TableCell>
+                      <TableCell>{SCOPE_LABEL[s.scope] ?? s.scope}</TableCell>
+                      <TableCell>{s.createdByName ?? 'n/a'}</TableCell>
+                      <TableCell>{s.answeredSince}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={async () => {
+                            await retireStandingDecision(s.id);
+                            await load();
+                          }}
+                        >
+                          Retire
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
           <AddStanding onAdded={load} />
         </>
       )}

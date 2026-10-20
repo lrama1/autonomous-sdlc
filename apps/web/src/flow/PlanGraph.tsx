@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Edge } from '@xyflow/react';
 import type { BuildPlanDto } from '@sdlc/schemas';
-import { FlowCanvas } from './FlowCanvas';
+import { FlowCanvas } from './LazyFlow';
 import { layerLayout } from './layout';
 import type { StepNodeType, StepState } from './StepNode';
 

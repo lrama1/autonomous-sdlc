@@ -1,5 +1,5 @@
 import type { Edge } from '@xyflow/react';
-import { FlowCanvas } from './FlowCanvas';
+import { FlowCanvas } from './LazyFlow';
 import type { StepNodeType } from './StepNode';
 
 const n = (
