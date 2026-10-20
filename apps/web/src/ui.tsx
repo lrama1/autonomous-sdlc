@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
@@ -36,5 +37,35 @@ export function PageHeader({
       </Box>
       {actions}
     </Stack>
+  );
+}
+
+export type Tone = 'none' | 'info' | 'wait' | 'stop' | 'done';
+
+const TONE_COLOR = {
+  none: 'default',
+  info: 'info',
+  wait: 'warning',
+  stop: 'error',
+  done: 'success',
+} as const;
+
+/** A small coloured label for where something stands. The word carries the meaning; colour only helps. */
+export function StatusChip({
+  label,
+  tone,
+  testId,
+}: {
+  label: ReactNode;
+  tone: Tone;
+  testId?: string;
+}) {
+  return (
+    <Chip
+      label={label}
+      color={TONE_COLOR[tone]}
+      variant={tone === 'none' ? 'outlined' : 'filled'}
+      data-testid={testId}
+    />
   );
 }

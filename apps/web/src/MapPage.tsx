@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BuildPlanDto, Me, StageStartDto } from '@sdlc/schemas';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Checkbox from '@mui/material/Checkbox';
+import Chip from '@mui/material/Chip';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Link from '@mui/material/Link';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import {
   ApiProblem,
   cancelBuildPlan,
@@ -19,16 +31,11 @@ import {
   startStageStep,
   startRun,
 } from './api';
-import type { InitiativeMap, Stage } from './api';
-import { roleLabel } from './labels';
-
-const STATUS: Record<Stage['status'], { label: string; cls: string }> = {
-  not_started: { label: 'Not started', cls: 'none' },
-  working: { label: 'In progress', cls: 'info' },
-  waiting_human: { label: 'Waiting on a person', cls: 'wait' },
-  blocked: { label: 'Blocked', cls: 'stop' },
-  done: { label: 'Done', cls: 'done' },
-};
+import type { InitiativeMap } from './api';
+import { PipelineFlow } from './flow/PipelineFlow';
+import { PlanGraph } from './flow/PlanGraph';
+import { PageHeader, StatusChip } from './ui';
+import type { Tone } from './ui';
 
 const RUN_ROLES: Array<{ id: string; label: string }> = [
   { id: 'product', label: 'Product agent: draft the spec (checkpoint G1)' },
@@ -40,6 +47,8 @@ const RUN_ROLES: Array<{ id: string; label: string }> = [
   },
 ];
 
+type Act = (fn: () => Promise<unknown>, done: string) => Promise<void>;
+
 /** The steps before the build that wait for a person, or are about to start. */
 function NextSteps({
   steps,
@@ -48,7 +57,7 @@ function NextSteps({
 }: {
   steps: StageStartDto[];
   mayControl: boolean;
-  act: (fn: () => Promise<unknown>, done: string) => Promise<void>;
+  act: Act;
 }) {
   // Bug fixes are on the Bugs page.
   const shown = steps.filter(
@@ -56,55 +65,73 @@ function NextSteps({
   );
   if (shown.length === 0) return null;
   return (
-    <div className="card" data-testid="next-steps">
-      <h3>Next steps</h3>
-      <ul className="checks small">
-        {shown.map((s) => (
-          <li key={s.id} data-testid={`step-${s.stage}`} data-state={s.state}>
-            <b>{s.title}</b>{' '}
-            <span className={`pill ${s.state === 'invalid' ? 'stop' : 'wait'}`}>
-              {s.state === 'awaiting_start'
-                ? 'Waiting for a person'
-                : s.state === 'pending'
-                  ? 'Starting'
-                  : 'Cannot start'}
-            </span>
-            {s.detail && <div className="muted">{s.detail}</div>}
-            {mayControl && s.state === 'awaiting_start' && (
-              <div className="row wrap">
-                <button
-                  className="primary"
-                  onClick={() => void act(() => startStageStep(s.id), `${s.title} is starting.`)}
-                >
-                  Start
-                </button>
-                <button
-                  onClick={() =>
-                    void act(
-                      () => skipStageStep(s.id),
-                      'Skipped. You can still start that run by hand.',
-                    )
+    <Card data-testid="next-steps">
+      <CardContent>
+        <Typography component="h3" variant="h3" gutterBottom>
+          Next steps
+        </Typography>
+        <Stack component="ul" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {shown.map((s) => (
+            <Box component="li" key={s.id} data-testid={`step-${s.stage}`} data-state={s.state}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography variant="subtitle2" component="b">
+                  {s.title}
+                </Typography>
+                <StatusChip
+                  tone={s.state === 'invalid' ? 'stop' : 'wait'}
+                  label={
+                    s.state === 'awaiting_start'
+                      ? 'Waiting for a person'
+                      : s.state === 'pending'
+                        ? 'Starting'
+                        : 'Cannot start'
                   }
-                >
-                  Skip
-                </button>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
+                />
+              </Stack>
+              {s.detail && (
+                <Typography variant="body2" color="text.secondary">
+                  {s.detail}
+                </Typography>
+              )}
+              {mayControl && s.state === 'awaiting_start' && (
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => void act(() => startStageStep(s.id), `${s.title} is starting.`)}
+                  >
+                    Start
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() =>
+                      void act(
+                        () => skipStageStep(s.id),
+                        'Skipped. You can still start that run by hand.',
+                      )
+                    }
+                  >
+                    Skip
+                  </Button>
+                </Stack>
+              )}
+            </Box>
+          ))}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
-const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; cls: string }> = {
-  waiting: { label: 'Waiting', cls: 'none' },
-  running: { label: 'Running', cls: 'wait' },
-  review: { label: 'In review', cls: 'wait' },
-  merged: { label: 'Merged', cls: 'done' },
-  failed: { label: 'Failed', cls: 'stop' },
-  skipped: { label: 'Skipped', cls: 'none' },
-  cancelled: { label: 'Cancelled', cls: 'none' },
+const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; tone: Tone }> = {
+  waiting: { label: 'Waiting', tone: 'none' },
+  running: { label: 'Running', tone: 'info' },
+  review: { label: 'In review', tone: 'wait' },
+  merged: { label: 'Merged', tone: 'done' },
+  failed: { label: 'Failed', tone: 'stop' },
+  skipped: { label: 'Skipped', tone: 'none' },
+  cancelled: { label: 'Cancelled', tone: 'none' },
 };
 
 /** The approved design's tasks, and where each one is. People start it, retry, skip, or cancel here. */
@@ -115,127 +142,136 @@ function BuildPlan({
 }: {
   plan: BuildPlanDto;
   mayControl: boolean;
-  act: (fn: () => Promise<unknown>, done: string) => Promise<void>;
+  act: Act;
 }) {
   const live = plan.state === 'active' || plan.state === 'awaiting_start';
   return (
-    <div className="card" data-testid="build-plan" data-state={plan.state}>
-      <h3>Build plan</h3>
-      <p className="small muted">
-        From <code>{plan.designPath}</code>. {plan.detail}
-      </p>
-      {plan.errors.length > 0 && (
-        <ul className="small" data-testid="plan-errors">
-          {plan.errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
-      )}
-      <ul className="checks small">
-        {plan.tasks.map((t) => (
-          <li key={t.key} data-testid={`task-${t.key}`} data-state={t.state}>
-            <b>{t.key}</b> {t.title}{' '}
-            <span className={`pill ${TASK_STATE[t.state].cls}`}>{TASK_STATE[t.state].label}</span>
-            {t.dependsOn.length > 0 && (
-              <span className="muted"> after {t.dependsOn.join(', ')}</span>
-            )}
-            {t.prNumber !== null && <span className="muted"> ? PR #{t.prNumber}</span>}
-            {t.attempt > 1 && <span className="muted"> ? attempt {t.attempt}</span>}
-            {t.detail && <div className="muted">{t.detail}</div>}
-            {t.stuckBehind.length > 0 && (
-              <div className="muted">Stuck behind {t.stuckBehind.join(', ')}.</div>
-            )}
-            {mayControl && live && (t.state === 'failed' || t.state === 'waiting') && (
-              <div className="row wrap">
-                {t.state === 'failed' && (
-                  <button
+    <Card data-testid="build-plan" data-state={plan.state}>
+      <CardContent>
+        <Typography component="h3" variant="h3">
+          Build plan
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          From <code>{plan.designPath}</code>. {plan.detail}
+        </Typography>
+        {plan.errors.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 1 }}>
+            <Box component="ul" data-testid="plan-errors" sx={{ m: 0, pl: 2 }}>
+              {plan.errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </Box>
+          </Alert>
+        )}
+        {plan.tasks.length > 0 && (
+          <Box sx={{ mb: 1.5 }}>
+            <PlanGraph tasks={plan.tasks} />
+          </Box>
+        )}
+        <Stack component="ul" spacing={1.25} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {plan.tasks.map((t) => (
+            <Box component="li" key={t.key} data-testid={`task-${t.key}`} data-state={t.state}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography variant="body2" component="span">
+                  <b>{t.key}</b> {t.title}
+                </Typography>
+                <StatusChip tone={TASK_STATE[t.state].tone} label={TASK_STATE[t.state].label} />
+                {t.dependsOn.length > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    after {t.dependsOn.join(', ')}
+                  </Typography>
+                )}
+                {t.prNumber !== null && (
+                  <Typography variant="caption" color="text.secondary">
+                    {'\u00b7'} PR #{t.prNumber}
+                  </Typography>
+                )}
+                {t.attempt > 1 && (
+                  <Typography variant="caption" color="text.secondary">
+                    {'\u00b7'} attempt {t.attempt}
+                  </Typography>
+                )}
+              </Stack>
+              {t.detail && (
+                <Typography variant="body2" color="text.secondary">
+                  {t.detail}
+                </Typography>
+              )}
+              {t.stuckBehind.length > 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  Stuck behind {t.stuckBehind.join(', ')}.
+                </Typography>
+              )}
+              {mayControl && live && (t.state === 'failed' || t.state === 'waiting') && (
+                <Stack direction="row" spacing={1} sx={{ mt: 0.75 }}>
+                  {t.state === 'failed' && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() =>
+                        void act(() => retryBuildTask(plan.id, t.key), `${t.key} will run again.`)
+                      }
+                    >
+                      Retry
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    variant="outlined"
                     onClick={() =>
-                      void act(() => retryBuildTask(plan.id, t.key), `${t.key} will run again.`)
+                      void act(
+                        () => skipBuildTask(plan.id, t.key),
+                        `${t.key} is skipped. What waits for it can start.`,
+                      )
                     }
                   >
-                    Retry
-                  </button>
-                )}
-                <button
-                  onClick={() =>
-                    void act(
-                      () => skipBuildTask(plan.id, t.key),
-                      `${t.key} is skipped. What waits for it can start.`,
-                    )
-                  }
-                >
-                  Skip
-                </button>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-      {mayControl && plan.state === 'awaiting_start' && (
-        <button
-          className="primary"
-          onClick={() =>
-            void act(
-              () => startBuildPlan(plan.id),
-              'The build has started. Tasks start as their dependencies merge.',
-            )
-          }
-        >
-          Start the build
-        </button>
-      )}{' '}
-      {mayControl && plan.state === 'invalid' && (
-        <button
-          className="primary"
-          onClick={() =>
-            void act(
-              () => sendBackBuildPlan(plan.id),
-              'Sent back to the Architect. A revised design is coming.',
-            )
-          }
-        >
-          Send back to the Architect
-        </button>
-      )}{' '}
-      {mayControl && live && (
-        <button
-          onClick={() => void act(() => cancelBuildPlan(plan.id), 'The build plan is cancelled.')}
-        >
-          Cancel the plan
-        </button>
-      )}
-    </div>
-  );
-}
-
-function StageBox({ s, initiativeId }: { s: Stage; initiativeId: string }) {
-  const st = STATUS[s.status];
-  return (
-    <div className={`stage ${s.status}`} data-testid={`stage-${s.id}`} data-status={s.status}>
-      <div className="small muted">{s.checkpoint}</div>
-      <h3>{s.title}</h3>
-      <span className={`pill ${st.cls}`}>{st.label}</span>
-      {s.waitingOn.length > 0 && (
-        <p className="small">
-          Waiting on <b>{s.waitingOn.map(roleLabel).join(', ')}</b>
-        </p>
-      )}
-      <p className="small muted">{s.detail}</p>
-      <ul className="checks small">
-        {s.items.slice(0, 4).map((i) => (
-          <li key={i.id}>
-            {i.kind === 'ask' ? (
-              <a href={`#/queue/${i.id}`}>{i.title}</a>
-            ) : (
-              <span>
-                {roleLabel(i.title)} run: {i.state}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <span hidden>{initiativeId}</span>
-    </div>
+                    Skip
+                  </Button>
+                </Stack>
+              )}
+            </Box>
+          ))}
+        </Stack>
+        <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: 'wrap', rowGap: 1 }}>
+          {mayControl && plan.state === 'awaiting_start' && (
+            <Button
+              variant="contained"
+              onClick={() =>
+                void act(
+                  () => startBuildPlan(plan.id),
+                  'The build has started. Tasks start as their dependencies merge.',
+                )
+              }
+            >
+              Start the build
+            </Button>
+          )}
+          {mayControl && plan.state === 'invalid' && (
+            <Button
+              variant="contained"
+              onClick={() =>
+                void act(
+                  () => sendBackBuildPlan(plan.id),
+                  'Sent back to the Architect. A revised design is coming.',
+                )
+              }
+            >
+              Send back to the Architect
+            </Button>
+          )}
+          {mayControl && live && (
+            <Button
+              variant="outlined"
+              onClick={() =>
+                void act(() => cancelBuildPlan(plan.id), 'The build plan is cancelled.')
+              }
+            >
+              Cancel the plan
+            </Button>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -261,9 +297,10 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
   }, []);
 
   return (
-    <form
-      className="card form"
-      onSubmit={async (e) => {
+    <Card
+      component="form"
+      sx={{ mt: 2 }}
+      onSubmit={async (e: React.FormEvent) => {
         e.preventDefault();
         setProblem(null);
         try {
@@ -275,63 +312,80 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
         }
       }}
     >
-      <h3>New initiative</h3>
-      <div className="row wrap">
-        <input
-          aria-label="Title"
-          placeholder="Title"
-          value={f.title}
-          onChange={(e) => setF({ ...f, title: e.target.value })}
-          required
-        />
-        <select
-          aria-label="Repository"
-          value={f.repositoryId}
-          onChange={(e) => setF({ ...f, repositoryId: e.target.value })}
-          required
-        >
-          {repos.length === 0 && <option value="">No repository is registered</option>}
-          {repos.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.fullName}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="How much runs on its own"
-          value={f.autonomyMode}
-          onChange={(e) => setF({ ...f, autonomyMode: e.target.value as typeof f.autonomyMode })}
-        >
-          <option value="guided">Guided: a person reviews every PR</option>
-          <option value="balanced">Balanced: pre-approved types merge</option>
-          <option value="autopilot">Autopilot: no trigger, no review</option>
-        </select>
-      </div>
-      <label className="row small">
-        <input
-          type="checkbox"
-          checked={f.autoStages}
-          onChange={(e) => setF({ ...f, autoStages: e.target.checked })}
-        />
-        Draft the spec now, then design and build after each approval (guided mode waits for a
-        click)
-      </label>
-      <textarea
-        aria-label="Goal"
-        placeholder="The goal, in a few sentences"
-        value={f.goal}
-        onChange={(e) => setF({ ...f, goal: e.target.value })}
-        required
-      />
-      <button className="primary" type="submit" disabled={!f.repositoryId}>
-        Create
-      </button>
-      {problem && (
-        <p role="alert" className="callout warn">
-          {problem}
-        </p>
-      )}
-    </form>
+      <CardContent>
+        <Typography component="h3" variant="h3" gutterBottom>
+          New initiative
+        </Typography>
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+            <TextField
+              label="Title"
+              value={f.title}
+              onChange={(e) => setF({ ...f, title: e.target.value })}
+              required
+            />
+            <TextField
+              select
+              label="Repository"
+              value={f.repositoryId}
+              onChange={(e) => setF({ ...f, repositoryId: e.target.value })}
+              required
+              slotProps={{ select: { native: true } }}
+            >
+              {repos.length === 0 && <option value="">No repository is registered</option>}
+              {repos.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.fullName}
+                </option>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="How much runs on its own"
+              value={f.autonomyMode}
+              onChange={(e) =>
+                setF({ ...f, autonomyMode: e.target.value as typeof f.autonomyMode })
+              }
+              slotProps={{ select: { native: true } }}
+            >
+              <option value="guided">Guided: a person reviews every PR</option>
+              <option value="balanced">Balanced: pre-approved types merge</option>
+              <option value="autopilot">Autopilot: no trigger, no review</option>
+            </TextField>
+          </Stack>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={f.autoStages}
+                onChange={(e) => setF({ ...f, autoStages: e.target.checked })}
+              />
+            }
+            label={
+              <Typography variant="body2">
+                Draft the spec now, then design and build after each approval (guided mode waits for
+                a click)
+              </Typography>
+            }
+          />
+          <TextField
+            label="Goal"
+            placeholder="The goal, in a few sentences"
+            multiline
+            minRows={3}
+            value={f.goal}
+            onChange={(e) => setF({ ...f, goal: e.target.value })}
+            required
+          />
+          <Box>
+            <Button variant="contained" type="submit" disabled={!f.repositoryId}>
+              Create
+            </Button>
+          </Box>
+          {problem && <Alert severity="warning">{problem}</Alert>}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -383,7 +437,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
     return () => clearInterval(poll);
   }, [loadMap]);
 
-  const act = async (fn: () => Promise<unknown>, done: string) => {
+  const act: Act = async (fn, done) => {
     setNote(null);
     setError(null);
     try {
@@ -403,62 +457,68 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Map</h1>
-          <p className="muted">
-            Where each initiative is, and who it is waiting on. Spec and design, build and review,
-            then release.
-          </p>
-        </div>
-        <select
-          aria-label="Initiative"
-          value={initiativeId ?? ''}
-          onChange={(e) =>
-            (window.location.hash = e.target.value ? `#/map/${e.target.value}` : '#/map')
-          }
-        >
-          <option value="">Choose an initiative</option>
-          {list.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.title}
-            </option>
-          ))}
-        </select>
-      </div>
+      <PageHeader
+        title="Map"
+        subtitle="Where each initiative is, and who it is waiting on. Spec and design, build and review, then release."
+        actions={
+          <TextField
+            select
+            label="Initiative"
+            value={initiativeId ?? ''}
+            onChange={(e) =>
+              (window.location.hash = e.target.value ? `#/map/${e.target.value}` : '#/map')
+            }
+            sx={{ minWidth: 260, maxWidth: 360 }}
+            slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+          >
+            <option value="">Choose an initiative</option>
+            {list.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.title}
+              </option>
+            ))}
+          </TextField>
+        }
+      />
       {error && (
-        <p role="alert" className="callout warn">
+        <Alert severity="warning" sx={{ mb: 2 }}>
           {error}
-        </p>
+        </Alert>
       )}
       {note && (
-        <p className="callout ok" data-testid="note">
+        <Alert severity="success" data-testid="note" sx={{ mb: 2 }}>
           {note}
-        </p>
+        </Alert>
       )}
 
       {map ? (
         <>
-          <p>
-            <b>{map.initiative.title}</b>{' '}
-            <span className="chip">{map.initiative.autonomyMode}</span>
-            <br />
-            <span className="muted">{map.initiative.goal}</span>
-          </p>
-          <div className="flow" data-testid="flow">
-            {map.stages.map((s, n) => (
-              <div className="flow-item" key={s.id}>
-                {n > 0 && <span className="arrow">→</span>}
-                <StageBox s={s} initiativeId={map.initiative.id} />
-              </div>
-            ))}
-          </div>
+          <Box sx={{ mb: 1.5 }}>
+            <Typography
+              component="p"
+              sx={{ display: 'flex', alignItems: 'center', gap: 1, m: 0, fontSize: '1.05rem' }}
+            >
+              <b>{map.initiative.title}</b>
+              <Chip component="span" variant="outlined" label={map.initiative.autonomyMode} />
+            </Typography>
+            <Typography color="text.secondary">{map.initiative.goal}</Typography>
+          </Box>
+          <PipelineFlow stages={map.stages} />
 
-          <div className="grid">
-            <div className="stack">
-              <form
-                className="card form"
-                onSubmit={async (e) => {
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 420px' },
+              gap: 2,
+              alignItems: 'start',
+              mt: 2,
+            }}
+          >
+            <Stack spacing={2}>
+              {plan && <BuildPlan plan={plan} mayControl={mayControlBuild} act={act} />}
+              <Card
+                component="form"
+                onSubmit={async (e: React.FormEvent) => {
                   e.preventDefault();
                   await act(
                     () => startRun(map.initiative.id, { role, task, budgetUsd: 1 }),
@@ -467,85 +527,122 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
                   setTask('');
                 }}
               >
-                <h3>Start a run</h3>
-                <select aria-label="Agent" value={role} onChange={(e) => setRole(e.target.value)}>
-                  {RUN_ROLES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-                <textarea
-                  aria-label="Task"
-                  placeholder="What should it do?"
-                  value={task}
-                  onChange={(e) => setTask(e.target.value)}
-                  required
-                />
-                <button className="primary" type="submit">
-                  Start
-                </button>
-              </form>
-            </div>
-            <div className="stack">
-              <NextSteps steps={steps} mayControl={mayControlBuild} act={act} />
-              {plan && <BuildPlan plan={plan} mayControl={mayControlBuild} act={act} />}
-              <div className="card" data-testid="releases">
-                <h3>Releases</h3>
-                {releases.length === 0 && <p className="small muted">None yet.</p>}
-                <ul className="checks small">
-                  {releases.map((r) => (
-                    <li key={r.interactionId}>
-                      <b>{r.version}</b>{' '}
-                      {r.state === 'released' && r.url ? (
-                        <a href={r.url} target="_blank" rel="noreferrer">
-                          published
-                        </a>
-                      ) : (
-                        <span className="chip">{r.state}</span>
-                      )}
-                      {r.state === 'waiting' && (
-                        <>
-                          {' '}
-                          <a href={`#/queue/${r.interactionId}`}>decide</a>
-                        </>
-                      )}
-                      {r.detail && <div className="muted">{r.detail}</div>}
-                    </li>
-                  ))}
-                </ul>
-                {mayRelease && (
-                  <form
-                    className="row wrap"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      await act(
-                        () => prepareRelease(map.initiative.id, version),
-                        `Release ${version} is waiting for the approver in the attention queue.`,
-                      );
-                    }}
-                  >
-                    <input
-                      aria-label="Version"
-                      value={version}
-                      onChange={(e) => setVersion(e.target.value)}
-                      pattern="\d+\.\d+\.\d+"
+                <CardContent>
+                  <Typography component="h3" variant="h3" gutterBottom>
+                    Start a run
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    <TextField
+                      select
+                      label="Agent"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      slotProps={{ select: { native: true } }}
+                    >
+                      {RUN_ROLES.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </TextField>
+                    <TextField
+                      label="Task"
+                      placeholder="What should it do?"
+                      multiline
+                      minRows={3}
+                      value={task}
+                      onChange={(e) => setTask(e.target.value)}
                       required
                     />
-                    <button type="submit">Prepare a release</button>
-                  </form>
-                )}
-              </div>
-            </div>
-          </div>
+                    <Box>
+                      <Button variant="contained" type="submit">
+                        Start
+                      </Button>
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+            <Stack spacing={2}>
+              <NextSteps steps={steps} mayControl={mayControlBuild} act={act} />
+              <Card data-testid="releases">
+                <CardContent>
+                  <Typography component="h3" variant="h3" gutterBottom>
+                    Releases
+                  </Typography>
+                  {releases.length === 0 && (
+                    <Typography variant="body2" color="text.secondary">
+                      None yet.
+                    </Typography>
+                  )}
+                  <Stack component="ul" spacing={1} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+                    {releases.map((r) => (
+                      <Box component="li" key={r.interactionId}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                          <Typography variant="body2" component="b" sx={{ fontWeight: 700 }}>
+                            {r.version}
+                          </Typography>
+                          {r.state === 'released' && r.url ? (
+                            <Link href={r.url} target="_blank" rel="noreferrer">
+                              published
+                            </Link>
+                          ) : (
+                            <Chip variant="outlined" label={r.state} />
+                          )}
+                          {r.state === 'waiting' && (
+                            <Link href={`#/queue/${r.interactionId}`}>decide</Link>
+                          )}
+                        </Stack>
+                        {r.detail && (
+                          <Typography variant="body2" color="text.secondary">
+                            {r.detail}
+                          </Typography>
+                        )}
+                      </Box>
+                    ))}
+                  </Stack>
+                  {mayRelease && (
+                    <Stack
+                      component="form"
+                      direction="row"
+                      spacing={1}
+                      sx={{ mt: 1.5, alignItems: 'flex-start' }}
+                      onSubmit={async (e: React.FormEvent) => {
+                        e.preventDefault();
+                        await act(
+                          () => prepareRelease(map.initiative.id, version),
+                          `Release ${version} is waiting for the approver in the attention queue.`,
+                        );
+                      }}
+                    >
+                      <TextField
+                        label="Version"
+                        value={version}
+                        onChange={(e) => setVersion(e.target.value)}
+                        slotProps={{ htmlInput: { pattern: '\\d+\\.\\d+\\.\\d+' } }}
+                        required
+                      />
+                      <Button
+                        type="submit"
+                        variant="outlined"
+                        sx={{ whiteSpace: 'nowrap', mt: 0.25 }}
+                      >
+                        Prepare a release
+                      </Button>
+                    </Stack>
+                  )}
+                </CardContent>
+              </Card>
+            </Stack>
+          </Box>
         </>
       ) : (
         !initiativeId && (
-          <p className="muted">
+          <Typography color="text.secondary">
             {list.length === 0
               ? 'No initiatives yet. Create the first one below.'
               : 'Choose an initiative.'}
-          </p>
+          </Typography>
         )
       )}
       <NewInitiative
