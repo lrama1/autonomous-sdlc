@@ -12,6 +12,7 @@ import {
   getStageStarts,
   prepareRelease,
   retryBuildTask,
+  sendBackBuildPlan,
   skipStageStep,
   skipBuildTask,
   startBuildPlan,
@@ -181,6 +182,19 @@ function BuildPlan({
           }
         >
           Start the build
+        </button>
+      )}{' '}
+      {mayControl && plan.state === 'invalid' && (
+        <button
+          className="primary"
+          onClick={() =>
+            void act(
+              () => sendBackBuildPlan(plan.id),
+              'Sent back to the Architect. A revised design is coming.',
+            )
+          }
+        >
+          Send back to the Architect
         </button>
       )}{' '}
       {mayControl && live && (

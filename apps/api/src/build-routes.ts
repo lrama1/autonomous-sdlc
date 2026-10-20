@@ -7,9 +7,11 @@ import { stuckBehind } from '@sdlc/core';
 import type { TaskState } from '@sdlc/core';
 import { buildPlanSchema } from '@sdlc/schemas';
 import type { BuildPlanDto } from '@sdlc/schemas';
+import type { LoadedAgent } from './agents.js';
 import { cancelPlan, retryTask, skipTask, startPlan } from './build.js';
 import type { PlanRow } from './build.js';
 import { requirePerson } from './people.js';
+import { sendPlanBack } from './stages.js';
 
 // Who may start, cancel, retry or skip. They decide what gets built, so they are the people who decide the spec and
 // the design, plus an admin.
@@ -54,7 +56,11 @@ export async function planDto(db: Db, plan: PlanRow): Promise<BuildPlanDto> {
   });
 }
 
-export function registerBuildRoutes(app: FastifyInstance, db: Db): void {
+export function registerBuildRoutes(
+  app: FastifyInstance,
+  db: Db,
+  agents: Map<string, LoadedAgent>,
+): void {
   const notFound = { error: { code: 'not_found', message: 'No such build plan.' } };
 
   app.get('/api/initiatives/:id/plan', async (request, reply) => {
@@ -107,6 +113,17 @@ export function registerBuildRoutes(app: FastifyInstance, db: Db): void {
     const plan = await cancelPlan(db, id, me.id);
     if (!plan) return conflict(reply, 'The plan is already finished or cancelled.');
     return planDto(db, plan);
+  });
+
+  app.post('/api/plans/:id/send-back', async (request, reply) => {
+    const me = await control(request, reply);
+    if (!me) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const out = await sendPlanBack(db, agents, id, me.id);
+    if (!out.ok)
+      return reply.code(out.status).send({ error: { code: out.code, message: out.message } });
+    const [plan] = await db.select().from(buildPlan).where(eq(buildPlan.id, id));
+    return plan ? planDto(db, plan) : reply.code(404).send(notFound);
   });
 
   for (const verb of ['retry', 'skip'] as const) {

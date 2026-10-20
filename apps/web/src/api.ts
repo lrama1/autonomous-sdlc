@@ -302,6 +302,7 @@ export const getBuildPlan = async (initiativeId: string): Promise<BuildPlanDto |
 const planAction = (path: string) => call(path, buildPlanSchema, { method: 'POST' });
 export const startBuildPlan = (id: string) => planAction(`/api/plans/${id}/start`);
 export const cancelBuildPlan = (id: string) => planAction(`/api/plans/${id}/cancel`);
+export const sendBackBuildPlan = (id: string) => planAction(`/api/plans/${id}/send-back`);
 export const retryBuildTask = (id: string, key: string) =>
   planAction(`/api/plans/${id}/tasks/${key}/retry`);
 export const skipBuildTask = (id: string, key: string) =>

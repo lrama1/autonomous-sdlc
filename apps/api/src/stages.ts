@@ -1,5 +1,13 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { agentRun, bugReport, initiative, interaction, runEvent, stageStart } from '@sdlc/db';
+import {
+  agentRun,
+  bugReport,
+  buildPlan,
+  initiative,
+  interaction,
+  runEvent,
+  stageStart,
+} from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
@@ -224,6 +232,91 @@ export function reviseTask(
     '',
     `The reviewer said: ${comment.trim() || '(no comment was given)'}`,
   ].join('\n');
+}
+
+export type SendBackResult =
+  { ok: true; step: StageStartRow } | { ok: false; status: number; code: string; message: string };
+
+/**
+ * An approved design that the platform cannot build (its plan is invalid) goes back to the Architect: the plan is closed
+ * and a revision step starts a new Architect run from the current main, told what the platform reported. The revised
+ * design is a new pull request that a person approves like any other, and it gets a new plan. Three tries, then a person
+ * takes over.
+ */
+export async function sendPlanBack(
+  db: Db,
+  agents: Map<string, LoadedAgent>,
+  planId: string,
+  by: string,
+): Promise<SendBackResult> {
+  const fail = (status: number, code: string, message: string): SendBackResult => ({
+    ok: false,
+    status,
+    code,
+    message,
+  });
+  const [plan] = await db.select().from(buildPlan).where(eq(buildPlan.id, planId));
+  if (!plan) return fail(404, 'not_found', 'No such build plan.');
+  if (plan.state !== 'invalid')
+    return fail(409, 'wrong_state', 'Only a plan that cannot be built can be sent back.');
+  if (!agents.has('architect')) return fail(409, 'no_agent', 'There is no Architect agent.');
+  if (!DESIGN_FILE.test(plan.designPath))
+    return fail(409, 'no_design', 'The approved pull request has no design file to revise.');
+  const [init] = await db.select().from(initiative).where(eq(initiative.id, plan.initiativeId));
+  if (!init) return fail(404, 'not_found', 'No such initiative.');
+  const [{ n }] = (await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(stageStart)
+    .where(
+      and(
+        eq(stageStart.initiativeId, init.id),
+        eq(stageStart.stage, 'design'),
+        sql`${stageStart.key} like 'revise%'`,
+      ),
+    )) as [{ n: number }];
+  if (n >= MAX_REVISIONS)
+    return fail(
+      409,
+      'too_many',
+      `This design was revised ${n} times already. A person takes over.`,
+    );
+  const guided = init.autonomyMode === 'guided';
+  const [step] = await db
+    .insert(stageStart)
+    .values({
+      initiativeId: init.id,
+      key: `revise-plan:${plan.id}`,
+      stage: 'design',
+      role: 'architect',
+      sourceInteractionId: plan.designInteractionId,
+      task: reviseTask(
+        'design',
+        plan.designPath,
+        undefined,
+        `The design was approved, but the platform cannot build it from the task list: ${plan.errors.join(' / ')}. Fix what the platform reports and keep everything else as it is. Do not change the approved spec.`,
+        `docs/spec/${plan.designPath.replace(/^docs\/design\//, '')}`,
+      ),
+      state: guided ? 'awaiting_start' : 'pending',
+      detail: guided
+        ? 'The design could not be built. A person starts the revised design.'
+        : 'The design could not be built. The revised design starts by itself.',
+      startedBy: by,
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (!step) return fail(409, 'already_sent', 'This plan was already sent back.');
+  await db
+    .update(buildPlan)
+    .set({ state: 'cancelled', detail: 'Sent back to the Architect: a revised design is coming.' })
+    .where(eq(buildPlan.id, plan.id));
+  await recordActivity(db, {
+    actorType: 'person',
+    actorId: by,
+    initiativeId: init.id,
+    action: 'build_plan.sent_back',
+    detail: { planId: plan.id, errors: plan.errors },
+  });
+  return { ok: true, step };
 }
 
 /** Called when an initiative is created with its steps on. The spec starts by itself, or waits for a click in guided mode. */

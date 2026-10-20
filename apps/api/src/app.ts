@@ -287,7 +287,7 @@ export async function buildApp({
   registerSecurityRoutes(app, db, rules, gate, () => security);
   app.decorate('previews', () => previews);
   registerPreviewProxy(app, db, { secret: config.SESSION_SECRET, origin: config.PREVIEW_ORIGIN });
-  registerBuildRoutes(app, db);
+  registerBuildRoutes(app, db, loadedAgents);
   registerStageRoutes(app, db);
   registerBugRoutes(app, db, loadedAgents);
   const budget = {

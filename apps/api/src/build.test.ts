@@ -16,11 +16,13 @@ import {
   interaction,
   person,
   runMigrations,
+  stageStart,
 } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { startDevDb } from '@sdlc/dev-db';
 import type { DevDb } from '@sdlc/dev-db';
 import { buildApp } from './app.js';
+import { startDueStages } from './stages.js';
 import { buildTick, cancelPlan, ensurePlans, retryTask, skipTask, startPlan } from './build.js';
 import type { BuildDeps } from './build.js';
 import { loadAgents } from './agents.js';
@@ -760,5 +762,76 @@ describe('the build routes', () => {
     expect((await post(owner, `/api/plans/${plan.id}/cancel`)).json()).toMatchObject({
       state: 'cancelled',
     });
+  });
+});
+
+describe('a design the platform cannot build', () => {
+  it('goes back to the Architect in one click, with what the platform reported', async () => {
+    designText = '# Design\n\nNo tasks here.\n';
+    const f = await approvedDesign();
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    expect(plan.state).toBe('invalid');
+    const engineer = await newPerson(['backend_engineer']);
+    const architect = await newPerson(['architect']);
+    const post = (who: { headers: Record<string, string> }) =>
+      app.inject({ method: 'POST', url: `/api/plans/${plan.id}/send-back`, headers: who.headers });
+
+    expect((await post(engineer)).statusCode).toBe(403);
+    const sent = await post(architect);
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json()).toMatchObject({ state: 'cancelled' });
+    expect((await post(architect)).statusCode).toBe(409);
+
+    const [step] = await db
+      .select()
+      .from(stageStart)
+      .where(eq(stageStart.initiativeId, f.initiativeId));
+    expect(step).toMatchObject({
+      key: `revise-plan:${plan.id}`,
+      stage: 'design',
+      role: 'architect',
+      state: 'pending',
+      startedBy: architect.id,
+    });
+    expect(step!.task).toContain('docs/design/thing.md');
+    expect(step!.task).toContain('no ```sdlc-tasks block');
+    expect(step!.task).toContain('docs/spec/thing.md');
+
+    // The revision starts like any other step: a new Architect run, sponsored by the person who clicked.
+    expect(await startDueStages({ db, agents })).toBe(1);
+    const runs = await db.select().from(agentRun).where(eq(agentRun.initiativeId, f.initiativeId));
+    const revised = runs.find((r) => r.task.includes('Revise the design'));
+    expect(revised).toMatchObject({ agentRole: 'architect', sponsorPersonId: architect.id });
+  });
+
+  it('waits for a click in guided mode, and refuses a plan that can be built', async () => {
+    designText = '# Design\n\nNo tasks here.\n';
+    const f = await approvedDesign({ mode: 'guided' });
+    await buildTick(deps());
+    const plan = (await planOf(f.initiativeId)).plan!;
+    const architect = await newPerson(['architect']);
+    await app.inject({
+      method: 'POST',
+      url: `/api/plans/${plan.id}/send-back`,
+      headers: architect.headers,
+    });
+    const [step] = await db
+      .select()
+      .from(stageStart)
+      .where(eq(stageStart.initiativeId, f.initiativeId));
+    expect(step!.state).toBe('awaiting_start');
+
+    designText = THREE;
+    const good = await approvedDesign();
+    await buildTick(deps());
+    const ok = (await planOf(good.initiativeId)).plan!;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/plans/${ok.id}/send-back`,
+      headers: architect.headers,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('wrong_state');
   });
 });
