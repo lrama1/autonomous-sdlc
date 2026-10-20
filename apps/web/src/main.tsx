@@ -6,6 +6,11 @@ import { App } from './App';
 import { theme } from './theme';
 import './styles.css';
 
+// A diagram that resizes with its box makes the browser report this harmless loop; the dev overlay should not show it.
+window.addEventListener('error', (e) => {
+  if (e.message.includes('ResizeObserver loop')) e.stopImmediatePropagation();
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider theme={theme} defaultMode="system">

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Background, Controls, MarkerType, ReactFlow } from '@xyflow/react';
 import type { Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -27,6 +28,10 @@ export function FlowCanvas({
   /** Zoom buttons, for graphs too big to read at a glance. */
   controls?: boolean;
 }) {
+  const shown = useMemo(
+    () => edges.map((e) => ({ ...e, markerEnd: e.markerEnd ?? { type: MarkerType.ArrowClosed } })),
+    [edges],
+  );
   return (
     <Box
       role="group"
@@ -36,14 +41,11 @@ export function FlowCanvas({
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges.map((e) => ({
-          ...e,
-          markerEnd: e.markerEnd ?? { type: MarkerType.ArrowClosed },
-        }))}
+        edges={shown}
         nodeTypes={nodeTypes}
         colorMode="system"
         fitView
-        fitViewOptions={{ padding: 0.06 }}
+        fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}

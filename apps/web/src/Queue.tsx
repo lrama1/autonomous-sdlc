@@ -1,821 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  AssumptionDto,
-  AttentionProfile,
-  InteractionDto,
-  PreviewDto,
-  SecurityDto,
-  SmokeDto,
-} from '@sdlc/schemas';
-import {
-  ApiProblem,
-  answerInteraction,
-  decideAssumption,
-  didntNeedToAsk,
-  getAssumptions,
-  getPreview,
-  dismissFinding,
-  getSecurity,
-  getSmoke,
-  overrideSmoke,
-  sendFindingsBack,
-  startSecurity,
-  startSmoke,
-  startPlatformPreview,
-  stopPlatformPreview,
-  getProfile,
-  getQueue,
-  snoozeInteraction,
-} from './api';
-import { TYPE_LABEL, formatSpan, roleLabel } from './labels';
-
-interface Option {
-  id: string;
-  label: string;
-  impact?: string;
-}
-
-const optionsOf = (i: InteractionDto): Option[] =>
-  Array.isArray(i.options)
-    ? (i.options as Option[]).filter((o) => o && typeof o.id === 'string')
-    : [];
-
-const card = (i: InteractionDto) =>
-  i.contextCard as {
-    context?: string | null;
-    whyNow?: string | null;
-    summary?: string;
-    kind?: string;
-    prUrl?: string;
-    prNumber?: number;
-    triggers?: Array<{ id: string; description?: string }>;
-    autoMerge?: { auto: boolean; reason: string };
-    verify?: { passed?: boolean; attempts?: number };
-    diff?: { files?: number; additions?: number; deletions?: number };
-  };
-
-const PREVIEW_WORDS: Record<PreviewDto['state'], string> = {
-  ready: 'Preview',
-  building: 'Preview (building)',
-  failed: 'Preview (failed)',
-  stale: 'Preview (out of date)',
-  none: 'No preview',
-  not_permitted: 'No preview',
-};
-
-/**
- * The preview of this pull request: what the repository's pipeline published, or one the platform runs in a sandbox
- * when a person asks. The platform runs the pull request's own code only on that click (or in autopilot).
- */
-function PreviewLine({ id }: { id: string }) {
-  const [p, setP] = useState<PreviewDto | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const next = await getPreview(id);
-        if (stop) return;
-        setP(next);
-        setFailed(false);
-        // Keep looking while a preview may still appear or finish starting. The platform's own is asked for more often.
-        if (next.platform.state === 'starting') timer = setTimeout(load, 2_000);
-        else if (next.state === 'building' || next.state === 'none' || next.state === 'stale')
-          timer = setTimeout(load, 20_000);
-      } catch {
-        if (!stop) setFailed(true);
-      }
-    };
-    void load();
-    return () => {
-      stop = true;
-      clearTimeout(timer);
-    };
-  }, [id, tick]);
-
-  const act = async (what: () => Promise<unknown>) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await what();
-    } catch (e) {
-      setProblem(e instanceof Error ? e.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-      setTick((t) => t + 1);
-    }
-  };
-
-  if (failed && !p) {
-    return (
-      <div data-testid="preview">
-        <b>Preview</b>
-        Could not ask GitHub just now.
-      </div>
-    );
-  }
-  if (!p) return null;
-  return (
-    <div data-testid="preview" data-state={p.state}>
-      <b>{PREVIEW_WORDS[p.state]}</b>
-      {p.url && (
-        <>
-          <a href={p.url} target="_blank" rel="noreferrer noopener">
-            {p.label ?? 'Open the preview'}
-          </a>{' '}
-        </>
-      )}
-      <span className="muted">{p.detail}</span>
-      {p.platform.available && (
-        <span className="row wrap" data-testid="platform-preview" data-state={p.platform.state}>
-          {(p.platform.state === 'starting' || p.platform.state === 'ready') && p.platform.id ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void act(() => stopPlatformPreview(p.platform.id!))}
-            >
-              Stop the preview
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void act(() => startPlatformPreview(id))}
-            >
-              {p.platform.state === 'none' || p.platform.state === 'unavailable'
-                ? 'Run it here'
-                : 'Run it again'}
-            </button>
-          )}
-          {p.platform.state === 'ready' && p.platform.expiresAt && (
-            <span className="muted">
-              The platform stops it at{' '}
-              {new Date(p.platform.expiresAt).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-              .
-            </span>
-          )}
-          {p.platform.state === 'none' && (
-            <span className="muted">
-              Runs this pull request's own code in a sandbox for {p.platform.ttlMinutes} minutes. It
-              has no secrets and almost no network.
-            </span>
-          )}
-          {(p.platform.state === 'failed' || p.platform.state === 'unavailable') &&
-            p.platform.detail && (
-              <span role="alert" className="callout warn" data-testid="platform-preview-error">
-                {p.platform.detail}
-              </span>
-            )}
-        </span>
-      )}
-      {problem && (
-        <span role="alert" className="callout warn">
-          {problem}
-        </span>
-      )}
-    </div>
-  );
-}
-
-const SMOKE_WORDS: Record<NonNullable<SmokeDto['run']>['state'], string> = {
-  running: 'Running',
-  passed: 'Passed',
-  failed: 'Failed',
-  error: 'Could not run',
-  overridden: 'Overridden',
-};
-
-/**
- * The smoke test of the commit under review. The repository lists the checks; a person starts them; the review cannot be
- * approved until they pass or a person overrides them with a reason that stays with the pull request.
- */
-function SmokeLine({ id }: { id: string }) {
-  const [s, setS] = useState<SmokeDto | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [tick, setTick] = useState(0);
-  const [overriding, setOverriding] = useState(false);
-  const [reason, setReason] = useState('');
-
-  useEffect(() => {
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const next = await getSmoke(id);
-        if (stop) return;
-        setS(next);
-        if (next.run?.state === 'running') timer = setTimeout(load, 2_000);
-      } catch {
-        // The preview line already says GitHub could not be asked. Nothing to add here.
-      }
-    };
-    void load();
-    return () => {
-      stop = true;
-      clearTimeout(timer);
-    };
-  }, [id, tick]);
-
-  const act = async (what: () => Promise<unknown>) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await what();
-      setOverriding(false);
-      setReason('');
-    } catch (e) {
-      setProblem(e instanceof Error ? e.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-      setTick((t) => t + 1);
-    }
-  };
-
-  if (!s || !s.available || s.required === 'none') return null;
-  const run = s.run;
-  const state = run?.state ?? 'none';
-  const done = run?.results.filter((r) => r.ok).length ?? 0;
-  const letThrough = state === 'passed' || state === 'overridden';
-  return (
-    <div data-testid="smoke" data-state={state}>
-      <b>Smoke test</b>
-      <span data-testid="smoke-state">
-        {run
-          ? `${SMOKE_WORDS[run.state]}${run.results.length > 0 ? ` (${done} of ${run.results.length})` : ''}`
-          : 'Not run on this commit'}
-      </span>{' '}
-      {run?.state === 'overridden' && (
-        <span className="muted" data-testid="smoke-override">
-          {run.by ? `${run.by}: ` : ''}
-          {run.detail}
-        </span>
-      )}
-      {run?.state === 'error' && run.detail && (
-        <span className="callout warn" role="alert">
-          {run.detail}
-        </span>
-      )}
-      {s.required === 'invalid' && s.detail && (
-        <span className="callout warn" role="alert">
-          The smoke checks cannot be read: {s.detail}
-        </span>
-      )}
-      {run && run.results.length > 0 && (
-        <ul className="small" data-testid="smoke-results">
-          {run.results.map((r, n) => (
-            <li key={n} data-ok={r.ok}>
-              {r.ok ? '✓' : '✗'} <code>{r.label}</code> <span className="muted">{r.detail}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <span className="row wrap">
-        {s.required === 'required' && (
-          <button
-            type="button"
-            disabled={busy || run?.state === 'running'}
-            onClick={() => void act(() => startSmoke(id))}
-          >
-            {run ? 'Run the smoke test again' : 'Run the smoke test'}
-          </button>
-        )}
-        {!letThrough && run?.state !== 'running' && !overriding && (
-          <button type="button" disabled={busy} onClick={() => setOverriding(true)}>
-            Override with a reason
-          </button>
-        )}
-        {s.blocks && !letThrough && (
-          <span className="muted" data-testid="smoke-blocks">
-            {s.blocks}
-          </span>
-        )}
-      </span>
-      {overriding && (
-        <span className="row wrap">
-          <textarea
-            aria-label="Why the smoke test is overridden"
-            placeholder="Why can this merge without a passing smoke test? (10 characters or more)"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <button
-            type="button"
-            disabled={busy || reason.trim().length < 10}
-            onClick={() => void act(() => overrideSmoke(id, reason.trim()))}
-          >
-            Override
-          </button>
-          <button type="button" disabled={busy} onClick={() => setOverriding(false)}>
-            Cancel
-          </button>
-        </span>
-      )}
-      {problem && (
-        <span role="alert" className="callout warn">
-          {problem}
-        </span>
-      )}
-    </div>
-  );
-}
-
-const SECURITY_WORDS: Record<NonNullable<SecurityDto['run']>['state'], string> = {
-  running: 'Reading the change',
-  done: 'Finished',
-  error: 'Could not finish',
-};
-
-/**
- * The security review of the commit under review. A person starts it; the Security agent reads the change; a high or
- * critical finding holds the approval until it is sent back to the engineer or dismissed with a reason.
- */
-function SecurityLine({ id, onSentBack }: { id: string; onSentBack: (note: string) => void }) {
-  const [s, setS] = useState<SecurityDto | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [tick, setTick] = useState(0);
-  const [dismissing, setDismissing] = useState<string | null>(null);
-  const [reason, setReason] = useState('');
-
-  useEffect(() => {
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const next = await getSecurity(id);
-        if (stop) return;
-        setS(next);
-        if (next.run?.state === 'running') timer = setTimeout(load, 3_000);
-      } catch {
-        // The other lines already say GitHub could not be asked. Nothing to add here.
-      }
-    };
-    void load();
-    return () => {
-      stop = true;
-      clearTimeout(timer);
-    };
-  }, [id, tick]);
-
-  const act = async (what: () => Promise<unknown>) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await what();
-      setDismissing(null);
-      setReason('');
-    } catch (e) {
-      setProblem(e instanceof Error ? e.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-      setTick((t) => t + 1);
-    }
-  };
-
-  if (!s || !s.available || !s.required) return null;
-  const run = s.run;
-  const state = run?.state ?? 'none';
-  const findings = run?.findings ?? [];
-  const open = findings.filter((f) => !f.dismissed);
-  const sendable = open.filter((f) => f.severity !== 'low' && f.severity !== 'info');
-  return (
-    <div data-testid="security" data-state={state}>
-      <b>Security review</b>
-      <span data-testid="security-state">
-        {run
-          ? `${SECURITY_WORDS[run.state]}${run.state === 'done' ? ` (${findings.length === 0 ? 'no findings' : `${findings.length} finding${findings.length === 1 ? '' : 's'}`})` : ''}`
-          : 'Not run on this commit'}
-      </span>{' '}
-      {run?.state === 'done' && run.summary && <span className="muted">{run.summary}</span>}
-      {run?.state === 'error' && run.detail && (
-        <span className="callout warn" role="alert">
-          {run.detail}
-        </span>
-      )}
-      {findings.length > 0 && (
-        <ul className="small" data-testid="security-findings">
-          {findings.map((f) => (
-            <li key={f.id} data-severity={f.severity} data-dismissed={Boolean(f.dismissed)}>
-              <b>{f.severity}</b> {f.id}: {f.title}{' '}
-              <span className="muted">
-                <code>
-                  {f.file}
-                  {f.line ? `:${f.line}` : ''}
-                </code>
-              </span>
-              <div>{f.why}</div>
-              <div className="muted">Fix: {f.fix}</div>
-              {f.dismissed ? (
-                <div className="muted" data-testid="security-dismissed">
-                  Dismissed by {f.dismissed.byName ?? 'a person'}: {f.dismissed.reason}
-                </div>
-              ) : (
-                dismissing !== f.id && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      setDismissing(f.id);
-                      setReason('');
-                    }}
-                  >
-                    Dismiss {f.id} with a reason
-                  </button>
-                )
-              )}
-              {dismissing === f.id && (
-                <span className="row wrap">
-                  <textarea
-                    aria-label={`Why ${f.id} is dismissed`}
-                    placeholder="Why does this need no fix? (10 characters or more)"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    disabled={busy || reason.trim().length < 10}
-                    onClick={() => void act(() => dismissFinding(id, f.id, reason.trim()))}
-                  >
-                    Dismiss
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => setDismissing(null)}>
-                    Cancel
-                  </button>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <span className="row wrap">
-        <button
-          type="button"
-          disabled={busy || run?.state === 'running'}
-          onClick={() => void act(() => startSecurity(id))}
-        >
-          {run ? 'Run the security review again' : 'Run the security review'}
-        </button>
-        {sendable.length > 0 && run?.state === 'done' && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void act(async () => {
-                await sendFindingsBack(id);
-                onSentBack('Sent the security findings back to the engineer.');
-              })
-            }
-          >
-            Send findings back to the engineer
-          </button>
-        )}
-        {s.blocks && (
-          <span className="muted" data-testid="security-blocks">
-            {s.blocks}
-          </span>
-        )}
-      </span>
-      {problem && (
-        <span role="alert" className="callout warn">
-          {problem}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function Waiting({ i }: { i: InteractionDto }) {
-  const n = i.blocks.length;
-  if (i.type === 'review') return <span className="pill wait">Blocks the merge</span>;
-  if (i.hardStop) return <span className="pill stop">Hard stop</span>;
-  return n > 0 ? (
-    <span className="pill wait">
-      Blocks {n} run{n === 1 ? '' : 's'}
-    </span>
-  ) : (
-    <span className="pill none">Not blocking</span>
-  );
-}
-
-function Due({ i, now }: { i: InteractionDto; now: number }) {
-  if (!i.dueAt || i.defaultValue === null) return null;
-  const left = new Date(i.dueAt).getTime() - now;
-  return (
-    <span className="chip right" data-testid="due">
-      {left > 0 ? `Default in ${formatSpan(left)}` : 'Default being applied'}
-    </span>
-  );
-}
-
-function Ask({
-  i,
-  rank,
-  now,
-  highlight,
-  onChanged,
-  onAnswered,
-}: {
-  i: InteractionDto;
-  rank: number;
-  now: number;
-  highlight: boolean;
-  onChanged: () => void;
-  onAnswered: (note: string) => void;
-}) {
-  const options = optionsOf(i);
-  const c = card(i);
-  const [picked, setPicked] = useState<string>(i.recommendation ?? options[0]?.id ?? '');
-  const [text, setText] = useState('');
-  const [standing, setStanding] = useState(false);
-  const [scope, setScope] = useState<'initiative' | 'repository' | 'global'>('initiative');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [marked, setMarked] = useState(i.didntNeedToAsk);
-  const ref = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (highlight) ref.current?.scrollIntoView({ block: 'center' });
-  }, [highlight]);
-
-  const send = async (body: Parameters<typeof answerInteraction>[1], note: string) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await answerInteraction(i.id, body);
-      onAnswered(note);
-    } catch (e) {
-      setProblem(e instanceof ApiProblem ? e.message : 'Could not send your answer.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const snooze = async () => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await snoozeInteraction(i.id, 120);
-      onChanged();
-    } catch (e) {
-      setProblem(e instanceof ApiProblem ? e.message : 'Could not snooze.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const isDecision = i.type === 'review' || i.type === 'checkpoint';
-  const recommended = options.find((o) => o.id === i.recommendation);
-
-  return (
-    <article
-      ref={ref}
-      className={`ask${highlight ? ' highlight' : ''}${i.hardStop ? ' hard' : ''}`}
-      data-testid="ask"
-      data-id={i.id}
-    >
-      <div className="row wrap">
-        <span className="rank">{rank}</span>
-        <span className="chip warn">{TYPE_LABEL[i.type] ?? i.type}</span>
-        <span className="chip agent">
-          {roleLabel(i.agentRole)}
-          {i.runId ? ` · RUN-${i.runId.slice(-4).toUpperCase()}` : ''}
-        </span>
-        <Waiting i={i} />
-        {i.escalationLevel > 0 && (
-          <span className="pill stop" data-testid="escalated">
-            Escalated to you
-          </span>
-        )}
-        {i.snoozedUntil && new Date(i.snoozedUntil).getTime() > now && (
-          <span className="chip">
-            Snoozed for {formatSpan(new Date(i.snoozedUntil).getTime() - now)}
-          </span>
-        )}
-        <Due i={i} now={now} />
-      </div>
-      <h3>{i.title}</h3>
-      {i.initiativeTitle && <p className="muted small">{i.initiativeTitle}</p>}
-
-      {isDecision ? (
-        <div className="ctx">
-          {c.summary && (
-            <div>
-              <b>What happened</b>
-              {c.summary}
-            </div>
-          )}
-          {c.triggers && c.triggers.length > 0 && (
-            <div>
-              <b>Why it needs you</b>
-              {c.triggers.map((t) => t.description ?? t.id).join('; ')}
-            </div>
-          )}
-          {c.autoMerge && !c.autoMerge.auto && (
-            <div>
-              <b>Why a person reviews it</b>
-              {c.autoMerge.reason}
-            </div>
-          )}
-          {c.verify && (
-            <div>
-              <b>Checks</b>
-              {c.verify.passed
-                ? 'The checks passed before the pull request opened.'
-                : 'The checks did not pass.'}
-              {c.diff ? ` ${c.diff.files} file(s), +${c.diff.additions} −${c.diff.deletions}.` : ''}
-            </div>
-          )}
-          {c.prUrl && (
-            <div>
-              <b>Pull request</b>
-              <a href={c.prUrl} target="_blank" rel="noreferrer">
-                #{c.prNumber} on GitHub
-              </a>
-            </div>
-          )}
-          {c.prUrl && <PreviewLine id={i.id} />}
-          {c.prUrl && <SmokeLine id={i.id} />}
-          {c.prUrl && <SecurityLine id={i.id} onSentBack={onAnswered} />}
-        </div>
-      ) : (
-        <div className="ctx">
-          {(c.context ?? c.summary) && (
-            <div>
-              <b>What it was doing</b>
-              {c.context ?? c.summary}
-            </div>
-          )}
-          {c.whyNow && (
-            <div>
-              <b>Why it needs you</b>
-              {c.whyNow}
-            </div>
-          )}
-          <div>
-            <b>What is waiting</b>
-            {i.blocks.length > 0
-              ? `${i.blocks.length} run${i.blocks.length === 1 ? ' is' : 's are'} waiting for this.`
-              : 'Nothing. The agent continues without it.'}
-          </div>
-        </div>
-      )}
-
-      {isDecision ? (
-        <>
-          <textarea
-            aria-label="Comment"
-            placeholder="Comment (optional)"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <div className="row wrap">
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() =>
-                send(
-                  { decision: 'approved', answer: text },
-                  'Approved. The change can merge once the checks are green.',
-                )
-              }
-            >
-              Approve
-            </button>
-            <button
-              disabled={busy}
-              onClick={() =>
-                send(
-                  { decision: 'changes_requested', answer: text },
-                  'Changes requested. The agent will be told.',
-                )
-              }
-            >
-              Request changes
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => send({ decision: 'rejected', answer: text }, 'Rejected.')}
-            >
-              Reject
-            </button>
-            {!i.hardStop && (
-              <button disabled={busy} onClick={() => snooze()} className="right">
-                Snooze 2 h
-              </button>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          {options.length > 0 ? (
-            <fieldset className="opts" disabled={busy}>
-              {options.map((o) => (
-                <label key={o.id}>
-                  <input
-                    type="radio"
-                    name={`q-${i.id}`}
-                    value={o.id}
-                    checked={picked === o.id}
-                    onChange={() => setPicked(o.id)}
-                  />
-                  <div>
-                    <b>
-                      {o.id} · {o.label}
-                    </b>{' '}
-                    {o.id === i.recommendation && <span className="chip ok">recommended</span>}
-                    {o.impact && <div className="sub">{o.impact}</div>}
-                  </div>
-                </label>
-              ))}
-            </fieldset>
-          ) : (
-            <textarea
-              aria-label="Your answer"
-              placeholder="Your answer"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
-          )}
-          <div className="row wrap">
-            <button
-              className="primary"
-              disabled={busy || (options.length > 0 ? !picked : !text.trim())}
-              onClick={() =>
-                send(
-                  options.length > 0
-                    ? { optionId: picked, makeStanding: standing, standingScope: scope }
-                    : { answer: text, makeStanding: standing, standingScope: scope },
-                  standing
-                    ? 'Saved as a standing decision. Agents will stop asking about this.'
-                    : 'The agent has your answer.',
-                )
-              }
-            >
-              Answer
-            </button>
-            {recommended && i.defaultValue !== null && (
-              <span className="small muted">
-                If nobody answers, <b>{recommended.label}</b> is applied.
-              </span>
-            )}
-            <label className="small">
-              <input
-                type="checkbox"
-                checked={standing}
-                onChange={(e) => setStanding(e.target.checked)}
-              />{' '}
-              Use this answer from now on
-            </label>
-            {standing && (
-              <select
-                aria-label="Applies to"
-                value={scope}
-                onChange={(e) => setScope(e.target.value as typeof scope)}
-              >
-                <option value="initiative">for this initiative</option>
-                <option value="repository">for this repository</option>
-                <option value="global">everywhere</option>
-              </select>
-            )}
-            {!i.hardStop && (
-              <button className="right" disabled={busy} onClick={() => snooze()}>
-                Snooze 2 h
-              </button>
-            )}
-          </div>
-        </>
-      )}
-      <div className="row">
-        {
-          <button
-            className="link small"
-            disabled={marked}
-            onClick={async () => {
-              await didntNeedToAsk(i.id);
-              setMarked(true);
-            }}
-          >
-            {marked ? "Marked: didn't need to ask" : "Didn't need to ask"}
-          </button>
-        }
-      </div>
-      {problem && (
-        <p role="alert" className="callout warn" data-testid="ask-error">
-          {problem}
-        </p>
-      )}
-    </article>
-  );
-}
+import { useCallback, useEffect, useState } from 'react';
+import type { AssumptionDto, AttentionProfile, InteractionDto } from '@sdlc/schemas';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Chip from '@mui/material/Chip';
+import Link from '@mui/material/Link';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import { decideAssumption, getAssumptions, getProfile, getQueue } from './api';
+import { formatSpan, roleLabel } from './labels';
+import { Ask } from './queue/Ask';
+import { PageHeader } from './ui';
 
 function AssumptionRow({ a, onChanged }: { a: AssumptionDto; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -829,25 +26,33 @@ function AssumptionRow({ a, onChanged }: { a: AssumptionDto; onChanged: () => vo
     }
   };
   return (
-    <div className="ask small" data-testid="assumption">
-      <div className="row wrap">
-        <span className="chip">Notice</span>
-        <span className="chip agent">{roleLabel(a.agentRole)}</span>
-        <b>Assumption declared: {a.text}</b>
-      </div>
-      <p className="muted">
-        {a.initiativeTitle}. Accepting turns it into a requirement. Rejecting asks the person who
-        started the run what to redo.
-      </p>
-      <div className="row">
-        <button disabled={busy} onClick={() => decide('accept')}>
-          Accept
-        </button>
-        <button disabled={busy} onClick={() => decide('reject')}>
-          Reject
-        </button>
-      </div>
-    </div>
+    <Card data-testid="assumption">
+      <CardContent>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
+        >
+          <Chip label="Notice" />
+          <Chip color="secondary" variant="outlined" label={roleLabel(a.agentRole)} />
+          <Typography variant="subtitle2" component="b">
+            Assumption declared: {a.text}
+          </Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
+          {a.initiativeTitle}. Accepting turns it into a requirement. Rejecting asks the person who
+          started the run what to redo.
+        </Typography>
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => decide('accept')}>
+            Accept
+          </Button>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => decide('reject')}>
+            Reject
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -890,31 +95,40 @@ export function Queue({ openId }: { openId: string | null }) {
 
   return (
     <>
-      <div className="page-head">
-        <div className="row">
-          <h1>Attention queue</h1>
-          {items && (
-            <span className={`pill ${visible.length ? 'wait' : 'done'}`} data-testid="count">
-              {visible.length ? `${visible.length} waiting on you` : 'All clear'}
-            </span>
-          )}
-        </div>
-        <p className="muted">
-          Ranked by what each ask blocks, then by deadline. No agent is idle while you read.
-        </p>
-      </div>
+      <PageHeader
+        title="Attention queue"
+        chip={
+          items && (
+            <Chip
+              data-testid="count"
+              color={visible.length ? 'warning' : 'success'}
+              label={visible.length ? `${visible.length} waiting on you` : 'All clear'}
+            />
+          )
+        }
+        subtitle="Ranked by what each ask blocks, then by deadline. No agent is idle while you read."
+      />
       {error && (
-        <p role="alert" className="callout warn">
+        <Alert severity="warning" sx={{ mb: 2 }}>
           {error}
-        </p>
+        </Alert>
       )}
-      <div className="grid">
-        <div className="stack">
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' },
+          gap: 2,
+          alignItems: 'start',
+        }}
+      >
+        <Stack spacing={2}>
           {items && visible.length === 0 && (
-            <div className="card" data-testid="empty">
-              Nothing is waiting on you.
-              {snoozed > 0 && ` ${snoozed} snoozed.`}
-            </div>
+            <Card data-testid="empty">
+              <CardContent>
+                Nothing is waiting on you.
+                {snoozed > 0 && ` ${snoozed} snoozed.`}
+              </CardContent>
+            </Card>
           )}
           {visible.map((i, n) => (
             <Ask
@@ -933,87 +147,128 @@ export function Queue({ openId }: { openId: string | null }) {
           {settled
             .filter((s) => !visible.some((v) => v.id === s.i.id))
             .map((s) => (
-              <div className="ask" key={s.i.id} data-testid="settled">
-                <h3>{s.i.title}</h3>
-                <div className="callout ok" data-testid="answered">
-                  <b>Done.</b> {s.note}
-                </div>
-              </div>
+              <Card key={s.i.id} data-testid="settled">
+                <CardContent>
+                  <Typography component="h3" variant="h3" gutterBottom>
+                    {s.i.title}
+                  </Typography>
+                  <Alert severity="success" data-testid="answered">
+                    <b>Done.</b> {s.note}
+                  </Alert>
+                </CardContent>
+              </Card>
             ))}
           {assumptions.length > 0 && (
             <>
-              <h2>
-                Assumptions to review <span className="count">{assumptions.length}</span>
-              </h2>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Typography component="h2" variant="h2">
+                  Assumptions to review
+                </Typography>
+                <Chip label={assumptions.length} className="count" />
+              </Stack>
               {assumptions.slice(0, 5).map((a) => (
                 <AssumptionRow key={a.id} a={a} onChanged={load} />
               ))}
-              <a href="#/assumptions" className="small">
+              <Link href="#/assumptions" variant="body2">
                 See all assumptions and standing decisions
-              </a>
+              </Link>
             </>
           )}
-        </div>
-        <aside className="stack">
-          <div className="card">
-            <h3>Blocked work</h3>
-            {blocking.length === 0 ? (
-              <p className="small">No agent is waiting on you.</p>
-            ) : (
-              <ul className="checks small">
-                {blocking.map((i) => (
-                  <li key={i.id}>
-                    <span className="wt">●</span> {i.title}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="card" data-testid="reached">
-            <h3>How you are reached</h3>
-            {profile ? (
-              <dl className="kv small">
-                <dt>Chat</dt>
-                <dd>
-                  {profile.chatConfigured
-                    ? profile.slackLinked
-                      ? 'Slack. Answer simple asks in chat.'
-                      : 'Slack is set up, but your account is not linked. Ask an admin.'
-                    : 'Not set up. You see asks here.'}
-                </dd>
-                <dt>Digest</dt>
-                <dd>
-                  {profile.digestAt
-                    ? `${profile.digestAt} for low-priority items`
-                    : 'Sent as they come'}
-                </dd>
-                <dt>Reminders</dt>
-                <dd>
-                  After {formatSpan(profile.reminderAfterMin * 60_000)}, then the next person after{' '}
-                  {formatSpan(profile.escalateAfterMin * 60_000)}
-                </dd>
-                {profile.hats.map((h) => (
-                  <div key={h.role} className="kv-row">
-                    <dt>{roleLabel(h.role)}</dt>
-                    <dd>
-                      {h.deputyName ? `Deputy: ${h.deputyName}` : 'No deputy. Admins are next.'}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="small muted">Loading…</p>
-            )}
-          </div>
-          <div className="card">
-            <h3>What makes a good ask</h3>
-            <p className="small muted">
-              Each card says what the agent was doing, why it needs a person, what is waiting, the
-              options, a recommendation, and what happens if nobody answers.
-            </p>
-          </div>
-        </aside>
-      </div>
+        </Stack>
+        <Stack spacing={2} component="aside">
+          <Card>
+            <CardContent>
+              <Typography component="h3" variant="h3" gutterBottom>
+                Blocked work
+              </Typography>
+              {blocking.length === 0 ? (
+                <Typography variant="body2">No agent is waiting on you.</Typography>
+              ) : (
+                <Stack component="ul" spacing={0.75} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+                  {blocking.map((i) => (
+                    <Typography component="li" variant="body2" key={i.id}>
+                      <Box component="span" sx={{ color: 'warning.main', mr: 0.75 }}>
+                        {'\u25cf'}
+                      </Box>
+                      {i.title}
+                    </Typography>
+                  ))}
+                </Stack>
+              )}
+            </CardContent>
+          </Card>
+          <Card data-testid="reached">
+            <CardContent>
+              <Typography component="h3" variant="h3" gutterBottom>
+                How you are reached
+              </Typography>
+              {profile ? (
+                <Box
+                  component="dl"
+                  sx={{
+                    m: 0,
+                    display: 'grid',
+                    gridTemplateColumns: '90px 1fr',
+                    gap: 0.75,
+                    fontSize: 13,
+                  }}
+                >
+                  <Typography component="dt" variant="body2" color="text.secondary">
+                    Chat
+                  </Typography>
+                  <Typography component="dd" variant="body2" sx={{ m: 0 }}>
+                    {profile.chatConfigured
+                      ? profile.slackLinked
+                        ? 'Slack. Answer simple asks in chat.'
+                        : 'Slack is set up, but your account is not linked. Ask an admin.'
+                      : 'Not set up. You see asks here.'}
+                  </Typography>
+                  <Typography component="dt" variant="body2" color="text.secondary">
+                    Digest
+                  </Typography>
+                  <Typography component="dd" variant="body2" sx={{ m: 0 }}>
+                    {profile.digestAt
+                      ? `${profile.digestAt} for low-priority items`
+                      : 'Sent as they come'}
+                  </Typography>
+                  <Typography component="dt" variant="body2" color="text.secondary">
+                    Reminders
+                  </Typography>
+                  <Typography component="dd" variant="body2" sx={{ m: 0 }}>
+                    After {formatSpan(profile.reminderAfterMin * 60_000)}, then the next person
+                    after {formatSpan(profile.escalateAfterMin * 60_000)}
+                  </Typography>
+                  {profile.hats.map((h) => (
+                    <Box key={h.role} sx={{ display: 'contents' }}>
+                      <Typography component="dt" variant="body2" color="text.secondary">
+                        {roleLabel(h.role)}
+                      </Typography>
+                      <Typography component="dd" variant="body2" sx={{ m: 0 }}>
+                        {h.deputyName ? `Deputy: ${h.deputyName}` : 'No deputy. Admins are next.'}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Loading{'\u2026'}
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent>
+              <Typography component="h3" variant="h3" gutterBottom>
+                What makes a good ask
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Each card says what the agent was doing, why it needs a person, what is waiting, the
+                options, a recommendation, and what happens if nobody answers.
+              </Typography>
+            </CardContent>
+          </Card>
+        </Stack>
+      </Box>
     </>
   );
 }

@@ -54,7 +54,7 @@ export function StepNode({ data }: NodeProps<StepNodeType>) {
   const body = (
     <Box
       sx={{
-        width: 210,
+        width: data.compact ? 150 : 210,
         px: 1.5,
         py: 1,
         bgcolor: 'background.paper',

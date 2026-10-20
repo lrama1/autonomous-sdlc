@@ -224,7 +224,7 @@ select:not([class*='Mui']) {
   border-radius: 8px;
   background: var(--surface);
 }
-textarea {
+textarea:not([class*='Mui']) {
   width: 100%;
   min-height: 60px;
   box-sizing: border-box;
