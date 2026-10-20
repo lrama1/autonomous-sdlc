@@ -939,6 +939,148 @@ async function main() {
       );
     }
   }
+
+  if (phase === 'securityrun') {
+    const variant = process.env.SECURITY_VARIANT ?? 'dismiss';
+    say(
+      `--- securityrun (${variant}): the Security agent reads a pull request through the gateway on AWS ---`,
+    );
+    const dir = `sec-${stamp}`;
+    const page =
+      variant === 'clean'
+        ? [
+            '<!doctype html>',
+            '<meta charset="utf-8"><title>Guests</title>',
+            '<ul id="list"></ul>',
+            '<script>',
+            "const list = document.getElementById('list');",
+            "for (const g of ['Ann', 'Bo']) {",
+            "  const li = document.createElement('li');",
+            '  li.textContent = g;',
+            '  list.appendChild(li);',
+            '}',
+            '</script>',
+          ]
+        : [
+            '<!doctype html>',
+            '<meta charset="utf-8"><title>Guests</title>',
+            '<input id="name"><button id="add">Add</button>',
+            '<ul id="list"></ul>',
+            '<script>',
+            "const list = document.getElementById('list');",
+            'function show(name) {',
+            "  list.innerHTML += '<li onclick=\"pick(\\'' + name + '\\')\">' + name + '</li>';",
+            '}',
+            'function pick(name) { document.title = name; }',
+            "document.getElementById('add').onclick = () => show(document.getElementById('name').value);",
+            "new URLSearchParams(location.search).getAll('guest').forEach(show);",
+            '</script>',
+          ];
+    const { run } = await startRun(
+      `AWS security review ${stamp} ${variant}`,
+      [
+        'Create one file and commit it. Do not change anything else, do not run anything and do not ask any questions.',
+        '',
+        `The file ${dir}/index.html with exactly this content:`,
+        '```html',
+        ...page,
+        '```',
+      ].join('\n'),
+    );
+    const review = await waitFor(
+      'the review request',
+      () => open(run.id, ['review']),
+      420_000,
+      3000,
+    );
+    const raw = async (path: string, body?: object) => {
+      const r = await me.fetch(`${base}${path}`, {
+        method: 'POST',
+        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      });
+      let json: any = {};
+      try {
+        json = JSON.parse(r.text);
+      } catch {
+        // not JSON
+      }
+      return { status: r.status, json };
+    };
+    const sec = () => call('GET', `/api/interactions/${review.id}/security`);
+    const approve = () =>
+      raw(`/api/interactions/${review.id}/answer`, { decision: 'approved', answer: 'Looks good.' });
+    const before = await sec();
+    check(
+      before.available === true && before.required === true && before.run === null,
+      'X  the review shows a security review as required, and not yet run',
+    );
+    check((await approve()).status === 409, 'X  approving before the security review is refused');
+    const click = await raw(`/api/interactions/${review.id}/security/start`);
+    check(click.status === 202, `X  one click starts it (${click.status})`);
+    const done = await waitFor(
+      'the security review finishes',
+      async () => {
+        const x = await sec();
+        return x.run && x.run.state !== 'running' ? x : null;
+      },
+      300_000,
+      3000,
+    );
+    say(
+      `security review: ${done.run.state}. ${done.run.summary ?? done.run.detail}\n${done.run.findings.map((f: any) => `  [${f.severity}] ${f.id} ${f.category} ${f.file}:${f.line}: ${f.title}`).join('\n')}`,
+    );
+    check(
+      done.run.state === 'done',
+      `X  the agent gave an answer that reads on AWS (${done.run.state})`,
+    );
+    const high = done.run.findings.filter((f: any) => ['critical', 'high'].includes(f.severity));
+    if (variant === 'clean') {
+      check(
+        high.length === 0 && done.blocks === null,
+        'X  a clean page has no high finding, and can be approved',
+      );
+    } else {
+      check(
+        high.some((f: any) => /xss|injection|script/i.test(`${f.category} ${f.title}`)),
+        `X  the agent finds the cross-site scripting (${high.map((f: any) => f.id + ' ' + f.title).join('; ')})`,
+      );
+      check((await approve()).status === 409, 'X  approving with an open high finding is refused');
+      for (const f of high) {
+        const r = await raw(`/api/interactions/${review.id}/security/findings/${f.id}/dismiss`, {
+          reason: 'Names come from the host on their own page; nothing is shared.',
+        });
+        check(r.status === 201, `X  ${f.id} is dismissed with a reason (${r.status})`);
+      }
+    }
+    // The scratch repository may list smoke checks from earlier runs.
+    const sm = await call('GET', `/api/interactions/${review.id}/smoke`).catch(() => null);
+    if (sm?.available && sm.required !== 'none' && sm.blocks)
+      await raw(`/api/interactions/${review.id}/smoke/override`, {
+        reason: 'Security run: the smoke checks belong to an earlier test of this repository.',
+      });
+    const ok = await approve();
+    check(ok.status === 200, `X  the review is approved (${ok.status})`);
+    const merged = await waitFor(
+      'the Gate merges',
+      async () => {
+        const r = await call('GET', `/api/interactions/${review.id}`);
+        const g = r?.contextCard?.gate;
+        if (g && !['waiting_ci', 'merged'].includes(g.state))
+          throw new Error(`gate ended as ${g.state}: ${g.detail}`);
+        return g?.state === 'merged' ? g : null;
+      },
+      420_000,
+      5000,
+    );
+    check(Boolean(merged.mergedSha), 'X  the Gate merged it');
+    const reviews: any[] = await gh(`/repos/${REPO}/pulls/${review.contextCard.prNumber}/reviews`);
+    const note = reviews.map((x) => String(x.body)).find((b) => /Security review/.test(b)) ?? '';
+    check(
+      note.includes('Security review:'),
+      `X  GitHub shows the security review ("${note.slice(-120)}")`,
+    );
+  }
 }
 
 try {
