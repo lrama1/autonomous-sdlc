@@ -59,11 +59,12 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_no_host" {
   name = "Managed-AllViewerExceptHostHeader"
 }
 
-# HTTPS for free: CloudFront's own certificate on *.cloudfront.net. Nothing is cached. Cookies, headers and query
-# strings go through, so the API behaves as it does locally. (A custom domain and certificate come later.)
+# HTTPS: CloudFront's own certificate on *.cloudfront.net, or your domain's certificate when app_domain is set (domain.tf).
+# Nothing is cached. Cookies, headers and query strings go through, so the API behaves as it does locally.
 resource "aws_cloudfront_distribution" "edge" {
   enabled         = true
   comment         = var.name
+  aliases         = local.custom_domain ? [var.app_domain] : []
   price_class     = "PriceClass_100"
   http_version    = "http2"
   is_ipv6_enabled = true
@@ -104,7 +105,18 @@ resource "aws_cloudfront_distribution" "edge" {
   restrictions {
     geo_restriction { restriction_type = "none" }
   }
-  viewer_certificate { cloudfront_default_certificate = true }
+  dynamic "viewer_certificate" {
+    for_each = local.custom_domain ? [] : [1]
+    content { cloudfront_default_certificate = true }
+  }
+  dynamic "viewer_certificate" {
+    for_each = local.custom_domain ? [1] : []
+    content {
+      acm_certificate_arn      = aws_acm_certificate_validation.site[0].certificate_arn
+      ssl_support_method       = "sni-only"
+      minimum_protocol_version = "TLSv1.2_2021"
+    }
+  }
 }
 
 # A second address, only for previews. Code from a pull request is unreviewed, so it is served from an origin that does
@@ -112,6 +124,7 @@ resource "aws_cloudfront_distribution" "edge" {
 resource "aws_cloudfront_distribution" "previews" {
   enabled         = true
   comment         = "${var.name} previews"
+  aliases         = local.custom_domain ? [var.preview_domain] : []
   price_class     = "PriceClass_100"
   http_version    = "http2"
   is_ipv6_enabled = true
@@ -150,5 +163,16 @@ resource "aws_cloudfront_distribution" "previews" {
   restrictions {
     geo_restriction { restriction_type = "none" }
   }
-  viewer_certificate { cloudfront_default_certificate = true }
+  dynamic "viewer_certificate" {
+    for_each = local.custom_domain ? [] : [1]
+    content { cloudfront_default_certificate = true }
+  }
+  dynamic "viewer_certificate" {
+    for_each = local.custom_domain ? [1] : []
+    content {
+      acm_certificate_arn      = aws_acm_certificate_validation.site[0].certificate_arn
+      ssl_support_method       = "sni-only"
+      minimum_protocol_version = "TLSv1.2_2021"
+    }
+  }
 }

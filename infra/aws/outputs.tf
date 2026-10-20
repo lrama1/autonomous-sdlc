@@ -16,7 +16,7 @@ output "cognito_domain" {
 }
 
 output "previews_url" {
-  value       = "https://${aws_cloudfront_distribution.previews.domain_name}"
+  value       = local.preview_origin
   description = "The address previews are served from. It is not the platform's."
 }
 

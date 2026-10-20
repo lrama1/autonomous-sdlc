@@ -16,15 +16,27 @@ provider "aws" {
   }
 }
 
+# CloudFront reads its certificate from us-east-1, whatever region the rest of the stack runs in.
+provider "aws" {
+  alias   = "us_east_1"
+  region  = "us-east-1"
+  profile = var.aws_profile == "" ? null : var.aws_profile
+  default_tags {
+    tags = { Project = "autonomous-sdlc", Stack = var.name, ManagedBy = "terraform" }
+  }
+}
+
 data "aws_caller_identity" "me" {}
 data "aws_availability_zones" "az" { state = "available" }
 
 locals {
-  account    = data.aws_caller_identity.me.account_id
-  azs        = slice(data.aws_availability_zones.az.names, 0, 2)
-  public_url = "https://${aws_cloudfront_distribution.edge.domain_name}"
-  issuer     = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
-  image      = "${aws_ecr_repository.platform.repository_url}:${var.image_tag}"
+  account        = data.aws_caller_identity.me.account_id
+  azs            = slice(data.aws_availability_zones.az.names, 0, 2)
+  custom_domain  = var.app_domain != ""
+  public_url     = local.custom_domain ? "https://${var.app_domain}" : "https://${aws_cloudfront_distribution.edge.domain_name}"
+  preview_origin = local.custom_domain ? "https://${var.preview_domain}" : "https://${aws_cloudfront_distribution.previews.domain_name}"
+  issuer         = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+  image          = "${aws_ecr_repository.platform.repository_url}:${var.image_tag}"
   # Secrets that Terraform creates and ECS injects. The API creates its own under runtime/.
   runtime_prefix = "${var.name}/runtime/"
 }

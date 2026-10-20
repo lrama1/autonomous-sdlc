@@ -1,3 +1,25 @@
+variable "app_domain" {
+  type        = string
+  default     = ""
+  description = "A host name for the platform, such as app.example.com. Empty keeps the CloudFront address. Needs preview_domain and hosted_zone_id."
+}
+
+variable "preview_domain" {
+  type        = string
+  default     = ""
+  description = "A host name for previews, such as previews.example.com. It must be a different name from app_domain: previewed code must not share the platform's cookies."
+}
+
+variable "hosted_zone_id" {
+  type        = string
+  default     = ""
+  description = "The Route 53 hosted zone that holds both names. Terraform adds the records and the certificate's validation records to it."
+  validation {
+    condition     = (var.app_domain == "" && var.preview_domain == "" && var.hosted_zone_id == "") || (var.app_domain != "" && var.preview_domain != "" && var.hosted_zone_id != "" && var.app_domain != var.preview_domain)
+    error_message = "Set app_domain, preview_domain and hosted_zone_id together (two different names), or none of them."
+  }
+}
+
 variable "name" {
   type        = string
   default     = "sdlc-dev"
