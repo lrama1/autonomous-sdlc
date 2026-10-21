@@ -1,0 +1,80 @@
+digraph aws {
+  rankdir=TB; compound=true; newrank=true; splines=true; nodesep=0.4; ranksep=0.75; fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#566573", fontname="Helvetica", fontsize=11, margin="0.15,0.08"];
+  edge [fontname="Helvetica", fontsize=9, color="#566573", arrowsize=0.7];
+
+  person [label="Person\n(browser)", fillcolor="#fdebd0"];
+  actions [label="GitHub Actions\ndeploy workflow\n(OIDC, terraform apply)", fillcolor="#fdebd0"];
+  github [label="GitHub\nrepositories and\nthe two GitHub Apps", fillcolor="#fdebd0"];
+  openrouter [label="OpenRouter\nmodel API", fillcolor="#fdebd0"];
+
+  subgraph cluster_aws {
+    label="AWS account, us-east-1"; labeljust=l; style="rounded"; color="#e67e22"; fontsize=13; penwidth=2;
+
+    subgraph cluster_edge {
+      label="Edge"; style="rounded,filled"; fillcolor="#fef9e7"; color="#d4ac0d";
+      r53 [label="Route 53\napp. and previews.\nagentonomous.com"];
+      cfapp [label="CloudFront: app\nno caching\nadds a secret header"];
+      cfprev [label="CloudFront: previews\nits own address, so preview\ncode shares no cookies"];
+    }
+
+    subgraph cluster_vpc {
+      label="VPC 10.60.0.0/16 (no NAT gateway)"; style="rounded,filled"; fillcolor="#f4f6f7"; color="#2e86c1"; penwidth=2;
+
+      subgraph cluster_pub {
+        label="Two public subnets"; style="rounded,filled"; fillcolor="#eaf2f8"; color="#2e86c1";
+        alb [label="Application Load Balancer\naccepts only CloudFront\nwith the secret header"];
+        api [label="api service (Fargate)\nweb app, API, worker,\nGate, preview proxy", fillcolor="#d6eaf8"];
+        gateway [label="gateway service (Fargate)\nmodel gateway: keys,\nbudgets, usage", fillcolor="#d6eaf8"];
+        egress [label="egress service (Fargate)\nallowlist proxy: the only\nway out for runs", fillcolor="#d6eaf8"];
+        cloudmap [label="Cloud Map\nprivate names for\napi, gateway, egress"];
+      }
+      subgraph cluster_priv {
+        label="Two private subnets (no route out)"; style="rounded,filled"; fillcolor="#e8f6f3"; color="#17a589";
+        rds [label="RDS Postgres\ndb.t4g.micro, 20 GB", shape=cylinder, fillcolor="#d1f2eb"];
+      }
+      subgraph cluster_iso {
+        label="Isolated subnet 10.60.20.0/24 (no route out)"; style="rounded,filled"; fillcolor="#fdedec"; color="#cb4335";
+        runner [label="Runner tasks (Fargate)\none per agent run\nno task role, no AWS keys", fillcolor="#fadbd8"];
+        preview [label="Preview tasks (Fargate)\npull request code\nstops after 30 minutes", fillcolor="#fadbd8"];
+        dnsfw [label="Route 53 Resolver DNS Firewall\nanswers only an allowlist"];
+        vpce [label="VPC endpoints\nECR api, ECR dkr, Logs,\nS3 gateway"];
+      }
+    }
+
+    subgraph cluster_svc {
+      label="Regional services"; style="rounded,filled"; fillcolor="#f5eef8"; color="#884ea0";
+      cognito [label="Cognito user pool\nhosted sign-in\ninvite only"];
+      acm [label="ACM certificate\n(both names)"];
+      sm [label="Secrets Manager\ndatabase URL, session key,\nGitHub App keys"];
+      ecr [label="ECR\nplatform and runner images"];
+      s3 [label="S3 run state\nparked runs, presigned URLs", shape=cylinder, fillcolor="#e8daef"];
+      logs [label="CloudWatch Logs\n7 days"];
+      bud [label="AWS Budgets\nmonthly cost alarm"];
+    }
+  }
+
+  person -> r53;
+  r53 -> cfapp; r53 -> cfprev;
+  acm -> cfapp [style=dotted, arrowhead=none];
+  cfapp -> alb; cfprev -> alb;
+  person -> cognito [style=dashed, label="sign in"];
+  alb -> api;
+  api -> cognito [style=dashed, label="OIDC"];
+  api -> rds;
+  api -> gateway [label="model calls"];
+  api -> runner [label="RunTask"];
+  api -> preview [label="RunTask\nand proxy"];
+  api -> sm; api -> s3 [label="presigns"];
+  api -> github [label="Apps, PRs"];
+  gateway -> openrouter;
+  runner -> cloudmap [label="finds api,\ngateway"];
+  cloudmap -> api [style=dotted, arrowhead=none];
+  runner -> egress; preview -> egress;
+  egress -> github [label="allowlist\nfrom api"];
+  runner -> vpce; preview -> vpce;
+  vpce -> ecr; vpce -> s3; vpce -> logs;
+  dnsfw -> runner [style=dotted, arrowhead=none];
+  actions -> ecr [label="docker push"];
+  actions -> bud [style=invis];
+}
