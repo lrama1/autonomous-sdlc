@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { main, BASE } from './record.mjs';
 import { login } from './record.mjs';
 
@@ -74,7 +76,7 @@ const scenes = {
     url: '/#/queue',
     say:
       'The spec arrives in my attention queue as a pull request. The card says what changed, that the build is green, and which hat has to decide: product owner. ' +
-      'The agent wrote three user stories, kept to Node with no dependencies, and listed what is out of scope. I read it, add a comment, and approve. ' +
+      'The agent wrote user stories, kept to Node with no dependencies, and wrote down its assumptions and open questions. I read it, add a comment, and approve. ' +
       'Specs and designs never merge on their own.',
     async run(h) {
       const p = h.page;
@@ -290,6 +292,7 @@ const scenes = {
     },
   },  reviewchecks2: {
     url: '/#/queue',
+    lapse: true,
     say:
       'The smoke test passed all four checks: it called the home page and both API endpoints, and ran the test suite. ' +
       'The security review reports four medium findings, such as numbers written into the page without escaping, and no limit on the size of a request. None is high or critical, so none blocks the merge, but they stay on the record. ' +
@@ -310,6 +313,217 @@ const scenes = {
       await h.waitUntil('the preview', async () => (await ask.getByTestId('preview').getAttribute('data-state')) === 'ready', 240000, 2000);
       await h.sleep(2500);
     },
+  },  tryapp: {
+    url: '/#/queue',
+    say:
+      'This is the pull request\u2019s own code, running right now in a sandbox on AWS, behind a link the platform made for it. ' +
+      'Let me try it. I add a person\u2026 and it fails. The page asks the server for /api/people with a leading slash, but a preview lives under its own path, so the request never reaches the app. ' +
+      'A reviewer would never see that in the code alone. I go back to the queue and request changes, with a note for the engineer.',
+    async run(h) {
+      const p = h.page;
+      const ask = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask.waitFor({ timeout: 30000 });
+      const prev = ask.getByTestId('preview');
+      await h.move(prev);
+      await h.sleep(2500);
+      const href = await prev.getByRole('link').first().getAttribute('href');
+      await h.move(prev.getByRole('link').first());
+      await h.sleep(800);
+      await p.goto(href);
+      await p.locator('#personName').waitFor({ timeout: 30000 });
+      await h.type(p.locator('#personName'), 'Ann', 90);
+      await h.click(p.locator('#addPersonForm button'));
+      await h.sleep(5000);
+      await p.goBack();
+      await p.goto(BASE + '/#/queue');
+      const ask2 = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask2.waitFor({ timeout: 30000 });
+      await h.type(
+        ask2.getByLabel('Comment'),
+        'In the preview, adding a person fails: the page calls /api/people with a leading slash, and a preview is served under its own path. Use relative URLs (api/people) for every fetch, link and asset.',
+        20,
+      );
+      await h.sleep(800);
+      await h.click(ask2.getByRole('button', { name: 'Request changes' }));
+      await h.sleep(3000);
+    },
+  },  redowait: {
+    url: '/#/map',
+    lapse: true,
+    say:
+      'My comment goes straight back to the engineer agent. The platform starts the task again in a fresh container, with my words added to its instructions, and it fixes the code. ' +
+      'Nothing merges while it works, and the same checks will run again on the new commit.',
+    async run(h) {
+      const p = h.page;
+      await p.getByLabel('Initiative').selectOption({ label: 'Expense splitter app' });
+      await h.waitUntil('the redone review', async () => {
+        const list = await (await p.request.get(BASE + '/api/interactions')).json();
+        return list.some((i) => i.initiativeTitle === 'Expense splitter app' && /T2:/.test(i.title));
+      }, 1_800_000, 5000);
+    },
+  },
+  recheck: {
+    url: '/#/queue',
+    say:
+      'The redone pull request is back in my queue, and because the code changed, the earlier results no longer count. The card says the checks have not run on this commit. ' +
+      'I run the security review and the smoke test again.',
+    async run(h) {
+      const p = h.page;
+      const ask = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask.waitFor({ timeout: 30000 });
+      await h.move(ask.getByRole('heading', { level: 3 }));
+      await h.sleep(4000);
+      await h.scrollBy(520, 3000);
+      await h.sleep(2500);
+      await h.click(ask.getByRole('button', { name: 'Run the security review' }));
+      await h.sleep(1500);
+      await h.click(ask.getByRole('button', { name: 'Run the smoke test' }));
+      await h.sleep(3000);
+    },
+  },  checkswait2: {
+    url: '/#/queue',
+    lapse: true,
+    say:
+      'The smoke test is a fresh container that checks out the new commit, starts the app, and calls it. It takes a minute or two.',
+    async run(h) {
+      const p = h.page;
+      const ask = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask.waitFor({ timeout: 30000 });
+      await h.move(ask.getByTestId('smoke'));
+      await h.waitUntil('the checks', async () => {
+        const st = async (id) => (await ask.getByTestId(id).getAttribute('data-state')) ?? 'none';
+        const [a, b] = [await st('security'), await st('smoke')];
+        console.log('  states', a, b);
+        const done = (s) => !['none', 'running', 'pending', 'starting', 'queued', 'unknown'].includes(s);
+        return done(a) && done(b);
+      }, 600000, 4000);
+    },
+  },
+  previewstart: {
+    url: '/#/queue',
+    lapse: true,
+    say: 'The smoke test passes on the new commit. Now I start the preview again, so I can try the fix myself.',
+    async run(h) {
+      const p = h.page;
+      const ask = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask.waitFor({ timeout: 30000 });
+      const prev = ask.getByTestId('preview');
+      await h.move(prev);
+      const stop = prev.getByRole('button', { name: 'Stop the preview' });
+      if (await stop.count()) {
+        await stop.click();
+        await prev.getByRole('button', { name: /Run it (again|here)/ }).waitFor();
+      }
+      await h.click(prev.getByRole('button', { name: /Run it (again|here)/ }));
+      await h.waitUntil('the preview', async () => (await ask.getByTestId('preview').getAttribute('data-state')) === 'ready', 240000, 2000);
+      await h.sleep(1500);
+    },
+  },
+  tryapp2: {
+    url: '/#/queue',
+    say:
+      'The preview is running the redone code. I try the same thing, and this time adding a person works. I add three people, then a dinner for ninety dollars that Ann paid for and all three share, then a taxi that Ben paid for. ' +
+      'The app works out who owes whom: Cy owes Ann forty dollars, and Ben owes Ann ten. The amounts are right. The page shows ids instead of names, which I would raise as a follow-up.',
+    async run(h) {
+      const p = h.page;
+      const ask = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask.waitFor({ timeout: 30000 });
+      const prev = ask.getByTestId('preview');
+      await h.move(prev);
+      await h.sleep(1500);
+      const link = prev.getByRole('link').first();
+      const href = await link.getAttribute('href');
+      await h.move(link);
+      await h.sleep(600);
+      await p.goto(href);
+      await p.locator('#personName').waitFor({ timeout: 30000 });
+      for (const n of ['Ann', 'Ben', 'Cy']) {
+        await h.type(p.locator('#personName'), n, 90);
+        await h.click(p.locator('#addPersonForm button'));
+        await h.sleep(900);
+      }
+      await p.locator('#paidBy').selectOption({ label: 'Ann' });
+      await h.type(p.locator('#amount'), '90', 90);
+      await h.type(p.locator('#description'), 'Dinner', 90);
+      for (const c of await p.locator('#membersCheckboxes input[type=checkbox]').all()) await c.check();
+      await h.click(p.locator('#addExpenseForm button[type=submit]'));
+      await h.sleep(1500);
+      await p.locator('#paidBy').selectOption({ label: 'Ben' });
+      await p.locator('#amount').fill('');
+      await h.type(p.locator('#amount'), '30', 90);
+      await p.locator('#description').fill('');
+      await h.type(p.locator('#description'), 'Taxi', 90);
+      for (const c of await p.locator('#membersCheckboxes input[type=checkbox]').all()) await c.check();
+      await h.click(p.locator('#addExpenseForm button[type=submit]'));
+      await h.sleep(1500);
+      await h.scrollBy(1400, 3000);
+      await h.sleep(4000);
+    },
+  },  approvepr2: {
+    url: '/#/queue',
+    say:
+      'Back in the queue, the diagram shows every check accounted for on this commit: the agent\u2019s checks, the smoke test, and the security review, with nothing blocking. ' +
+      'I approve the task, with a note about the ids. The gate waits for the repository\u2019s own CI, and then merges the pull request.',
+    async run(h) {
+      const p = h.page;
+      const ask = p.getByTestId('ask').filter({ hasText: 'T2:' });
+      await ask.waitFor({ timeout: 30000 });
+      await h.move(ask.getByTestId('review-flow'));
+      await h.sleep(6000);
+      await h.type(ask.getByLabel('Comment'), 'Works. Showing names instead of ids can be a follow-up.', 30);
+      await h.sleep(800);
+      await h.click(ask.getByRole('button', { name: 'Approve' }));
+      await h.sleep(4000);
+    },
+  },
+  mergewait: {
+    url: '/#/map',
+    lapse: true,
+    say: 'The gate is waiting for CI on the repository, then it merges the pull request and the plan is complete.',
+    async run(h) {
+      const p = h.page;
+      await p.getByLabel('Initiative').selectOption({ label: 'Expense splitter app' });
+      const init = (await (await p.request.get(BASE + '/api/initiatives')).json()).find((x) => x.title === 'Expense splitter app');
+      await h.waitUntil('the plan is done', async () => {
+        const r = await (await p.request.get(BASE + `/api/initiatives/${init.id}/plan`)).json();
+        return r.plan?.state === 'done';
+      }, 900000, 5000);
+      await h.sleep(3000);
+    },
+  },  finish: {
+    url: '/#/map',
+    say:
+      'Both tasks are merged, and the build stage is done. In the repository there is now a working app: the spec and design as documents, the API layer, the server and page, and the tests that go with them. ' +
+      'Every step has a pull request, a person\u2019s name on the approval, and a record of what the checks found.',
+    async run(h) {
+      const p = h.page;
+      await p.getByLabel('Initiative').selectOption({ label: 'Expense splitter app' });
+      await h.sleep(5000);
+      await h.scrollBy(450, 7000);
+      await h.sleep(6000);
+    },
+  },
+  costs: {
+    url: '/#/costs',
+    say:
+      'And it is all accounted for. This page shows what the models cost: for the whole build, about two dollars across eight agent runs, split by role. The engineers cost the most, the security reviews a few cents each. ' +
+      'Administrators can set budgets, and the platform warns early.',
+    async run(h) {
+      await h.sleep(5000);
+      await h.scrollBy(500, 8000);
+      await h.sleep(5000);
+    },
+  },
+  outro: {
+    url: '/#/',
+    say:
+      'That was one sentence, turned into a working app: a spec, a design, two tasks built in separate containers, a security review, a smoke test, and a live preview. ' +
+      'And I stayed in charge the whole way, approving the spec and the design, overriding one check with a reason, and sending one task back when the preview showed a bug. ' +
+      'This is Autonomous SDLC: agents do the work, and people make the decisions.',
+    async run(h) {
+      await h.sleep(4000);
+      await h.scrollBy(500, 12000);
+    },
   },  newinitiative: {
     url: '/#/map',
     say:
@@ -328,4 +542,5 @@ const scenes = {
   },
 };
 
-await main(scenes);
+export { scenes };
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main(scenes);
