@@ -1,11 +1,10 @@
 import { createTheme } from '@mui/material/styles';
 
 /**
- * One theme for the whole app. Colours follow the computer's light or dark setting (no flash, no toggle), and the
- * accent is the one the app has always used.
+ * One theme for the whole app. The app always runs in dark mode, and the accent is the one the app has always used.
  */
 export const theme = createTheme({
-  cssVariables: { colorSchemeSelector: 'media' },
+  cssVariables: { colorSchemeSelector: 'class' },
   colorSchemes: {
     light: {
       palette: {
