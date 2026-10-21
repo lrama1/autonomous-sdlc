@@ -1,11 +1,11 @@
-# The sandbox image: Node, git, the two engines (Claude Code and the GitHub Copilot CLI), and the bundled runner. Built by `pnpm --filter @sdlc/runner image`.
+# The sandbox image: Node, git, curl (smoke checks call the app with it), the two engines (Claude Code and the GitHub Copilot CLI), and the bundled runner. Built by `pnpm --filter @sdlc/runner image`.
 # It holds no secrets. Credentials arrive as environment variables when a run starts.
 # Public ECR has no pull limit from AWS. CI builds from Docker Hub instead, since ECR throttles GitHub's shared addresses.
 ARG NODE_IMAGE=public.ecr.aws/docker/library/node:22-bookworm-slim
 FROM ${NODE_IMAGE}
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates \
+ && apt-get install -y --no-install-recommends git ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @anthropic-ai/claude-code@2.1.212 @github/copilot@1.0.100-1 \
  && npm cache clean --force
