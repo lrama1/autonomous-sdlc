@@ -89,6 +89,32 @@ describe('buildResumeMessage', () => {
       answer: null,
       ...o,
     }) as typeof interaction.$inferSelect;
+  it('treats the Allow option on a protected path as allowed, however the answer was given', () => {
+    const ask = {
+      title: 'Protected path changed: .sdlc/preview.yaml',
+      contextCard: { kind: 'protected_path' },
+    };
+    // From the web page the option is picked, so the text is the option's label and the id is in `choice`.
+    for (const answer of [
+      { text: 'allow: Allow this change to the protected path', choice: 'allow', source: 'human' },
+      { text: 'allow', choice: null, source: 'human' },
+    ])
+      expect(buildResumeMessage(row({ ...ask, answer }))).toContain(
+        'A person allowed the protected-path change',
+      );
+    expect(
+      buildResumeMessage(
+        row({
+          ...ask,
+          answer: {
+            text: 'discard: Discard the edits to protected paths',
+            choice: 'discard',
+            source: 'human',
+          },
+        }),
+      ),
+    ).toContain('did not allow');
+  });
   it('relays a human answer', () => {
     expect(buildResumeMessage(row({ answer: { text: 'date-fns', source: 'human' } }))).toBe(
       'A person answered on your question "Which library?": date-fns',

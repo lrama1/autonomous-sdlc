@@ -65,6 +65,8 @@ export function buildTaskText(p: {
 
 interface AnswerShape {
   text?: string;
+  /** The option picked, when the ask had options. The text is then the option's label, not its id. */
+  choice?: string | null;
   decision?: string | null;
   source?: string;
 }
@@ -74,7 +76,7 @@ export function buildResumeMessage(row: typeof interaction.$inferSelect): string
   const a = (row.answer ?? {}) as AnswerShape;
   const kind = (row.contextCard as { kind?: string }).kind;
   if (kind === 'protected_path') {
-    const allowed = a.text === 'allow';
+    const allowed = a.choice === 'allow' || a.text === 'allow';
     return allowed
       ? `A person allowed the protected-path change you flagged ("${row.title}"). Keep it, finish the task, and run verification again.`
       : `A person did not allow the protected-path change ("${row.title}"). Undo your edits to those paths, finish the task without them, and run verification again.`;
