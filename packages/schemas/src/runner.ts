@@ -35,6 +35,8 @@ export const runSpecSchema = z.object({
     maxVerifyAttempts: z.number().int().positive(),
   }),
   tools: z.object({ denied: z.array(z.string()) }),
+  /** Protected paths a person has allowed this run to change. The runner does not stop on these again. */
+  allowedPaths: z.array(z.string()).default([]),
 });
 export type RunSpec = z.infer<typeof runSpecSchema>;
 

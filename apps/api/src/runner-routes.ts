@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { agentRun, appendRunEvent, initiative, repositoryEntry } from '@sdlc/db';
-import type { Db, RunContext, interaction } from '@sdlc/db';
+import { agentRun, appendRunEvent, initiative, interaction, repositoryEntry } from '@sdlc/db';
+import type { Db, RunContext } from '@sdlc/db';
 import { authenticateRunToken, bearerFrom } from '@sdlc/db';
 import {
   decideMerge,
@@ -63,6 +63,23 @@ export function buildTaskText(p: {
   ].join('\n');
 }
 
+const pickedAllow = (a: { choice?: string | null; text?: string }) =>
+  a.choice === 'allow' || a.text === 'allow';
+
+/** The protected paths a person allowed this run to change: the paths of each answered protected-path ask with Allow. */
+export function allowedProtectedPaths(
+  rows: Array<{ contextCard: unknown; answer: unknown }>,
+): string[] {
+  const out = new Set<string>();
+  for (const r of rows) {
+    const card = r.contextCard as { kind?: string; paths?: unknown };
+    if (card.kind !== 'protected_path' || !Array.isArray(card.paths)) continue;
+    if (!pickedAllow((r.answer ?? {}) as { choice?: string | null; text?: string })) continue;
+    for (const p of card.paths) if (typeof p === 'string') out.add(p);
+  }
+  return [...out];
+}
+
 interface AnswerShape {
   text?: string;
   /** The option picked, when the ask had options. The text is then the option's label, not its id. */
@@ -76,7 +93,7 @@ export function buildResumeMessage(row: typeof interaction.$inferSelect): string
   const a = (row.answer ?? {}) as AnswerShape;
   const kind = (row.contextCard as { kind?: string }).kind;
   if (kind === 'protected_path') {
-    const allowed = a.choice === 'allow' || a.text === 'allow';
+    const allowed = pickedAllow(a);
     return allowed
       ? `A person allowed the protected-path change you flagged ("${row.title}"). Keep it, finish the task, and run verification again.`
       : `A person did not allow the protected-path change ("${row.title}"). Undo your edits to those paths, finish the task without them, and run verification again.`;
@@ -167,6 +184,10 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       return;
     }
     const d = agent.definition;
+    const answered = await db
+      .select({ contextCard: interaction.contextCard, answer: interaction.answer })
+      .from(interaction)
+      .where(and(eq(interaction.runId, run!.id), eq(interaction.state, 'answered')));
     return runSpecSchema.parse({
       runId: run!.id,
       role: run!.agentRole,
@@ -204,6 +225,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         maxVerifyAttempts: MAX_VERIFY_ATTEMPTS,
       },
       tools: { denied: d.tools.denied },
+      allowedPaths: allowedProtectedPaths(answered),
     });
   });
 

@@ -394,6 +394,20 @@ describe('protected paths', () => {
   });
 });
 
+describe('protected paths a person allowed', () => {
+  it('does not stop on them again, and opens the pull request', async () => {
+    const r = await runWith(
+      { do: 'edit-workflow' },
+      { specOverrides: { allowedPaths: ['.github/workflows/ci.yml'] } },
+    );
+    expect(r.reason).toBe('finished');
+    expect(fake.triggers).toHaveLength(0);
+    expect(fake.prs).toHaveLength(1);
+    // The pull request still reports the path, so the review rules see it.
+    expect(fake.prs[0].diff.protectedPathsTouched).toEqual(['.github/workflows/ci.yml']);
+  });
+});
+
 describe('engine failures', () => {
   it('reports running out of turns as an error', async () => {
     const r = await runWith({ do: 'max-turns' });

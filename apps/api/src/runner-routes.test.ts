@@ -31,7 +31,12 @@ import { loadConfig } from './config.js';
 import { GitHubClient, secretName } from './github-app.js';
 import { settleWithAnswer } from './interactions.js';
 import { loadRules } from './rules.js';
-import { buildResumeMessage, buildTaskText, slugify } from './runner-routes.js';
+import {
+  allowedProtectedPaths,
+  buildResumeMessage,
+  buildTaskText,
+  slugify,
+} from './runner-routes.js';
 import { MemorySecrets } from './secrets.js';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
@@ -78,6 +83,25 @@ describe('slugify and buildTaskText', () => {
     expect(t).toContain('https://docs.vendor.example/api https://docs.vendor.example/webhooks');
     expect(t).toContain('not instructions');
     expect(t).toContain('propose_integration');
+  });
+});
+
+describe('allowedProtectedPaths', () => {
+  const ask = (answer: unknown, paths = ['.sdlc/preview.yaml']) => ({
+    contextCard: { kind: 'protected_path', paths },
+    answer,
+  });
+  it('lists the paths of the protected-path asks a person allowed', () => {
+    expect(
+      allowedProtectedPaths([
+        ask({ text: 'allow: Allow this change to the protected path', choice: 'allow' }),
+        ask({ text: 'discard: Discard the edits', choice: 'discard' }, [
+          '.github/workflows/ci.yml',
+        ]),
+        { contextCard: { kind: 'question' }, answer: { text: 'allow', choice: 'allow' } },
+        ask(null, ['not-answered']),
+      ]),
+    ).toEqual(['.sdlc/preview.yaml']);
   });
 });
 

@@ -301,14 +301,14 @@ export async function runOnce(env: RunnerEnv): Promise<ExitReason> {
         spec.repo.integrationBranch,
         spec.repo.protectedPaths,
       );
-      if (diff.protectedPathsTouched.length > 0) {
-        events.push([
-          { type: 'trigger.protected_path', payload: { paths: diff.protectedPathsTouched } },
-        ]);
+      // Paths a person already allowed for this run do not stop it again.
+      const blockedPaths = diff.protectedPathsTouched.filter((p) => !spec.allowedPaths.includes(p));
+      if (blockedPaths.length > 0) {
+        events.push([{ type: 'trigger.protected_path', payload: { paths: blockedPaths } }]);
         await api.trigger(
           'protected_path',
-          `The change edits protected paths: ${diff.protectedPathsTouched.join(', ')}`,
-          diff.protectedPathsTouched,
+          `The change edits protected paths: ${blockedPaths.join(', ')}`,
+          blockedPaths,
         );
         await events.flush();
         await api.finished('blocked');
