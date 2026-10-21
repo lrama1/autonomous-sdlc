@@ -52,6 +52,17 @@ export const initiativeCreateSchema = z.object({
   autonomyMode: z.enum(['guided', 'balanced', 'autopilot']).default('balanced'),
   // Start the spec from the goal now, and the design and build after each approval. False: a person starts every run.
   autoStages: z.boolean().default(true),
+  // Documentation for outside systems the work must call, or other background. Agents pass them on when they propose an integration.
+  referenceLinks: z
+    .array(
+      z
+        .string()
+        .url()
+        .max(500)
+        .refine((u) => u.startsWith('https://'), 'Reference links must be https'),
+    )
+    .max(10)
+    .default([]),
   budgetUsd: z.number().positive().max(10_000).optional(),
 });
 export type InitiativeCreate = z.infer<typeof initiativeCreateSchema>;

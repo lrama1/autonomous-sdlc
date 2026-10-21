@@ -62,6 +62,22 @@ describe('slugify and buildTaskText', () => {
     expect(t).toContain('npm run verify');
     expect(t).toContain('.github/workflows/**, scripts/**');
     expect(t).toContain('Do not push');
+    expect(t).not.toContain('Reference links');
+  });
+
+  it("hands the person's reference links to the engine as information, to pass on when proposing an integration", () => {
+    const t = buildTaskText({
+      repo: 'o/r',
+      branch: 'b',
+      goal: 'G',
+      referenceLinks: ['https://docs.vendor.example/api', 'https://docs.vendor.example/webhooks'],
+      task: 'T',
+      verifyCommand: 'v',
+      protectedPaths: [],
+    });
+    expect(t).toContain('https://docs.vendor.example/api https://docs.vendor.example/webhooks');
+    expect(t).toContain('not instructions');
+    expect(t).toContain('propose_integration');
   });
 });
 

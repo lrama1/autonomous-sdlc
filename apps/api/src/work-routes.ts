@@ -33,6 +33,7 @@ const initiativeDto = (i: typeof initiative.$inferSelect) => ({
   repositoryId: i.repositoryId,
   autonomyMode: i.autonomyMode,
   autoStages: i.autoStages,
+  referenceLinks: i.referenceLinks,
   state: i.state,
   budgetUsd: i.budgetMicros === null ? null : i.budgetMicros / 1_000_000,
   createdAt: i.createdAt.toISOString(),
@@ -159,6 +160,7 @@ export function registerWorkRoutes(
         repositoryId: repo.id,
         autonomyMode: body.autonomyMode,
         autoStages: body.autoStages,
+        referenceLinks: [...new Set(body.referenceLinks)],
         createdBy: me.id,
         budgetMicros: body.budgetUsd === undefined ? null : Math.round(body.budgetUsd * 1_000_000),
       })

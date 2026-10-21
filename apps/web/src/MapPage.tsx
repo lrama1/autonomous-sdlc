@@ -283,6 +283,7 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
     repositoryId: '',
     autonomyMode: 'balanced' as 'guided' | 'balanced' | 'autopilot',
     autoStages: true,
+    referenceLinks: '',
   });
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -304,8 +305,11 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
         e.preventDefault();
         setProblem(null);
         try {
-          const made = await createInitiative(f);
-          setF({ ...f, title: '', goal: '' });
+          const made = await createInitiative({
+            ...f,
+            referenceLinks: f.referenceLinks.split(/\s+/).filter(Boolean),
+          });
+          setF({ ...f, title: '', goal: '', referenceLinks: '' });
           onCreated(made.id);
         } catch (err) {
           setProblem(err instanceof ApiProblem ? err.message : 'Could not create it.');
@@ -376,6 +380,16 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
             value={f.goal}
             onChange={(e) => setF({ ...f, goal: e.target.value })}
             required
+          />
+          <TextField
+            label="Reference links (optional)"
+            placeholder="https://docs.vendor.com/api"
+            helperText="Documentation for any outside system the work must call, one https link per line. Agents ask you for it if it is missing."
+            multiline
+            minRows={2}
+            value={f.referenceLinks}
+            onChange={(e) => setF({ ...f, referenceLinks: e.target.value })}
+            slotProps={{ htmlInput: { 'aria-label': 'Reference links' } }}
           />
           <Box>
             <Button variant="contained" type="submit" disabled={!f.repositoryId}>
@@ -502,6 +516,16 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
               <Chip component="span" variant="outlined" label={map.initiative.autonomyMode} />
             </Typography>
             <Typography color="text.secondary">{map.initiative.goal}</Typography>
+            {map.initiative.referenceLinks.length > 0 && (
+              <Typography variant="body2" color="text.secondary">
+                Reference links:{' '}
+                {map.initiative.referenceLinks.map((u) => (
+                  <Link key={u} href={u} target="_blank" rel="noreferrer" sx={{ mr: 1 }}>
+                    {u}
+                  </Link>
+                ))}
+              </Typography>
+            )}
           </Box>
           <PipelineFlow stages={map.stages} />
 

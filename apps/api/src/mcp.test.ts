@@ -211,6 +211,31 @@ describe('integrations', () => {
       why: 'The task takes payments.',
     });
     expect(good.json.status).toBe('proposed');
+    // No link and no admission that there is none: the agent is told what to do.
+    const guessed = await call(client, 'propose_integration', {
+      name: `Twilio-${f.runId}`,
+      hosts: ['api.twilio.com'],
+      testStrategy: 'mock',
+      why: 'texts',
+    });
+    expect(guessed.isError).toBe(true);
+    expect(guessed.text).toMatch(/docsUnknown/);
+    const insecure = await call(client, 'propose_integration', {
+      name: `Plain-${f.runId}`,
+      hosts: ['plain.example.com'],
+      docs: ['http://plain.example.com/api'],
+      testStrategy: 'mock',
+      why: 'x',
+    });
+    expect(insecure.isError).toBe(true);
+    const unknown = await call(client, 'propose_integration', {
+      name: `Twilio-${f.runId}`,
+      hosts: ['api.twilio.com'],
+      docsUnknown: true,
+      testStrategy: 'mock',
+      why: 'texts',
+    });
+    expect(unknown.json.note).toMatch(/documentation link/);
     const [ask] = await db
       .select()
       .from(interaction)

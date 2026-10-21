@@ -7,7 +7,7 @@ One Markdown file at `docs/spec/<short-slug>.md` in the repository, and nothing 
 1. **Goal**: two sentences at most, in the words of the person who asked.
 2. **Out of scope**: what this will not do.
 3. **Stories**: numbered `US-1`, `US-2`, and so on. Each is "As a ..., I want ..., so that ...", followed by 2 to 5 acceptance criteria as a checklist. Each criterion must be something a test or a person can check.
-4. **Design notes**: only decisions that matter, each with the reason. Name the existing files and modules the work will touch. If the design needs a new external system, say so here and call `propose_integration`.
+4. **Design notes**: only decisions that matter, each with the reason. Name the existing files and modules the work will touch. If the design needs a new external system, say so here and call `propose_integration`. Give the vendor's official documentation link(s) in `docs`. Take them from the task's reference links, the repository (README, `docs/`, an OpenAPI file), or a person. Never guess a link. If you have none you are sure of, leave `docs` empty and set `docsUnknown: true`: the person is then asked to supply the link before they confirm.
 5. **Assumptions**: every call you made without asking, one line each. Also call `declare_assumption` for each.
 6. **Open questions**: what a person must still decide, with your recommendation.
 

@@ -28,6 +28,7 @@ export function registerMapRoutes(
         id: init.id,
         title: init.title,
         goal: init.goal,
+        referenceLinks: init.referenceLinks,
         autonomyMode: init.autonomyMode,
       },
       stages: (await loadStages(db, init)).stages,

@@ -7,6 +7,7 @@ import type { AnswerRequest } from '@sdlc/schemas';
 import type { Gate } from './gate.js';
 import { getInteraction, settleWithAnswer } from './interactions.js';
 import type { InteractionRow } from './interactions.js';
+import { integrationAnswerProblem } from './integrations.js';
 
 export const REASONS: Record<string, { status: number; message: string }> = {
   not_found: { status: 404, message: 'No such interaction.' },
@@ -25,6 +26,15 @@ export const REASONS: Record<string, { status: number; message: string }> = {
     message: 'A decision applies only to checkpoints and reviews.',
   },
   unknown_option: { status: 400, message: 'That is not one of the options.' },
+  docs_required: {
+    status: 400,
+    message:
+      'This system has no documentation link yet. Paste a link (https) to its API documentation in your answer, or choose to confirm without documentation.',
+  },
+  docs_link_refused: {
+    status: 400,
+    message: 'Only https links can be used as documentation. Fix the link and answer again.',
+  },
   smoke_required: {
     status: 409,
     message:
@@ -100,6 +110,9 @@ export async function answerAsPerson(
     const held = await deps.gate.approvalBlocks(row);
     if (held) return { ok: false, status: 409, code: 'smoke_required', message: held };
   }
+
+  const docsProblem = await integrationAnswerProblem(db, row, body);
+  if (docsProblem) return refuse(docsProblem);
 
   let text = body.answer;
   if (body.optionId) {

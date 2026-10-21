@@ -482,6 +482,123 @@ describe('an agent proposing a system', () => {
     expect(await confirmedHosts(db)).not.toContain('rejected.example.com');
   });
 
+  it('refuses a proposal with no documentation unless the agent says it does not know it', async () => {
+    const f = await createRunFixture(db);
+    const base = {
+      name: `NoDocs-${Date.now()}-${++n}`,
+      kind: 'third_party' as const,
+      hosts: ['nodocs.example.com'],
+      docs: [],
+      testStrategy: 'mock' as const,
+      why: 'x',
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+    };
+    const refused = await proposeIntegration(db, base);
+    expect(refused).toMatchObject({ error: expect.stringContaining('docsUnknown') });
+    const asked = await proposeIntegration(db, { ...base, docsUnknown: true });
+    if ('error' in asked) throw new Error(asked.error);
+    expect(asked.interaction.contextCard).toMatchObject({ docsUnknown: true, docs: [] });
+    expect((asked.interaction.options as Array<{ id: string }>).map((o) => o.id)).toEqual([
+      'confirm',
+      'confirm_no_docs',
+      'reject',
+    ]);
+  });
+
+  it('will not confirm a system with no documentation until the person pastes a link', async () => {
+    const f = await createRunFixture(db);
+    const arch = await newPerson(['architect']);
+    const out = await proposeIntegration(db, {
+      name: `Paste-${Date.now()}-${++n}`,
+      kind: 'third_party',
+      hosts: ['paste.example.com'],
+      docs: [],
+      docsUnknown: true,
+      testStrategy: 'vendor_sandbox',
+      why: 'x',
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+    });
+    if ('error' in out) throw new Error(out.error);
+    const answer = (payload: object) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/interactions/${out.interaction.id}/answer`,
+        headers: arch.headers,
+        payload,
+      });
+
+    const bare = await answer({ optionId: 'confirm' });
+    expect(bare.statusCode).toBe(400);
+    expect(bare.json().error.code).toBe('docs_required');
+    const insecure = await answer({ optionId: 'confirm', answer: 'http://docs.example.com/api' });
+    expect(insecure.json().error.code).toBe('docs_link_refused');
+    expect(await confirmedHosts(db)).not.toContain('paste.example.com');
+
+    const ok = await answer({
+      optionId: 'confirm',
+      answer: 'The docs are at https://docs.example.com/api, and https://docs.example.com/hooks.',
+    });
+    expect(ok.statusCode).toBe(200);
+    const [after] = await db
+      .select()
+      .from(integrationEntry)
+      .where(eq(integrationEntry.id, out.entry.id));
+    expect(after).toMatchObject({ status: 'confirmed' });
+    expect(after!.docs).toEqual(['https://docs.example.com/api', 'https://docs.example.com/hooks']);
+    expect((await latestSnapshots(db, [out.entry.id], { goodOnly: true })).length).toBe(2);
+    const log = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.interactionId, out.interaction.id));
+    expect(log.map((l) => l.action)).toContain('integration.docs_added');
+  });
+
+  it("lets the person confirm without documentation, and adds links pasted to an agent's own", async () => {
+    const f = await createRunFixture(db);
+    const arch = await newPerson(['architect']);
+    const none = await proposeIntegration(db, {
+      name: `Skip-${Date.now()}-${++n}`,
+      kind: 'third_party',
+      hosts: ['skip.example.com'],
+      docs: [],
+      docsUnknown: true,
+      testStrategy: 'none',
+      why: 'x',
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+    });
+    if ('error' in none) throw new Error(none.error);
+    const skipped = await app.inject({
+      method: 'POST',
+      url: `/api/interactions/${none.interaction.id}/answer`,
+      headers: arch.headers,
+      payload: { optionId: 'confirm_no_docs' },
+    });
+    expect(skipped.statusCode).toBe(200);
+    expect(await confirmedHosts(db)).toContain('skip.example.com');
+    const [e1] = await db
+      .select()
+      .from(integrationEntry)
+      .where(eq(integrationEntry.id, none.entry.id));
+    expect(e1!.docs).toEqual([]);
+
+    const { entry: e2, interaction: ask } = await propose(f, { hosts: ['more.example.com'] });
+    const more = await app.inject({
+      method: 'POST',
+      url: `/api/interactions/${ask.id}/answer`,
+      headers: arch.headers,
+      payload: { optionId: 'confirm', answer: 'also https://docs.stripe.example.com/webhooks' },
+    });
+    expect(more.statusCode).toBe(200);
+    const [after] = await db.select().from(integrationEntry).where(eq(integrationEntry.id, e2.id));
+    expect(after!.docs).toEqual([
+      'https://docs.stripe.example.com/api',
+      'https://docs.stripe.example.com/webhooks',
+    ]);
+  });
+
   it('refuses bad hostnames and a name that is taken', async () => {
     const f = await createRunFixture(db);
     const bad = await proposeIntegration(db, {
@@ -489,6 +606,7 @@ describe('an agent proposing a system', () => {
       kind: 'third_party',
       hosts: ['*.example.com'],
       docs: [],
+      docsUnknown: true,
       testStrategy: 'none',
       why: 'x',
       initiativeId: f.initiativeId,
@@ -501,6 +619,7 @@ describe('an agent proposing a system', () => {
       kind: 'third_party',
       hosts: ['other.example.com'],
       docs: [],
+      docsUnknown: true,
       testStrategy: 'none',
       why: 'x',
       initiativeId: f.initiativeId,

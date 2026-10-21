@@ -11,6 +11,7 @@ import {
   createDb,
   createRunFixture,
   initiative,
+  integrationEntry,
   interaction,
   stageStart,
   standingDecision,
@@ -679,4 +680,76 @@ test('the map shows each stage, who it waits on, and links to the ask', async ({
   await spec.getByRole('link', { name: title }).click();
   await expect(page).toHaveURL(new RegExp(`#/queue/${g1!.id}`));
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
+});
+
+test('an architect is asked for the documentation link of a new system, and gives it', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const name = `Vendor ${randomUUID().slice(0, 8)}`;
+  const [entry] = await db
+    .insert(integrationEntry)
+    .values({
+      name,
+      hosts: ['api.vendor.example.com'],
+      docs: [],
+      testStrategy: 'mock',
+      status: 'proposed',
+      initiativeId: f.initiativeId,
+    })
+    .returning();
+  const title = `New external system: ${name}`;
+  const [row] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'decision',
+      title,
+      contextCard: {
+        kind: 'integration_proposal',
+        integrationId: entry!.id,
+        context: 'The task takes payments.',
+        whyNow: 'Agents may reach it only after a person confirms.',
+        docs: [],
+        docsUnknown: true,
+      },
+      options: [
+        {
+          id: 'confirm',
+          label: 'Confirm: allow these hosts, with the documentation links I paste',
+        },
+        { id: 'confirm_no_docs', label: 'Confirm without documentation' },
+        { id: 'reject', label: 'Reject' },
+      ],
+      blocks: [],
+      hardStop: true,
+      roleNeeded: 'architect',
+    })
+    .returning();
+
+  await signInAs(page, /Cara/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+  await expect(ask.getByText('None yet. The agent had no link it was sure of.')).toBeVisible();
+
+  // No link: the platform refuses and says why.
+  await ask.getByLabel(/Confirm: allow these hosts/).check();
+  await ask.getByRole('button', { name: 'Answer' }).click();
+  await expect(ask.getByText(/no documentation link yet/)).toBeVisible();
+
+  await ask
+    .getByRole('textbox', { name: 'Documentation links' })
+    .fill('https://127.0.0.1/vendor/api');
+  await ask.getByRole('button', { name: 'Answer' }).click();
+  await expect(page.getByTestId('settled').filter({ hasText: title })).toBeVisible();
+
+  const [after] = await db
+    .select()
+    .from(integrationEntry)
+    .where(eq(integrationEntry.id, entry!.id));
+  expect(after).toMatchObject({ status: 'confirmed', docs: ['https://127.0.0.1/vendor/api'] });
+  const [settled] = await db.select().from(interaction).where(eq(interaction.id, row!.id));
+  expect(settled).toMatchObject({ state: 'answered' });
 });

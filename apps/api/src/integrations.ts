@@ -56,6 +56,28 @@ export function validHostname(host: string): boolean {
   );
 }
 
+/** Most documentation links one entry keeps. */
+export const MAX_DOCS = 10;
+
+/** The links in what a person typed. Only https links are kept; anything that starts with http: is reported back. */
+export function linksIn(text: string): { good: string[]; refused: string[] } {
+  const good: string[] = [];
+  const refused: string[] = [];
+  for (const raw of text.match(/https?:\/\/[^\s<>"'`]+/gi) ?? []) {
+    const link = raw.replace(/[.,;:)\]]+$/, '');
+    let url: URL;
+    try {
+      url = new URL(link);
+    } catch {
+      refused.push(link);
+      continue;
+    }
+    if (url.protocol !== 'https:' || link.length > 500) refused.push(link);
+    else if (!good.includes(link)) good.push(link);
+  }
+  return { good, refused };
+}
+
 export interface Fetched {
   sha256: string;
   text: string;
@@ -286,6 +308,8 @@ export async function proposeIntegration(
     kind: 'second_party' | 'third_party';
     hosts: string[];
     docs: string[];
+    /** The agent has no link it is sure is the official documentation: the person is asked for one. */
+    docsUnknown?: boolean;
     testStrategy: 'vendor_sandbox' | 'mock' | 'recorded' | 'none';
     dataSent?: string;
     why: string;
@@ -305,6 +329,12 @@ export async function proposeIntegration(
     return {
       error: `There is already an entry named "${input.name}" (${existing.status}). Use list_integrations.`,
     };
+  if (input.docs.length === 0 && !input.docsUnknown)
+    return {
+      error:
+        'Give the documentation link(s) in docs. Take them from the task, the repository, or the person; never guess one. If you have no link you are sure is official, set docsUnknown to true and the person will be asked for it.',
+    };
+  const docsUnknown = input.docs.length === 0;
   const [entry] = await db
     .insert(integrationEntry)
     .values({
@@ -328,13 +358,35 @@ export async function proposeIntegration(
       kind: 'integration_proposal',
       integrationId: entry!.id,
       context: input.why,
-      whyNow: `Agents may open connections to ${hosts.join(', ')} only after a person confirms this. Test strategy: ${input.testStrategy}.`,
+      whyNow:
+        `Agents may open connections to ${hosts.join(', ')} only after a person confirms this. Test strategy: ${input.testStrategy}.` +
+        (docsUnknown
+          ? ' The agent has no documentation link for it. Paste the link(s) to the API documentation (https) in your answer, or choose to confirm without documentation.'
+          : ''),
       docs: input.docs,
+      docsUnknown,
     },
-    options: [
-      { id: 'confirm', label: 'Confirm: allow these hosts for agents' },
-      { id: 'reject', label: 'Reject' },
-    ],
+    options: docsUnknown
+      ? [
+          {
+            id: 'confirm',
+            label: 'Confirm: allow these hosts, with the documentation links I paste',
+          },
+          {
+            id: 'confirm_no_docs',
+            label: 'Confirm without documentation',
+            impact: 'Agents will work from general knowledge of the API, which may be out of date.',
+          },
+          { id: 'reject', label: 'Reject' },
+        ]
+      : [
+          {
+            id: 'confirm',
+            label:
+              'Confirm: allow these hosts for agents (paste more documentation links if you like)',
+          },
+          { id: 'reject', label: 'Reject' },
+        ],
     blocks: [{ runId: input.runId }],
     roleNeeded: 'architect',
     hardStop: true,
@@ -351,6 +403,28 @@ export async function proposeIntegration(
   return { entry: entry!, interaction };
 }
 
+/**
+ * Checked before a proposal's answer is saved. Confirming needs at least one https documentation link, from the agent or
+ * pasted in the answer, unless the person chooses to confirm without documentation. Returns a reason code, or null.
+ */
+export async function integrationAnswerProblem(
+  db: Db,
+  row: InteractionRow,
+  body: { optionId?: string; answer: string },
+): Promise<'docs_required' | 'docs_link_refused' | null> {
+  const card = row.contextCard as { kind?: string; integrationId?: string };
+  if (card.kind !== 'integration_proposal' || !card.integrationId) return null;
+  if (body.optionId !== 'confirm') return null;
+  const { good, refused } = linksIn(body.answer);
+  if (refused.length > 0) return 'docs_link_refused';
+  const [entry] = await db
+    .select({ docs: integrationEntry.docs })
+    .from(integrationEntry)
+    .where(eq(integrationEntry.id, card.integrationId));
+  if (entry && entry.docs.length === 0 && good.length === 0) return 'docs_required';
+  return null;
+}
+
 /** Applies the person's answer on a proposal. Called after any answer, and ignores everything else. */
 export async function applyIntegrationDecision(
   db: Db,
@@ -360,29 +434,54 @@ export async function applyIntegrationDecision(
   const card = row.contextCard as { kind?: string; integrationId?: string };
   if (card.kind !== 'integration_proposal' || !card.integrationId) return;
   const choice = (row.answer as { choice?: string | null } | null)?.choice;
-  if (choice !== 'confirm' && choice !== 'reject') return;
+  if (choice !== 'confirm' && choice !== 'confirm_no_docs' && choice !== 'reject') return;
+  const [current] = await db
+    .select()
+    .from(integrationEntry)
+    .where(
+      and(eq(integrationEntry.id, card.integrationId), eq(integrationEntry.status, 'proposed')),
+    );
+  if (!current) return;
+  // Links the person pasted join the agent's, and are fetched like any other.
+  const pasted =
+    choice === 'confirm'
+      ? linksIn(String((row.answer as { text?: string } | null)?.text ?? '')).good.filter(
+          (u) => !current.docs.includes(u),
+        )
+      : [];
+  const docs = [...current.docs, ...pasted].slice(0, MAX_DOCS);
   const [entry] = await db
     .update(integrationEntry)
     .set(
-      choice === 'confirm'
-        ? { status: 'confirmed', confirmedBy: row.answeredBy, confirmedAt: new Date() }
-        : { status: 'rejected' },
+      choice === 'reject'
+        ? { status: 'rejected' }
+        : { status: 'confirmed', confirmedBy: row.answeredBy, confirmedAt: new Date(), docs },
     )
     .where(
       and(eq(integrationEntry.id, card.integrationId), eq(integrationEntry.status, 'proposed')),
     )
     .returning();
   if (!entry) return;
+  if (pasted.length > 0)
+    await recordActivity(db, {
+      actorType: 'person',
+      actorId: row.answeredBy,
+      initiativeId: row.initiativeId,
+      runId: row.runId,
+      interactionId: row.id,
+      action: 'integration.docs_added',
+      detail: { name: entry.name, links: pasted },
+    });
   await recordActivity(db, {
     actorType: 'person',
     actorId: row.answeredBy,
     initiativeId: row.initiativeId,
     runId: row.runId,
     interactionId: row.id,
-    action: choice === 'confirm' ? 'integration.confirmed' : 'integration.rejected',
-    detail: { name: entry.name, hosts: entry.hosts },
+    action: choice === 'reject' ? 'integration.rejected' : 'integration.confirmed',
+    detail: { name: entry.name, hosts: entry.hosts, docs: entry.docs.length },
   });
-  if (choice === 'confirm' && fetcher) await refreshDocs(db, entry, fetcher).catch(() => {});
+  if (choice !== 'reject' && fetcher) await refreshDocs(db, entry, fetcher).catch(() => {});
 }
 
 /**

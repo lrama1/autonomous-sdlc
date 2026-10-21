@@ -57,6 +57,8 @@ export const initiative = pgTable('initiative', {
   budgetMicros: bigint('budget_micros', { mode: 'number' }),
   // Whether the spec and design steps start by themselves (or on a click in guided mode). Off means a person starts every run.
   autoStages: boolean('auto_stages').notNull().default(false),
+  // Links the person gave when they asked for the work (API documentation, mostly). Handed to every agent run.
+  referenceLinks: text('reference_links').array().notNull().default([]),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

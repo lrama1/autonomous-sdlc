@@ -1,0 +1,1 @@
+ALTER TABLE "initiative" ADD COLUMN "reference_links" text[] DEFAULT '{}' NOT NULL;

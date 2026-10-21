@@ -248,6 +248,7 @@ const mapSchema = z.object({
     id: z.string().uuid(),
     title: z.string(),
     goal: z.string(),
+    referenceLinks: z.array(z.string()).default([]),
     autonomyMode: z.string(),
   }),
   stages: z.array(stageSchema),
@@ -284,6 +285,7 @@ export const createInitiative = (body: {
   repositoryId: string;
   autonomyMode: 'guided' | 'balanced' | 'autopilot';
   autoStages: boolean;
+  referenceLinks?: string[];
 }) =>
   call('/api/initiatives', z.object({ id: z.string().uuid() }).passthrough(), {
     method: 'POST',

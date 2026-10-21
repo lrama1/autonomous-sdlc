@@ -25,6 +25,8 @@ export const card = (i: InteractionDto) =>
     whyNow?: string | null;
     summary?: string;
     kind?: string;
+    docs?: string[];
+    docsUnknown?: boolean;
     prUrl?: string;
     prNumber?: number;
     triggers?: Array<{ id: string; description?: string }>;

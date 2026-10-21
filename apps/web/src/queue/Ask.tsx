@@ -159,6 +159,26 @@ export function Ask({
           ? ([['What it was doing', c.context ?? c.summary]] as Array<[string, React.ReactNode]>)
           : []),
         ...(c.whyNow ? ([['Why it needs you', c.whyNow]] as Array<[string, React.ReactNode]>) : []),
+        ...(c.kind === 'integration_proposal'
+          ? ([
+              [
+                'Documentation',
+                c.docs && c.docs.length > 0
+                  ? c.docs.map((u) => (
+                      <Link
+                        key={u}
+                        href={u}
+                        target="_blank"
+                        rel="noreferrer"
+                        sx={{ display: 'block' }}
+                      >
+                        {u}
+                      </Link>
+                    ))
+                  : 'None yet. The agent had no link it was sure of.',
+              ],
+            ] as Array<[string, React.ReactNode]>)
+          : []),
         [
           'What is waiting',
           i.blocks.length > 0
@@ -349,6 +369,17 @@ export function Ask({
                 sx={{ my: 1 }}
               />
             )}
+            {c.kind === 'integration_proposal' && (
+              <TextField
+                multiline
+                minRows={2}
+                label="Documentation links to add (https, one per line)"
+                slotProps={{ htmlInput: { 'aria-label': 'Documentation links' } }}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                sx={{ mb: 1 }}
+              />
+            )}
             <Stack
               direction="row"
               spacing={1.5}
@@ -360,7 +391,12 @@ export function Ask({
                 onClick={() =>
                   send(
                     options.length > 0
-                      ? { optionId: picked, makeStanding: standing, standingScope: scope }
+                      ? {
+                          optionId: picked,
+                          ...(c.kind === 'integration_proposal' ? { answer: text } : {}),
+                          makeStanding: standing,
+                          standingScope: scope,
+                        }
                       : { answer: text, makeStanding: standing, standingScope: scope },
                     standing
                       ? 'Saved as a standing decision. Agents will stop asking about this.'

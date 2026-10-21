@@ -238,6 +238,30 @@ describe('initiatives', () => {
     expect(got.json()).toMatchObject({ title: 'Health endpoint', runs: [] });
   });
 
+  it('keeps the reference links, and refuses a link that is not https', async () => {
+    const po = await login(['product_owner']);
+    const repo = await registered();
+    const make = (referenceLinks: string[]) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/initiatives',
+        headers: as(po.cookie),
+        payload: { title: 'Pay', goal: 'Take payments', repositoryId: repo.id, referenceLinks },
+      });
+    const ok = await make(['https://docs.vendor.example/api', 'https://docs.vendor.example/api']);
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json().referenceLinks).toEqual(['https://docs.vendor.example/api']);
+    expect((await make(['http://docs.vendor.example/api'])).statusCode).toBe(400);
+    expect((await make(['not a link'])).statusCode).toBe(400);
+    const none = await app.inject({
+      method: 'POST',
+      url: '/api/initiatives',
+      headers: as(po.cookie),
+      payload: { title: 'Plain', goal: 'g', repositoryId: repo.id },
+    });
+    expect(none.json().referenceLinks).toEqual([]);
+  });
+
   it('refuses a repository that is not in the registry', async () => {
     const po = await login(['product_owner']);
     const res = await app.inject({
