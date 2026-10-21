@@ -21,7 +21,7 @@ import { PreviewPanel } from './PreviewPanel';
 import { ReviewFlow } from './ReviewFlow';
 import { SecurityPanel } from './SecurityPanel';
 import { SmokePanel } from './SmokePanel';
-import { card, optionsOf } from './shared';
+import { card, checksPassed, optionsOf } from './shared';
 
 function Waiting({ i }: { i: InteractionDto }) {
   const n = i.blocks.length;
@@ -117,7 +117,16 @@ export function Ask({
 
   const facts: Array<[string, React.ReactNode]> = isDecision
     ? [
-        ...(c.summary ? ([['What happened', c.summary]] as Array<[string, React.ReactNode]>) : []),
+        ...(c.summary
+          ? ([
+              [
+                'What happened',
+                <Box key="s" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {c.summary}
+                </Box>,
+              ],
+            ] as Array<[string, React.ReactNode]>)
+          : []),
         ...(c.triggers && c.triggers.length > 0
           ? ([
               ['Why it needs you', c.triggers.map((t) => t.description ?? t.id).join('; ')],
@@ -130,7 +139,7 @@ export function Ask({
           ? ([
               [
                 'Checks',
-                `${c.verify.passed ? 'The checks passed before the pull request opened.' : 'The checks did not pass.'}${c.diff ? ` ${c.diff.files} file(s), +${c.diff.additions} \u2212${c.diff.deletions}.` : ''}`,
+                `${checksPassed(c.verify) ? 'The checks passed before the pull request opened.' : 'The checks did not pass.'}${c.diff?.changedPaths ? ` ${c.diff.changedPaths.length} file${c.diff.changedPaths.length === 1 ? '' : 's'} changed, ${c.diff.linesChanged ?? 0} lines.` : ''}`,
               ],
             ] as Array<[string, React.ReactNode]>)
           : []),
@@ -230,7 +239,7 @@ export function Ask({
           ))}
           {isDecision && c.prUrl && (
             <>
-              <ReviewFlow verified={c.verify?.passed ?? null} smoke={smoke} security={security} />
+              <ReviewFlow verified={checksPassed(c.verify)} smoke={smoke} security={security} />
               <PreviewPanel id={i.id} />
               <SmokePanel id={i.id} onData={setSmoke} />
               <SecurityPanel id={i.id} onSentBack={onAnswered} onData={setSecurity} />

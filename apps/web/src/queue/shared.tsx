@@ -16,6 +16,9 @@ export const optionsOf = (i: InteractionDto): Option[] =>
     ? (i.options as Option[]).filter((o) => o && typeof o.id === 'string')
     : [];
 
+/** A review's checks passed: the platform sends `ok`; `passed` is the older name. */
+export const checksPassed = (v?: { ok?: boolean; passed?: boolean }) => v?.ok ?? v?.passed ?? null;
+
 export const card = (i: InteractionDto) =>
   i.contextCard as {
     context?: string | null;
@@ -26,8 +29,8 @@ export const card = (i: InteractionDto) =>
     prNumber?: number;
     triggers?: Array<{ id: string; description?: string }>;
     autoMerge?: { auto: boolean; reason: string };
-    verify?: { passed?: boolean; attempts?: number };
-    diff?: { files?: number; additions?: number; deletions?: number };
+    verify?: { ok?: boolean; passed?: boolean; attempts?: number };
+    diff?: { changedPaths?: string[]; linesChanged?: number };
   };
 
 /** One check on a pull request (preview, smoke test, security review): a title, where it stands, and what can be done. */
