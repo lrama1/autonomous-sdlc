@@ -48,6 +48,7 @@ export function FlowCanvas({
       }}
     >
       <ReactFlow
+        key={nodes.map((n) => n.id).join('|')}
         nodes={nodes}
         edges={shown}
         nodeTypes={nodeTypes}

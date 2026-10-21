@@ -56,6 +56,8 @@ export async function login(page) {
 
 /** A signed-in browser state, made without recording. */
 export async function freshAuth(browser) {
+  const cached = path.join(WORK, 'auth.json');
+  if (fs.existsSync(cached) && Date.now() - fs.statSync(cached).mtimeMs < 20 * 60 * 1000) return cached;
   const ctx = await browser.newContext({ viewport: SIZE });
   const page = await ctx.newPage();
   const user = await login(page);
