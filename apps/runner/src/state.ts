@@ -24,6 +24,12 @@ export interface StateOptions {
   retryMs?: number;
 }
 
+/**
+ * Whether the run will be resumed by a new task, which needs this one's files. A run that is blocked waits for a person
+ * (a protected path, a failing check) and resumes just as a parked one does, so it keeps its files too.
+ */
+export const keepsFiles = (reason: string): boolean => reason === 'parked' || reason === 'blocked';
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tmpFile = () => path.join(os.tmpdir(), `sdlc-state-${process.pid}.tgz`);
 

@@ -1,7 +1,7 @@
 import { runnerEnvFrom } from './env.js';
 import { runOnce } from './run.js';
 import { saveOnTerminate } from './shutdown.js';
-import { restoreState, saveState } from './state.js';
+import { keepsFiles, restoreState, saveState } from './state.js';
 
 // Started by the platform. Everything else comes from the run spec (see env.ts for what is read here).
 const env = runnerEnvFrom(process.env);
@@ -37,8 +37,8 @@ if (env.statePutUrl) {
 const reason = await runOnce(env);
 console.log(`runner finished: ${reason}`);
 
-// A run that parked will be resumed by a new task, which needs this one's files.
-if (reason === 'parked' && env.statePutUrl) {
+// A run that parked or is blocked will be resumed by a new task, which needs this one's files.
+if (keepsFiles(reason) && env.statePutUrl) {
   try {
     await saveState(env.workDir, env.statePutUrl, stateLog);
   } catch (e) {

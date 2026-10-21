@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { restoreState, saveState } from './state.js';
+import { keepsFiles, restoreState, saveState } from './state.js';
 
 let server: http.Server;
 let base: string;
@@ -60,6 +60,16 @@ async function workDir(name: string, files: Record<string, string>) {
   }
   return w;
 }
+
+describe('which runs keep their files', () => {
+  it('keeps them for a run that will be resumed, parked or blocked, and for no other', () => {
+    expect(keepsFiles('parked')).toBe(true);
+    // A protected path waits for a person, then the run resumes and needs the edits it made.
+    expect(keepsFiles('blocked')).toBe(true);
+    for (const reason of ['finished', 'error', 'timeout', 'cancelled'])
+      expect(keepsFiles(reason)).toBe(false);
+  });
+});
 
 describe("a parked run's files", () => {
   it('are saved and put back, without the run token', async () => {
