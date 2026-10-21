@@ -80,6 +80,15 @@ export function allowedProtectedPaths(
   return [...out];
 }
 
+/** The protected paths a person has allowed this run to change. */
+async function allowedPathsOf(db: Db, runId: string): Promise<string[]> {
+  const answered = await db
+    .select({ contextCard: interaction.contextCard, answer: interaction.answer })
+    .from(interaction)
+    .where(and(eq(interaction.runId, runId), eq(interaction.state, 'answered')));
+  return allowedProtectedPaths(answered);
+}
+
 interface AnswerShape {
   text?: string;
   /** The option picked, when the ask had options. The text is then the option's label, not its id. */
@@ -184,10 +193,6 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       return;
     }
     const d = agent.definition;
-    const answered = await db
-      .select({ contextCard: interaction.contextCard, answer: interaction.answer })
-      .from(interaction)
-      .where(and(eq(interaction.runId, run!.id), eq(interaction.state, 'answered')));
     return runSpecSchema.parse({
       runId: run!.id,
       role: run!.agentRole,
@@ -225,7 +230,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         maxVerifyAttempts: MAX_VERIFY_ATTEMPTS,
       },
       tools: { denied: d.tools.denied },
-      allowedPaths: allowedProtectedPaths(answered),
+      allowedPaths: await allowedPathsOf(db, run!.id),
     });
   });
 
@@ -355,7 +360,12 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         .code(409)
         .send({ error: { code: 'no_branch', message: 'The run has no branch.' } });
 
-    const fired = evaluateTriggers(rules, body.diff);
+    // A path a person allowed for this run is not a hard stop again. The card still lists it among the changed paths.
+    const allowed = await allowedPathsOf(db, ctx.runId);
+    const fired = evaluateTriggers(rules, {
+      ...body.diff,
+      protectedPathsTouched: body.diff.protectedPathsTouched.filter((p) => !allowed.includes(p)),
+    });
     if (strongestAction(fired) === 'hard_stop') {
       return reply.code(409).send({
         error: {

@@ -727,6 +727,42 @@ describe('POST /runner/pull-request', () => {
     expect(calls.some((c) => c.url.endsWith('/pulls'))).toBe(false);
   });
 
+  it('opens the PR when the protected path was allowed by a person, and still refuses another', async () => {
+    const f = await setup({ state: 'running' });
+    await db
+      .update(agentRun)
+      .set({ branch: `agent/${f.runId}/x` })
+      .where(eq(agentRun.id, f.runId));
+    await db.insert(interaction).values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'decision',
+      title: 'Protected path changed: .sdlc/preview.yaml',
+      contextCard: { kind: 'protected_path', paths: ['.sdlc/preview.yaml'] },
+      state: 'answered',
+      answer: { text: 'allow: Allow this change to the protected path', choice: 'allow' },
+      roleNeeded: 'backend_engineer',
+    });
+    const other = await post(
+      f.token,
+      '/runner/pull-request',
+      pr(diff({ protectedPathsTouched: ['.sdlc/preview.yaml', '.github/workflows/ci.yml'] })),
+    );
+    expect(other.status).toBe(409);
+    const ok = await post(
+      f.token,
+      '/runner/pull-request',
+      pr(
+        diff({
+          protectedPathsTouched: ['.sdlc/preview.yaml'],
+          changedPaths: ['.sdlc/preview.yaml'],
+        }),
+      ),
+    );
+    expect(ok.status).toBe(200);
+    expect(calls.some((c) => c.url.endsWith('/pulls'))).toBe(true);
+  });
+
   it('recognises a documentation-only change as pre-approved', async () => {
     const f = await setup({ state: 'running' });
     await db
