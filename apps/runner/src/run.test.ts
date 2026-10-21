@@ -404,7 +404,7 @@ describe('protected paths a person allowed', () => {
     expect(fake.triggers).toHaveLength(0);
     expect(fake.prs).toHaveLength(1);
     // The pull request still reports the path, so the review rules see it.
-    expect(fake.prs[0].diff.protectedPathsTouched).toEqual(['.github/workflows/ci.yml']);
+    expect(fake.prs[0]?.diff.protectedPathsTouched).toEqual(['.github/workflows/ci.yml']);
   });
 });
 
