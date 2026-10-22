@@ -958,3 +958,5 @@ A reviewer asks the Security agent to read a pull request before approving it. D
 | ~~Credit limits on the OpenRouter keys~~ | Done 2026-10-17: two keys in the `autonomous-sdlc` workspace, $85 per day each, verified |
 | Stateless session cookie has no server-side revocation | Before real users (step 2) |
 | Dev IdP keeps its state in memory, so a restart signs everyone out | Fine for development |
+
+Preview data (2026-10-22): a Fargate preview receives TABLE_NAME and AWS_REGION; its task role can use only its own prefix-scoped DynamoDB tables (gateway endpoint policy limits the same), and the table is dropped on stop. Not yet proven on AWS.

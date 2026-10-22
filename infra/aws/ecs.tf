@@ -126,6 +126,8 @@ resource "aws_ecs_task_definition" "api" {
       { name = "PREVIEW_ORIGIN", value = local.preview_origin },
       { name = "FARGATE_PREVIEW_TASK_DEFINITION", value = aws_ecs_task_definition.preview.family },
       { name = "FARGATE_PREVIEW_SECURITY_GROUPS", value = aws_security_group.preview.id },
+      { name = "PREVIEW_TABLE_PREFIX", value = local.preview_table_prefix },
+      { name = "PREVIEW_TABLE_REGION", value = var.region },
       { name = "AGENT_ENGINE", value = var.agent_engine },
       { name = "RUNNER_ADAPTER", value = "fargate" },
       { name = "RUNNER_EGRESS_ALLOW", value = var.runner_egress_allow },

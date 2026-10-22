@@ -123,6 +123,42 @@ describe('the Fargate preview host', () => {
     });
   });
 
+  it('gives each preview a table of its own, and drops it when the preview ends', async () => {
+    const ecs = new FakeEcs();
+    ecs.script = [running(), running()];
+    const dropped: string[] = [];
+    const { host } = make(ecs, async () => 200, {
+      data: {
+        tablePrefix: 'sdlc-dev-preview-',
+        region: 'us-east-1',
+        drop: async (t: string) => void dropped.push(t),
+      },
+    });
+    await host.start(spec);
+    const [run] = ecs.of(RunTaskCommand);
+    const env = Object.fromEntries(
+      run!.input.overrides!.containerOverrides![0]!.environment!.map((e) => [e.name, e.value]),
+    );
+    expect(env).toMatchObject({
+      TABLE_NAME: 'sdlc-dev-preview-000000000000',
+      AWS_REGION: 'us-east-1',
+      AWS_DEFAULT_REGION: 'us-east-1',
+    });
+    await host.stop(spec.id);
+    expect(dropped).toEqual(['sdlc-dev-preview-000000000000']);
+  });
+
+  it('gives a preview no table settings when the platform has no data store for previews', async () => {
+    const ecs = new FakeEcs();
+    ecs.script = [running(), running()];
+    const { host } = make(ecs, async () => 200);
+    await host.start(spec);
+    const [run] = ecs.of(RunTaskCommand);
+    const names = run!.input.overrides!.containerOverrides![0]!.environment!.map((e) => e.name);
+    expect(names).not.toContain('TABLE_NAME');
+    expect(names).not.toContain('AWS_REGION');
+  });
+
   it('says what the preview printed when its task stops before it answers, and cleans up', async () => {
     const ecs = new FakeEcs();
     ecs.script = [{ lastStatus: 'STOPPED', stoppedReason: 'Essential container in task exited' }];

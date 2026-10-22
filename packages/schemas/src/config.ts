@@ -79,6 +79,9 @@ export const apiConfigSchema = z.object({
   FARGATE_PREVIEW_TASK_DEFINITION: z.string().optional(),
   // Previews get their own security group: no route to the API or the gateway, unlike a run.
   FARGATE_PREVIEW_SECURITY_GROUPS: z.string().optional(),
+  // When set, each Fargate preview gets its own DynamoDB table named with this prefix (see PreviewData).
+  PREVIEW_TABLE_PREFIX: z.string().optional(),
+  PREVIEW_TABLE_REGION: z.string().default('us-east-1'),
   PREVIEW_ORIGIN: z.preprocess((v) => (v === '' ? undefined : v), url.optional()),
   // Hosts a preview may open HTTPS tunnels to while it installs. Nothing else leaves the sandbox.
   PREVIEW_EGRESS_ALLOW: z.string().default('registry.npmjs.org'),

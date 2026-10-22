@@ -33,7 +33,7 @@ variable "runner_egress_allow" {
 
 variable "extra_dns_allow" {
   type        = list(string)
-  default     = []
+  default     = ["aws.amazon.com"] # the AWS documentation, which an Integration Register entry for an AWS service links to
   description = "Domains, beyond the platform's own, that the VPC resolver may answer. The platform's tasks share the resolver, so a documentation host the API fetches must be listed here."
 }
 
@@ -211,6 +211,16 @@ resource "aws_vpc_security_group_egress_rule" "preview_to_s3" {
   to_port           = 443
 }
 
+# A preview keeps its data in a DynamoDB table of its own. The gateway endpoint below is the only way there, and its
+# policy allows only tables whose names start with the preview prefix.
+resource "aws_vpc_security_group_egress_rule" "preview_to_dynamodb" {
+  security_group_id = aws_security_group.preview.id
+  prefix_list_id    = aws_vpc_endpoint.dynamodb.prefix_list_id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+}
+
 resource "aws_vpc_security_group_ingress_rule" "proxy_from_preview" {
   security_group_id            = aws_security_group.egress_proxy.id
   referenced_security_group_id = aws_security_group.preview.id
@@ -292,6 +302,28 @@ resource "aws_vpc_endpoint" "s3" {
       { Effect = "Allow", Principal = "*", Action = ["s3:GetObject", "s3:PutObject"], Resource = ["${aws_s3_bucket.state.arn}/*"] },
       # Without this S3 answers 403, not 404, for an object that is not there (found on the first run on AWS).
       { Effect = "Allow", Principal = "*", Action = ["s3:ListBucket"], Resource = [aws_s3_bucket.state.arn] },
+    ]
+  })
+}
+
+locals {
+  preview_table_prefix = "${var.name}-preview-"
+  preview_table_arns = [
+    "arn:aws:dynamodb:${var.region}:${local.account}:table/${local.preview_table_prefix}*",
+    "arn:aws:dynamodb:${var.region}:${local.account}:table/${local.preview_table_prefix}*/index/*",
+  ]
+}
+
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.runner.id]
+  # Only the preview tables, so DynamoDB is no way out to anything else in the account.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Principal = "*", Action = "dynamodb:*", Resource = local.preview_table_arns },
     ]
   })
 }
@@ -437,6 +469,30 @@ resource "aws_ecs_task_definition" "runner" {
   }])
 }
 
+# What a preview's own program may do in AWS: use DynamoDB tables whose names start with the preview prefix. Nothing else.
+# The tables are made by the program itself and dropped by the API when the preview ends.
+resource "aws_iam_role" "preview_task" {
+  name               = "${var.name}-preview-task"
+  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+}
+
+resource "aws_iam_role_policy" "preview_task" {
+  role = aws_iam_role.preview_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:CreateTable", "dynamodb:DescribeTable", "dynamodb:UpdateTable", "dynamodb:DescribeTimeToLive",
+        "dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem",
+        "dynamodb:Query", "dynamodb:Scan", "dynamodb:BatchGetItem", "dynamodb:BatchWriteItem",
+        "dynamodb:TransactGetItems", "dynamodb:TransactWriteItems",
+      ]
+      Resource = local.preview_table_arns
+    }]
+  })
+}
+
 # ---- a preview of a pull request: its code arrives by a signed address, and it is told nothing about the platform
 resource "aws_ecs_task_definition" "preview" {
   family                   = "${var.name}-preview"
@@ -445,6 +501,7 @@ resource "aws_ecs_task_definition" "preview" {
   cpu                      = var.preview_cpu
   memory                   = var.preview_memory
   execution_role_arn       = aws_iam_role.execution.arn
+  task_role_arn            = aws_iam_role.preview_task.arn
   container_definitions = jsonencode([{
     name      = "preview"
     image     = local.runner_image
@@ -498,8 +555,14 @@ resource "aws_iam_role_policy" "api_runs" {
       {
         Effect    = "Allow"
         Action    = ["iam:PassRole"]
-        Resource  = [aws_iam_role.execution.arn]
+        Resource  = [aws_iam_role.execution.arn, aws_iam_role.preview_task.arn]
         Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } }
+      },
+      {
+        # The API drops a preview's table when the preview ends.
+        Effect   = "Allow"
+        Action   = ["dynamodb:DeleteTable"]
+        Resource = [local.preview_table_arns[0]]
       },
       {
         # The API signs the run's state URLs with its own permissions, so a URL can do no more than this.

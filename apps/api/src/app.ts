@@ -23,6 +23,7 @@ import { GatewayModel } from './inline-model.js';
 import type { InlineModel } from './inline-model.js';
 import { registerSecurityRoutes } from './security-routes.js';
 import { SecurityService } from './security-service.js';
+import { DeleteTableCommand, DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { FargatePreviewHost, CloudWatchTaskLogs, S3CodeStore } from './fargate-preview.js';
 import { registerPreviewProxy } from './preview-proxy.js';
 import { ProcessRunner } from './launcher.js';
@@ -453,6 +454,17 @@ export async function buildApp({
           subnets: list(config.FARGATE_SUBNETS),
           securityGroups: list(config.FARGATE_PREVIEW_SECURITY_GROUPS),
           code: new S3CodeStore(config.FARGATE_STATE_BUCKET!),
+          data: config.PREVIEW_TABLE_PREFIX
+            ? {
+                tablePrefix: config.PREVIEW_TABLE_PREFIX,
+                region: config.PREVIEW_TABLE_REGION,
+                drop: async (table) => {
+                  await new DynamoDBClient({ region: config.PREVIEW_TABLE_REGION }).send(
+                    new DeleteTableCommand({ TableName: table }),
+                  );
+                },
+              }
+            : undefined,
           logs: new CloudWatchTaskLogs(`/${config.FARGATE_CLUSTER}`),
           openUrl: (id) => `${config.PUBLIC_URL}/api/previews/${id}/open`,
           log: (l) => app.log.info(l),

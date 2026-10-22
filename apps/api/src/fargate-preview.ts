@@ -78,6 +78,14 @@ export class CloudWatchTaskLogs implements TaskLogs {
   }
 }
 
+/** Where a preview keeps its data: its own DynamoDB table, named from the preview, dropped when the preview ends. */
+export interface PreviewData {
+  /** Every table of a preview starts with this, and the preview's role may touch only tables that do. */
+  tablePrefix: string;
+  region: string;
+  drop(table: string): Promise<void>;
+}
+
 export interface FargatePreviewOptions {
   cluster: string;
   /** The task definition's family. */
@@ -98,6 +106,8 @@ export interface FargatePreviewOptions {
   controlPort?: number;
   /** Calls the control server. For tests. */
   fetchImpl?: typeof fetch;
+  /** A table of its own for each preview. Without it a preview has nowhere to keep data but memory. */
+  data?: PreviewData;
   log?: (line: string) => void;
 }
 
@@ -136,6 +146,13 @@ export class FargatePreviewHost implements PreviewHost {
 
   private log(line: string) {
     (this.opts.log ?? ((l) => console.log(l)))(line);
+  }
+
+  /** The table this preview may create and use. The program reads it from TABLE_NAME. */
+  tableFor(id: string): string | undefined {
+    return this.opts.data
+      ? `${this.opts.data.tablePrefix}${id.replace(/-/g, '').slice(-12)}`
+      : undefined;
   }
 
   private async describe(arn: string): Promise<Task | null> {
@@ -188,6 +205,13 @@ export class FargatePreviewHost implements PreviewHost {
                   { name: 'HOME', value: '/tmp' },
                   { name: 'CI', value: 'true' },
                   { name: 'npm_config_cache', value: '/tmp/npm' },
+                  ...(this.opts.data
+                    ? [
+                        { name: 'TABLE_NAME', value: this.tableFor(spec.id)! },
+                        { name: 'AWS_REGION', value: this.opts.data.region },
+                        { name: 'AWS_DEFAULT_REGION', value: this.opts.data.region },
+                      ]
+                    : []),
                 ],
               },
             ],
@@ -287,6 +311,8 @@ export class FargatePreviewHost implements PreviewHost {
         )
         .catch(() => {});
     await this.opts.code.remove(id).catch(() => {});
+    const table = this.tableFor(id);
+    if (table) await this.opts.data!.drop(table).catch(() => {});
   }
 
   /** Stops every preview task of the family, whichever process started it. */
