@@ -25,6 +25,11 @@ describe('costMicros', () => {
     ).toBe(1);
   });
 
+  it('prices the default agent model, Sonnet 5.5', () => {
+    const sonnet = DEFAULT_PRICES['anthropic/claude-sonnet-5.5'];
+    expect(sonnet).toEqual({ input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 });
+  });
+
   it('throws for an unpriced model rather than recording zero', () => {
     expect(() =>
       costMicros(

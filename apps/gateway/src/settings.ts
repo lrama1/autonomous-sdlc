@@ -29,8 +29,8 @@ export const DEFAULT_PROVIDER: ProviderPrefs = {
 
 export const DEFAULT_ALIASES: Record<string, string> = {
   'agent-fast': 'anthropic/claude-haiku-4.5',
-  'agent-default': 'anthropic/claude-haiku-4.5',
-  'agent-strong': 'anthropic/claude-sonnet-4.6',
+  'agent-default': 'anthropic/claude-sonnet-5.5',
+  'agent-strong': 'anthropic/claude-sonnet-5.5',
 };
 
 function parseJson<T>(name: string, raw: string | undefined, fallback: T): T {

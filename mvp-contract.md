@@ -307,7 +307,7 @@ Proven in spike 1. Production requirements on top of `spikes/s1-claude-openroute
 |---|---|
 | Inbound | Anthropic Messages API (`POST /v1/messages`, plus `/v1/messages/count_tokens`) and `HEAD /`. Platform LLM services use `POST /v1/chat/completions` (OpenAI-compatible). |
 | Auth | `Authorization: Bearer <runToken>` or `x-api-key`. Look up `run_token` by hash. Unknown, expired, or revoked gives 401. |
-| Aliases | `agent-fast`, `agent-default`, `agent-strong`, `svc-default`. Mapped in configuration, per deployment. A disallowed alias gives 403. |
+| Aliases | `agent-fast`, `agent-default`, `agent-strong`, `svc-default`. Mapped in configuration, per deployment (`GATEWAY_ALIASES`). Default since 2026-10-22: `agent-fast` is Haiku 4.5, and `agent-default` and `agent-strong` are Sonnet 5.5 (`anthropic/claude-sonnet-5.5`, $2 in and $10 out per million tokens). A disallowed alias gives 403. |
 | Provider preferences | For agent runs always inject `provider: { order: ['anthropic'], allow_fallbacks: false, data_collection: 'deny' }` (spike 1). Platform services use their own preference set per alias. |
 | Prompt caching | If a `/v1/messages` request carries no `cache_control` anywhere, add it to the end of the tools, the system prompt and the last message (at most three markers). A client that marks its own prompt is left alone. Needed for the Copilot CLI, which sends none (step 4). |
 | Headers | Drop `expect`, `keep-alive`, `upgrade`, `te`, `transfer-encoding`, `connection`, `host`, `content-length`. |

@@ -60,8 +60,8 @@ const LAST = {
   cache_read_input_tokens: 10000,
   output_tokens: 500,
 };
-// 100*1 + 2000*1.25 + 10000*0.1 + 500*5 micro-USD
-const EXPECTED_COST = 6100;
+// Sonnet 5.5: 100*2 + 2000*2.5 + 10000*0.1 + 500*10 micro-USD
+const EXPECTED_COST = 11200;
 
 function post(
   token: string | undefined,
@@ -216,7 +216,7 @@ describe('forwarding', () => {
     expect(received).toHaveLength(1);
     const up = received[0]!;
     expect(up.url).toBe('/v1/messages');
-    expect(up.body.model).toBe('anthropic/claude-haiku-4.5');
+    expect(up.body.model).toBe('anthropic/claude-sonnet-5.5');
     expect(up.body.provider).toEqual({
       order: ['anthropic'],
       allow_fallbacks: false,
@@ -314,7 +314,7 @@ describe('metering and budget', () => {
     expect(rows[0]).toMatchObject({
       source: 'agent',
       alias: 'agent-default',
-      providerModel: 'anthropic/claude-haiku-4.5',
+      providerModel: 'anthropic/claude-sonnet-5.5',
       inputTokens: 100,
       cacheWriteTokens: 2000,
       cachedTokens: 10000,
@@ -340,7 +340,7 @@ describe('metering and budget', () => {
     const f = await createRunFixture(db);
     await (await post(f.token, { model: 'agent-default', messages: [] })).text();
     const [row] = await db.select().from(costRecord).where(eq(costRecord.runId, f.runId));
-    expect(row).toMatchObject({ inputTokens: 10, outputTokens: 20, costMicros: 10 + 100 });
+    expect(row).toMatchObject({ inputTokens: 10, outputTokens: 20, costMicros: 10 * 2 + 20 * 10 });
   });
 
   it('adds up several calls', async () => {
