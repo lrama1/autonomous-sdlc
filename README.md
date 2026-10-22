@@ -71,6 +71,8 @@ Without Slack, asks are in the attention queue and the notifier writes to the AP
 
 The stack (VPC, RDS PostgreSQL, three ECS Fargate services, CloudFront, Cognito, Secrets Manager) is deployed and destroyed from the **`deploy` GitHub workflow** — nothing runs on a developer's machine. It is proven: a stack was deployed, checked and destroyed this way on real AWS.
 
+**Copying this repository for your own team? Start with the step-by-step checklist in [docs/ADOPTING.md](./docs/ADOPTING.md).** The sections below are the reference.
+
 ### Prerequisites
 
 - An AWS account (the stack is deployed to `us-east-1`).
@@ -127,7 +129,8 @@ The run builds and pushes the platform and runner images (tagged with the commit
 
    It prints a password that works at once. Sign in with it; the `BOOTSTRAP_ADMIN_EMAIL` person gets the platform admin hat.
 
-2. **Register the GitHub Apps.** As the admin, open `/admin/github` on the platform and register and install the two Apps (Agent and Gate), then add the repositories the agents may work in. The platform stores the App keys in Secrets Manager itself.
+2. **Register the GitHub Apps.** As the admin, open `/admin/github` on the platform and register and install the two Apps (Agent and Gate), then install them on only the repositories the agents may work in. The platform stores the App keys in Secrets Manager itself.
+3. **Register each repository the agents may use** in the platform. There is no page for this yet: while signed in as the admin, run the one-line request in step 9 of [docs/ADOPTING.md](./docs/ADOPTING.md) in the browser console. Initiatives can only be created on registered repositories.
 
 ### Destroying the stack
 
