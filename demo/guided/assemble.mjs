@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { WORK } from './record.mjs';
-import { ORDER } from './scenes.mjs';
+const { ORDER } = await import(process.env.DEMO_SCENES ?? './scenes.mjs');
 
 const args = process.argv.slice(2);
 const outName = args[0] && args[0].endsWith('.mp4') ? args.shift() : 'guided-demo.mp4';

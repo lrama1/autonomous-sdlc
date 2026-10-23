@@ -1,4 +1,4 @@
-﻿// Records the platform's real web page for a guided demo: every click is announced on screen (what is clicked and
+// Records the platform's real web page for a guided demo: every click is announced on screen (what is clicked and
 // why) and every switch of tab is called out, with narration (edge-tts) spoken at the moment it happens.
 //   node demo/guided/record.mjs <scene> [<scene> ...]      (needs SDLC_URL, SDLC_USER, SDLC_PASSWORD)
 // demo/guided/assemble.mjs joins the scenes into one MP4 with burned-in captions.
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const { chromium } = require('@playwright/test');
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const WORK = path.resolve(here, '..', '_work', 'guided');
+export const WORK = path.resolve(here, '..', '_work', process.env.DEMO_WORK ?? 'guided');
 fs.mkdirSync(path.join(WORK, 'scenes'), { recursive: true });
 fs.mkdirSync(path.join(WORK, 'audio'), { recursive: true });
 

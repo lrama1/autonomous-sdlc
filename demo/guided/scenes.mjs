@@ -1,22 +1,25 @@
-﻿// The guided demo: a habit tracker built from one sentence on the live platform. In every scene each click says what
+// The guided demo: a habit tracker built from one sentence on the live platform. In every scene each click says what
 // is clicked and why, and each switch of tab says where we go and why. Narration is spoken while it happens.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { main, BASE, login } from './record.mjs';
 
-export const TITLE = 'Habit tracker';
+export let TITLE = 'Habit tracker';
+export const setTitle = (t) => {
+  TITLE = t;
+};
 export const GOAL =
   'A small habit tracker as a web page with a small JSON API: add habits, tick a habit off for today, and see each habit\u2019s current streak of days in a row. ' +
   'Keep it small: Node only, no dependencies, data kept in memory. Design it as at most two tasks.';
 
 /** Say something while an action happens, and wait for both. */
-const act = (h, text, fn) => Promise.all([h.say(text), fn()]);
-const pickInitiative = async (h) => {
+export const act = (h, text, fn) => Promise.all([h.say(text), fn()]);
+export const pickInitiative = async (h) => {
   const sel = h.page.getByLabel('Initiative');
   await sel.waitFor({ timeout: 30000 });
   await sel.selectOption({ label: TITLE });
 };
-const interactions = async (p) => (await p.request.get(BASE + '/api/interactions')).json();
+export const interactions = async (p) => (await p.request.get(BASE + '/api/interactions')).json();
 
 export const scenes = {
   intro: {
