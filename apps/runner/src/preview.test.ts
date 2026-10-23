@@ -94,6 +94,23 @@ describe.skipIf(process.platform === 'win32')('running a preview', () => {
     await expect(readFile(path.join(work, 'ran.txt'))).rejects.toThrow();
   });
 
+  it('installs packages by itself when the repository lists some and the preview file has no install line', async () => {
+    const work = path.join(dir, 'work4');
+    const bin = path.join(dir, 'bin');
+    await mkdir(bin, { recursive: true });
+    await writeFile(path.join(bin, 'npm'), '#!/bin/sh\necho "npm $1" > npm-called.txt\n', {
+      mode: 0o755,
+    });
+    await mkdir(work, { recursive: true });
+    await writeFile(path.join(work, 'package.json'), '{}');
+    await writeFile(path.join(work, 'package-lock.json'), '{}');
+    const env = { codeUrl: '', install: null, start: 'echo started > started.txt', dir: work };
+    const path_ = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
+    expect(await startProgram(env, { PATH: path_ }).done).toBe(0);
+    expect((await readFile(path.join(work, 'npm-called.txt'), 'utf8')).trim()).toBe('npm ci');
+    expect((await readFile(path.join(work, 'started.txt'), 'utf8')).trim()).toBe('started');
+  });
+
   it('passes a stop on to the program, and refuses an address that no longer works', async () => {
     const work = path.join(dir, 'work3');
     const env = { codeUrl: `${base}/code.tgz`, install: null, start: 'sleep 30', dir: work };

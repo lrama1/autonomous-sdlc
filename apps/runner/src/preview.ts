@@ -56,6 +56,10 @@ export async function fetchCode(env: PreviewEnv, log: (l: string) => void): Prom
   }
 }
 
+/** What runs when the repository's preview file has no install line: install packages if there is a package.json. */
+const DEFAULT_INSTALL =
+  'if [ -f package.json ] && [ ! -d node_modules ]; then if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; fi';
+
 /**
  * Runs the install and the start, each in its own subshell so a `cd` in one does not change where the other runs.
  * Output goes to this process's own, which the platform collects.
@@ -64,7 +68,9 @@ export function startProgram(
   env: PreviewEnv,
   childEnv: Record<string, string>,
 ): { child: ChildProcess; done: Promise<number> } {
-  const script = `${env.install ? `(${env.install}) && ` : ''}(${env.start})`;
+  // Without an install line, a repository that lists packages still gets them, so the app can start.
+  const install = env.install ?? DEFAULT_INSTALL;
+  const script = `(${install}) && (${env.start})`;
   const child = spawn('sh', ['-c', script], { cwd: env.dir, env: childEnv, stdio: 'inherit' });
   const done = new Promise<number>((resolve) => {
     child.on('error', () => resolve(127));

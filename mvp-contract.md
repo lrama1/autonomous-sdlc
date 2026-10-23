@@ -960,3 +960,5 @@ A reviewer asks the Security agent to read a pull request before approving it. D
 | Dev IdP keeps its state in memory, so a restart signs everyone out | Fine for development |
 
 Preview data (2026-10-22): a Fargate preview receives TABLE_NAME and AWS_REGION; its task role can use only its own prefix-scoped DynamoDB tables (gateway endpoint policy limits the same), and the table is dropped on stop. Not yet proven on AWS.
+
+Preview install (2026-10-22): when a repository's preview file has no install line but a package.json is present, the preview container installs packages itself (npm ci with a lock file, else npm install) before the start command.
