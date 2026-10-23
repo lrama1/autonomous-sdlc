@@ -319,6 +319,23 @@ describe('what the smoke test means for approving', () => {
     expect(await smoke.blocks(r2.row)).toBeNull();
   });
 
+  it('asks nothing of a change made only of documents, such as a spec or a design', async () => {
+    const r = await review();
+    const docs = {
+      ...r.row,
+      contextCard: {
+        ...(r.row.contextCard as object),
+        diff: { changedPaths: ['docs/spec/x.md', 'docs/design/x.md'] },
+      },
+    };
+    expect(await smoke.blocks(docs)).toBeNull();
+    const code = {
+      ...r.row,
+      contextCard: { ...(r.row.contextCard as object), diff: { changedPaths: ['src/a.js'] } },
+    };
+    expect(await smoke.blocks(code)).toContain('none has run on this commit');
+  });
+
   it('holds a commit that has checks and no result, then lets it through when they pass', async () => {
     const r = await review();
     expect(await smoke.blocks(r.row)).toContain('3 smoke checks, and none has run on this commit');

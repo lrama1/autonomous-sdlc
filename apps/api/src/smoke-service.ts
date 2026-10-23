@@ -4,6 +4,7 @@ import type { Db } from '@sdlc/db';
 import {
   describeSmokeCheck,
   missingChecks,
+  needsSecurityReview,
   parsePreviewConfig,
   PREVIEW_CONFIG_PATH,
 } from '@sdlc/core';
@@ -39,6 +40,7 @@ interface PrCard {
   repository?: string;
   prNumber?: number;
   headSha?: string;
+  diff?: { changedPaths?: string[] };
 }
 
 const fail = (status: number, code: string, message: string): SmokeStartResult => ({
@@ -153,6 +155,9 @@ export class SmokeService {
   /** What the repository asks for at this review's commit, and what the design asks for on top of that. */
   async requirementFor(review: InteractionRow): Promise<SmokeRequirement> {
     const card = review.contextCard as PrCard;
+    // A change made only of documents (a spec, a design) has no program to start.
+    const paths = card.diff?.changedPaths ?? [];
+    if (paths.length > 0 && !needsSecurityReview(paths)) return { kind: 'none' };
     const base = await this.requirement(card.repository!, card.headSha!);
     if (base.kind === 'invalid') return base;
     const missing = await this.designGap(review, card.headSha!);
