@@ -964,3 +964,5 @@ Preview data (2026-10-22): a Fargate preview receives TABLE_NAME and AWS_REGION;
 Preview install (2026-10-22): when a repository's preview file has no install line but a package.json is present, the preview container installs packages itself (npm ci with a lock file, else npm install) before the start command.
 
 Smoke and documents (2026-10-23): a pull request that changes only documents (a spec or a design) is not held for a smoke test, even in a repository that has smoke checks.
+
+Engineer prompts (2026-10-23): engineers are told the npm registry is reachable and to install packages (npm ci) when node_modules is missing, before running the verification command.
