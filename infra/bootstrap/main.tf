@@ -16,10 +16,10 @@ variable "repository" {
   description = "The repository as it appears in GitHub's sign-in token (new repositories include their numeric ids, so a deleted and re-created name cannot inherit trust). Read it with: gh api repos/OWNER/NAME/actions/oidc/customization/sub  (use sub_claim_prefix)."
 }
 
-variable "branch" {
+variable "environment" {
   type        = string
-  default     = "main"
-  description = "The only branch whose workflows may assume the deploy role."
+  default     = "production"
+  description = "The GitHub Environment a deploy job must run in. It requires a reviewer and allows only the main branch, so the role cannot be assumed without that approval."
 }
 
 variable "region" {
