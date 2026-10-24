@@ -13,7 +13,7 @@ Follow this top to bottom. Plan on one to two hours of work, plus about 20 minut
 
 ## 1. Make your copy of this repository
 
-- [ ] Use **"Use this template"** (or a private mirror) to make a **private** copy in your own account or organization. A fork of a public repository is always public, which is usually wrong for infrastructure code.
+- [ ] Use **"Use this template"** to make a copy in your own account or organization. It can be **private** and has no link to the original. Or **fork** the repository: a fork of a public repository is public, but you can sync updates from the original and offer changes back by pull request. Nobody can push to the original repository except its owner; your copy is yours to change. On a free GitHub plan, a private copy cannot enforce rulesets or required reviewers.
 - [ ] In the copy, allow GitHub Actions (Settings → Actions).
 - [ ] Nothing in the deploy code names the original owner, domain or AWS account. Those appear only in the architecture diagram, a comment in `infra/bootstrap/main.tf`, and tests. Your values come from the variables you set below.
 
