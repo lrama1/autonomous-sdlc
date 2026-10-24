@@ -132,6 +132,6 @@ await fetch('/api/repositories', {
 
 ## Know before you rely on it
 
-- [SECURITY-REVIEW.md](../SECURITY-REVIEW.md) lists known weaknesses of the AWS deployment. Read it before you put sensitive code through the platform.
+- This is a prototype. The deploy role has `AdministratorAccess`, MFA is off for the first admin by default, and previews are served from a sibling domain of the platform. Think about those before you put sensitive code through it.
 - Slack notifications are not wired up on AWS. Everything waits in the Attention queue.
 - Agent runs cost real money. Previews and agent sandboxes are one-off Fargate tasks that stop on their own.
