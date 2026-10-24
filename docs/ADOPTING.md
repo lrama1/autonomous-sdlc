@@ -35,6 +35,7 @@ The deploy role is an AWS administrator, and **anyone who can push to `main` and
   terraform apply -var repository=repo:OWNER@ID/REPO@ID
   ```
 
+- [ ] **Recommended, only you can deploy:** also pass `-var actor_id=YOUR_NUMERIC_GITHUB_ID` (`gh api users/NAME --jq .id`) and `-var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main`. AWS then accepts only your runs of that one workflow file.
 - [ ] Write down the two outputs: `deploy_role_arn` and `state_bucket`.
 
 This creates the Terraform state bucket and the `sdlc-github-deploy` role. Only your repository's workflows on `main` can assume it. No AWS keys are stored in GitHub.

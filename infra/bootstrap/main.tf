@@ -3,6 +3,7 @@
 #   cd infra/bootstrap
 #   terraform init
 #   terraform apply -var repository=repo:OWNER@OWNER_ID/REPO@REPO_ID   # see the variable's description
+#   Optional, tighter: add -var actor_id=YOUR_NUMERIC_GITHUB_ID -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main
 # Its own state stays local (and is not committed): it holds no secrets and can be re-imported.
 terraform {
   required_version = ">= 1.6"
@@ -22,6 +23,17 @@ variable "environment" {
   description = "The GitHub Environment a deploy job must run in. It requires a reviewer and allows only the main branch, so the role cannot be assumed without that approval."
 }
 
+variable "actor_id" {
+  type        = string
+  default     = null
+  description = "Optional. The numeric id of the one GitHub user whose runs may assume the deploy role (gh api users/NAME --jq .id). Null allows any user who can start the workflow."
+}
+
+variable "workflow_ref" {
+  type        = string
+  default     = null
+  description = "Optional. The one workflow file that may assume the deploy role, as OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main. Null allows any workflow in the environment."
+}
 variable "region" {
   type    = string
   default = "us-east-1"
@@ -102,10 +114,14 @@ resource "aws_iam_role" "deploy" {
       Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
-        StringEquals = {
-          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "${var.repository}:environment:${var.environment}"
-        }
+        StringEquals = merge(
+          {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:sub" = "${var.repository}:environment:${var.environment}"
+          },
+          var.actor_id == null ? {} : { "token.actions.githubusercontent.com:actor_id" = var.actor_id },
+          var.workflow_ref == null ? {} : { "token.actions.githubusercontent.com:job_workflow_ref" = var.workflow_ref },
+        )
       }
     }]
   })
