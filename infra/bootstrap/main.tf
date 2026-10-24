@@ -2,7 +2,7 @@
 # deploy workflow needs before it can run: a bucket for Terraform's state, and a role GitHub Actions can assume.
 #   cd infra/bootstrap
 #   terraform init
-#   terraform apply -var repository=repo:lrama1@5783118/autonomous-sdlc@1423309795   # see the variable's description
+#   terraform apply -var repository=repo:OWNER@OWNER_ID/REPO@REPO_ID   # see the variable's description
 # Its own state stays local (and is not committed): it holds no secrets and can be re-imported.
 terraform {
   required_version = ">= 1.6"
