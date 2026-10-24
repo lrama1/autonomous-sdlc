@@ -93,15 +93,16 @@ This creates the Terraform state bucket (`sdlc-tfstate-<account>`) and the `sdlc
 
 ### 2. Repository variables and secrets
 
-| Name                    | Kind               | Value                                                                                                              |
-| ----------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `AWS_DEPLOY_ROLE_ARN`   | variable           | the bootstrap's `deploy_role_arn` output                                                                           |
-| `TF_STATE_BUCKET`       | variable           | the bootstrap's `state_bucket` output                                                                              |
-| `BOOTSTRAP_ADMIN_EMAIL` | variable           | the person who signs in first; gets the platform admin hat                                                         |
-| `OPENROUTER_KEY_AGENTS` | secret             | the OpenRouter key for agent runs                                                                                  |
-| `APP_DOMAIN`            | variable, optional | e.g. `app.example.com`                                                                                             |
-| `PREVIEW_DOMAIN`        | variable, optional | e.g. `previews.example.com` — must differ from `APP_DOMAIN`, so previewed code never shares the platform's cookies |
-| `HOSTED_ZONE_ID`        | variable, optional | the Route 53 hosted zone holding both names                                                                        |
+| Name                     | Kind               | Value                                                                                                                                      |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AWS_DEPLOY_ROLE_ARN`    | variable           | the bootstrap's `deploy_role_arn` output                                                                                                   |
+| `TF_STATE_BUCKET`        | variable           | the bootstrap's `state_bucket` output                                                                                                      |
+| `BOOTSTRAP_ADMIN_EMAIL`  | variable           | the person who signs in first; gets the platform admin hat                                                                                 |
+| `OPENROUTER_KEY_AGENTS`  | secret             | the OpenRouter key for agent runs                                                                                                          |
+| `production` environment | setting            | Settings, Environments: you as required reviewer, deployments from `main` only. The deploy job runs in it, and the AWS role trusts only it |
+| `APP_DOMAIN`             | variable, optional | e.g. `app.example.com`                                                                                                                     |
+| `PREVIEW_DOMAIN`         | variable, optional | e.g. `previews.example.com` — must differ from `APP_DOMAIN`, so previewed code never shares the platform's cookies                         |
+| `HOSTED_ZONE_ID`         | variable, optional | the Route 53 hosted zone holding both names                                                                                                |
 
 Set the three domain variables together, or none of them. With all three, Terraform creates one ACM certificate for both names, the Route 53 records, and the Cognito callback addresses follow.
 

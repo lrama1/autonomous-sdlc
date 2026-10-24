@@ -48,6 +48,7 @@ In your copy: Settings → Secrets and variables → Actions.
 - [ ] Variable `BOOTSTRAP_ADMIN_EMAIL` = the email of the first person to sign in. They become the platform admin.
 - [ ] Secret `OPENROUTER_KEY_AGENTS` = your OpenRouter key
 - [ ] **Optional, only if you use your own domain, all three or none:** variables `APP_DOMAIN`, `PREVIEW_DOMAIN` (a different name from `APP_DOMAIN`) and `HOSTED_ZONE_ID`.
+- [ ] **Create the `production` environment** (Settings, Environments): add yourself as a required reviewer and allow deployments from `main` only. The deploy job runs in this environment, and the AWS role trusts only it, so every deploy needs your approval. Required reviewers on a private repository need a paid GitHub plan; on a free plan, make the repository public first.
 
 ## 5. Deploy
 

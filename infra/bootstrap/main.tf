@@ -92,7 +92,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   client_id_list = ["sts.amazonaws.com"]
 }
 
-# Trust is the control here: only this repository's workflows on this branch can assume the role.
+# Trust is the control here: only this repository's workflows, in the protected GitHub Environment, can assume the role.
 resource "aws_iam_role" "deploy" {
   name = "sdlc-github-deploy"
   assume_role_policy = jsonencode({
@@ -104,7 +104,7 @@ resource "aws_iam_role" "deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "${var.repository}:ref:refs/heads/${var.branch}"
+          "token.actions.githubusercontent.com:sub" = "${var.repository}:environment:${var.environment}"
         }
       }
     }]
@@ -112,7 +112,7 @@ resource "aws_iam_role" "deploy" {
 }
 
 # The stack creates IAM roles, VPCs, databases and CDNs, so a narrow policy would be long and brittle.
-# Anyone who can push to the branch can therefore act as an administrator of this account: protect the branch.
+# Anyone who can approve a deployment to the environment can therefore act as an administrator of this account: keep the reviewers to people you trust, and protect the main branch.
 resource "aws_iam_role_policy_attachment" "deploy_admin" {
   role       = aws_iam_role.deploy.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
