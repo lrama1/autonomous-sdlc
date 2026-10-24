@@ -1,7 +1,8 @@
 name: deploy
 
-# Deploys or destroys the AWS dev stack. Started by hand from the Actions tab, and only from main:
-# the deploy role's trust (infra/bootstrap) accepts no other branch.
+# Deploys or destroys the AWS dev stack. Started by hand from the Actions tab, only from main, only by the repository owner,
+# and only after the reviewer of the production environment approves. The deploy role's trust (infra/bootstrap) accepts
+# no other way in.
 # One-time setup is in docs: mvp-contract.md, "Deploy from CI".
 on:
   workflow_dispatch:
@@ -41,7 +42,9 @@ concurrency:
 
 jobs:
   stack:
-    if: github.ref == 'refs/heads/main'
+    # Only the repository owner, only from main, and only after the reviewer of the production environment approves.
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    environment: production
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
