@@ -1,13 +1,157 @@
 # Autonomous SDLC
 
-A semi-autonomous software development platform where AI agents and people collaborate, and people are brought in at the right moments (human-in-the-loop).
+**AI agents build. People decide.** A semi-autonomous software delivery platform that runs in your own AWS account. You describe what you want; agents write the spec, design the solution, split it into tasks, build each task in an isolated sandbox and open pull requests. People make the decisions that matter, and nothing merges until the checks pass and a person has approved.
+
+- **One idea in.** A brief in plain words (plus links to any API documentation) becomes a spec, a design, a task plan and pull requests.
+- **Easy to follow.** One map shows every initiative, stage and task, and who each is waiting on. One queue holds everything that needs a person.
+- **Humans in the loop by design.** Agents stop at hard stops: a new outside system, a protected file, a risky change. Only a person can let them through, and every answer is recorded with who and why.
+- **Review goes beyond the diff.** A security review reads the change, a smoke test starts the real app, the design's own checks must pass, and one click runs the pull request as a live, isolated copy of the app (with its own database table) before you approve it.
+- **Features compound.** A new initiative on the same repository builds on the code that already merged.
+- **Yours.** It runs in your AWS account with invite-only sign-in. The agents use your OpenRouter key.
+
+**Status: a working prototype.** Two apps were built on it end to end (a habit tracker, and a support ticket tracker on DynamoDB built in two stages). Those runs found real platform bugs, which were fixed. It is not a hardened product: read [Costs and caveats](#costs-and-caveats) before you put sensitive code through it.
 
 - **[spec.md](./spec.md)**: what and why (v0.6).
 - **[mvp-contract.md](./mvp-contract.md)**: the interfaces to code against for the MVP.
+- **[docs/ADOPTING.md](./docs/ADOPTING.md)**: the same AWS setup as a checkbox list, with the extra steps (hats, other users).
 - **[spikes/README.md](./spikes/README.md)**: results of the risk spikes (model gateway, MCP `ask_human`, Fargate runner).
 - **[designs/](./designs/README.md)** and **[demo/](./demo/README.md)**: clickable mockups and narrated demo videos.
 
-## Local development (no Docker needed)
+## Use it: make your own copy, then deploy it to your AWS account
+
+You do not install this repository, and nobody but its owner can change it. `main` here is protected (a pull request with a passing `verify` check is required), the owner is the only person with write access, and the deploy workflow runs only for the owner and only into the owner's AWS account. Your route is to **make your own copy and change that**:
+
+| Way                   | What you get                                                                                            | Choose it when                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Use this template** | A fresh copy with no link to this repository. Can be private.                                           | You are adopting it for a team, with private infrastructure code. |
+| **Fork**              | A linked copy. A fork of a public repository is public. You can pull in updates and offer changes back. | You want updates from here, or you want to contribute.            |
+
+On a free GitHub plan, a private copy cannot enforce rulesets or required reviewers (they need a paid plan). Use a public copy, or a paid plan, if you want the protections in steps 2 and 5.
+
+Your copy is yours to modify: change agents' prompts in `agents/`, the rules in `rules/`, the model aliases in `apps/gateway/src/settings.ts`, the infrastructure in `infra/`. To get later changes from here into a fork, use GitHub's "Sync fork" button; into a template copy, `git remote add upstream https://github.com/lrama1/autonomous-sdlc.git`, then `git fetch upstream` and merge. To offer a change back, open a pull request from your fork. The owner reviews and merges it.
+
+## Run it on your own AWS account, step by step
+
+Plan on one to two hours of work and about 20 minutes of waiting for the first deploy. The stack costs about $3.30 a day while it is up (roughly $100 a month), plus model fees for every agent run.
+
+### Before you start
+
+- An **AWS account** where you have administrator rights, and the **AWS CLI** signed in to it. The stack deploys to `us-east-1`.
+- **Terraform 1.6 or later**, **Git**, and the **GitHub CLI** (`gh`), signed in.
+- A **GitHub account or organization** for your copy of the platform, and a **separate repository** for the agents to work on (it can start nearly empty; see step 9).
+- An **OpenRouter API key** for the agents' model calls. Give it a daily credit limit.
+- Optional: a domain in a **Route 53 hosted zone** (for example `app.example.com` and `previews.example.com`). Without it the platform uses its CloudFront addresses.
+
+### 1. Make your copy
+
+On GitHub, press **Use this template** (or **Fork**) on this repository, and name your copy. Clone it. Then, in the copy, open Settings, Actions, General and allow Actions.
+
+### 2. Protect `main` in your copy
+
+The deploy role is an AWS administrator, so **anyone who can push to `main` and run the workflow can administer your AWS account**. In Settings, Rules, Rulesets, protect `main`: require a pull request, require the `verify` status check, require at least one approving review, and allow no bypass. Keep the list of people with write access short.
+
+### 3. Bootstrap AWS (once)
+
+This creates the Terraform state bucket and the `sdlc-github-deploy` role that your workflow assumes. No AWS keys are ever stored in GitHub.
+
+```bash
+# the sign-in subject GitHub puts in tokens for your copy, e.g. repo:OWNER@123/REPO@456
+gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+# your numeric GitHub user id
+gh api users/OWNER --jq .id
+
+cd infra/bootstrap
+terraform init
+terraform apply \
+  -var repository=repo:OWNER@123/REPO@456 \
+  -var actor_id=YOUR_NUMERIC_GITHUB_ID \
+  -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main
+```
+
+`actor_id` and `workflow_ref` are optional but recommended: AWS then accepts only your runs of that one workflow file. Write down the two outputs, `deploy_role_arn` and `state_bucket`. Keep `infra/bootstrap/terraform.tfstate` (it is local and gitignored).
+
+### 4. Set the repository variables and secret
+
+In your copy, Settings, Secrets and variables, Actions:
+
+| Name                    | Kind               | Value                                                                                                             |
+| ----------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `AWS_DEPLOY_ROLE_ARN`   | variable           | the bootstrap's `deploy_role_arn` output                                                                          |
+| `TF_STATE_BUCKET`       | variable           | the bootstrap's `state_bucket` output                                                                             |
+| `BOOTSTRAP_ADMIN_EMAIL` | variable           | the email of the first person to sign in; they become the platform admin                                          |
+| `OPENROUTER_KEY_AGENTS` | secret             | your OpenRouter key                                                                                               |
+| `APP_DOMAIN`            | variable, optional | e.g. `app.example.com`                                                                                            |
+| `PREVIEW_DOMAIN`        | variable, optional | e.g. `previews.example.com`; must differ from `APP_DOMAIN`, so previewed code never shares the platform's cookies |
+| `HOSTED_ZONE_ID`        | variable, optional | the Route 53 hosted zone holding both names                                                                       |
+
+Set the three domain variables together, or none of them. With all three, Terraform creates one certificate for both names and the DNS records.
+
+### 5. Create the `production` environment
+
+Settings, Environments, New environment, named exactly `production`. Add yourself as a required reviewer and allow deployments from the `main` branch only. The deploy job runs in this environment and the AWS role trusts only it, so every deploy needs your approval click. (Required reviewers on a private repository need a paid GitHub plan.)
+
+### 6. Deploy
+
+Actions, **deploy**, Run workflow, on `main`. Inputs:
+
+| Input                | Meaning                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `action`             | `deploy` (default) or `destroy`                                                                     |
+| `confirm_destroy`    | to destroy, type `destroy` here; anything else refuses                                              |
+| `independent_review` | require a second person to approve (turn off to work alone)                                         |
+| `security_review`    | `on`: a pull request needs a security review before it can be approved; `off`: it does not          |
+| `agent_engine`       | `claude-code` or `copilot-cli` moves every agent to that engine; empty leaves each agent on its own |
+
+The run stops at "Review deployments": open the run and approve it. It then builds and pushes the platform and runner images (tagged with the commit), applies `infra/aws`, and waits for `/readyz`. A full deploy takes about 11 minutes (more with a custom domain, because of certificate validation). The run summary prints the platform and previews addresses. Deploying again later updates the same stack in place; it does not create a second one.
+
+### 7. Create the first sign-in
+
+People cannot sign themselves up. From `infra/aws`, with the AWS CLI configured and PowerShell:
+
+```powershell
+./create-user.ps1 -Email you@example.com
+```
+
+It prints a password that works at once. Sign in at the platform address with it: the `BOOTSTRAP_ADMIN_EMAIL` person gets the platform admin hat. Without PowerShell, [docs/ADOPTING.md](./docs/ADOPTING.md) step 6 has the AWS CLI commands, and shows how to give other people hats.
+
+### 8. Register the two GitHub Apps
+
+As the admin, open `<platform address>/admin/github`. Register the **Agent** App, then the **Gate** App, signed in to GitHub as the account that should own them. Install each on **only the repositories the agents may use**. The platform stores the App keys in Secrets Manager itself.
+
+### 9. Prepare and register the repository the agents will work on
+
+This is a different repository from your copy of the platform.
+
+- It needs an `npm run verify` script that fails when something is wrong (a new repository can start with `"verify": "node --test"`), and a GitHub Actions workflow with a job named `verify` that runs it on pull requests. Agents cannot edit `.github/workflows/**`.
+- Protect its `main`: require the `verify` check, require one approving review, and dismiss stale approvals. The Gate App's approving review is what allows a merge.
+- Register it in the platform. There is no page for this yet. Signed in as the admin, run this in the browser console on the platform:
+
+```js
+await fetch('/api/repositories', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ fullName: 'OWNER/REPO' }),
+}).then((r) => r.json());
+```
+
+### 10. Build something
+
+Open the **Map** tab, create an initiative on your repository with a brief (and links to any API documentation), and start the spec. Approve the spec in the **Attention queue**, then start the design, approve it, and start the build. Expect a few hard stops the first time: agents that write `.sdlc/preview.yaml` stop at a protected path and ask you to allow it, and a new outside system asks you to confirm it. That is by design. After the first run, look at the **Costs** tab.
+
+### 11. Stop paying for it
+
+Run the **deploy** workflow with `action` = `destroy` and `confirm_destroy` = `destroy` (and approve it). It removes the cluster, load balancer, database, CloudFront, VPC, Cognito pool and every secret the stack made, including the GitHub App keys the platform stored. A redeploy afterwards starts fresh: create a new user (step 7) and register the Apps and repositories again (steps 8 and 9).
+
+What destroy leaves behind:
+
+| Leftover                                                 | Remove it with                                                                                      |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Terraform state bucket and the `sdlc-github-deploy` role | `cd infra/bootstrap; terraform destroy` (the bucket has `prevent_destroy`, so this is the only way) |
+| Your Route 53 hosted zone                                | delete it in Route 53 if you no longer need it (about $0.50 a month)                                |
+
+## Run it on your machine (for development)
+
+### Local development (no Docker needed)
 
 Requirements: Node 22 or newer, pnpm 9. Docker Desktop is needed only for the isolated runner (see below).
 
@@ -22,13 +166,13 @@ Then open <http://localhost:5173> and sign in as one of the dev people (Alice is
 | --------------------- | ----------------------------------------------------------------------- | --------------------- |
 | Web (Vite)            | proxies `/api` and `/auth` to the API, so the browser sees one origin   | http://localhost:5173 |
 | API (Fastify)         |                                                                         | http://localhost:8080 |
-| Gateway               | skeleton only (step 1 builds it)                                        | http://localhost:8787 |
+| Gateway               | Model Gateway: aliases, metering, run tokens                            | http://localhost:8787 |
 | Dev identity provider | `oidc-provider` with static people, real code + PKCE flow               | http://localhost:9000 |
 | Database              | real PostgreSQL 16 started by `embedded-postgres`, data in `.dev-data/` | localhost:54329       |
 
 Delete `.dev-data/` to start again from an empty database.
 
-## Commands
+### Commands
 
 | Command                                     | What it does                                                                                                                                                                                                                                                                                |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,15 +185,15 @@ Delete `.dev-data/` to start again from an empty database.
 | `pnpm --filter @sdlc/runner image`          | Builds the sandbox image `sdlc-runner:dev` (about 826 MB). Rebuild it after changing `apps/runner`.                                                                                                                                                                                         |
 | `pnpm format`                               | Format with Prettier.                                                                                                                                                                                                                                                                       |
 
-## Layout
+### Layout
 
-See [mvp-contract.md](./mvp-contract.md) section 2. Built so far (steps 0 and 1):
+See [mvp-contract.md](./mvp-contract.md) section 2. Main parts:
 
 ```text
 apps/api         Fastify API: sign-in, registry, initiatives and runs, interactions, platform MCP server, GitHub Apps, Gate, run worker
 apps/gateway     Model Gateway: run-token auth, aliases, provider pinning, streaming, cost metering
 apps/runner      Runner: clone, run Claude Code, verify, push, ask the API to open the PR
-apps/web         React shell: status, sign-in, hats
+apps/web         React web app (Material UI): map, attention queue, costs, integrations
 packages/schemas zod schemas shared by API, runner and UI
 packages/core    Pure domain code: interaction state machine, trigger rules, pricing, tokens
 packages/db      Drizzle schema and SQL migrations
@@ -59,95 +203,17 @@ tools/dev-runner Starts the whole local stack
 e2e/             Playwright tests
 ```
 
-## Reaching people in Slack (optional)
+### Reaching people in Slack (optional)
 
 Without Slack, asks are in the attention queue and the notifier writes to the API log. To use Slack, create an app from `integrations/slack/app-manifest.yaml`, set `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` for the API, and have an admin link each person: `PUT /api/people/:id/slack` with `{ "slackUserId": "U0123ABCD" }`. Slack must reach `/slack/interactions` over public HTTPS. How people are reached (reminder and escalation timing, working hours, the digest, what chat may settle) is in `rules/attention.yaml`. This part has been tested against a fake Slack only.
 
-## Compose
+### Compose
 
 `docker compose up --build` runs the same stack in containers (PostgreSQL, the API serving the web app, the gateway, and the dev identity provider). Open http://localhost:8080 and sign in as "Dev Admin". `docker compose down -v` removes it.
 
-## Deploying to AWS
+## Costs and caveats
 
-The stack (VPC, RDS PostgreSQL, three ECS Fargate services, CloudFront, Cognito, Secrets Manager) is deployed and destroyed from the **`deploy` GitHub workflow** — nothing runs on a developer's machine. It is proven: a stack was deployed, checked and destroyed this way on real AWS.
-
-**Copying this repository for your own team? Start with the step-by-step checklist in [docs/ADOPTING.md](./docs/ADOPTING.md).** The sections below are the reference.
-
-### Prerequisites
-
-- An AWS account (the stack is deployed to `us-east-1`).
-- This repository on GitHub, with `main` protected: a pull request with the `verify` check passing, no bypass. This matters because the deploy role has `AdministratorAccess` — **anyone who can push to `main` can administer the AWS account**.
-- Terraform 1.6+ and the AWS CLI on one machine, for the one-time bootstrap below.
-- An OpenRouter API key for the agents' model calls.
-- Optional: a domain in a Route 53 hosted zone (e.g. `app.example.com` and `previews.example.com`). Without it, the platform gets its CloudFront addresses.
-
-### 1. One-time bootstrap (by an AWS administrator)
-
-```powershell
-cd infra/bootstrap
-terraform init
-terraform apply -var repository=repo:OWNER@ID/REPO@ID   # read it with: gh api repos/OWNER/NAME/actions/oidc/customization/sub  (use sub_claim_prefix)
-```
-
-This creates the Terraform state bucket (`sdlc-tfstate-<account>`) and the `sdlc-github-deploy` role, which only this repository's workflows on `main` can assume. Note the two outputs: `deploy_role_arn` and `state_bucket`.
-
-### 2. Repository variables and secrets
-
-| Name                     | Kind               | Value                                                                                                                                      |
-| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AWS_DEPLOY_ROLE_ARN`    | variable           | the bootstrap's `deploy_role_arn` output                                                                                                   |
-| `TF_STATE_BUCKET`        | variable           | the bootstrap's `state_bucket` output                                                                                                      |
-| `BOOTSTRAP_ADMIN_EMAIL`  | variable           | the person who signs in first; gets the platform admin hat                                                                                 |
-| `OPENROUTER_KEY_AGENTS`  | secret             | the OpenRouter key for agent runs                                                                                                          |
-| `production` environment | setting            | Settings, Environments: you as required reviewer, deployments from `main` only. The deploy job runs in it, and the AWS role trusts only it |
-| `APP_DOMAIN`             | variable, optional | e.g. `app.example.com`                                                                                                                     |
-| `PREVIEW_DOMAIN`         | variable, optional | e.g. `previews.example.com` — must differ from `APP_DOMAIN`, so previewed code never shares the platform's cookies                         |
-| `HOSTED_ZONE_ID`         | variable, optional | the Route 53 hosted zone holding both names                                                                                                |
-
-Set the three domain variables together, or none of them. With all three, Terraform creates one ACM certificate for both names, the Route 53 records, and the Cognito callback addresses follow.
-
-### 3. Deploy
-
-Start the **`deploy`** workflow from the Actions tab (it only runs from `main`, one run at a time). Inputs:
-
-| Input                | Meaning                                                                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------- |
-| `action`             | `deploy` (default) or `destroy`                                                                     |
-| `confirm_destroy`    | to destroy, type `destroy` here; anything else refuses                                              |
-| `independent_review` | require a second person to approve (turn off to work alone)                                         |
-| `security_review`    | `on`: a pull request needs a security review before it can be approved; `off`: it does not          |
-| `agent_engine`       | `claude-code` or `copilot-cli` moves every agent to that engine; empty leaves each agent on its own |
-
-The run builds and pushes the platform and runner images (tagged with the commit), applies `infra/aws`, and waits for `/readyz`. A full deploy takes about 11 minutes; the step summary prints the platform and previews URLs.
-
-### 4. After the deploy (by hand)
-
-1. **Create the first sign-in user.** People cannot sign themselves up (Cognito is invite-only, 12-character minimum password, MFA off). From `infra/aws`, with the AWS CLI configured:
-
-   ```powershell
-   ./create-user.ps1 -Email you@example.com
-   ```
-
-   It prints a password that works at once. Sign in with it; the `BOOTSTRAP_ADMIN_EMAIL` person gets the platform admin hat.
-
-2. **Register the GitHub Apps.** As the admin, open `/admin/github` on the platform and register and install the two Apps (Agent and Gate), then install them on only the repositories the agents may work in. The platform stores the App keys in Secrets Manager itself.
-3. **Register each repository the agents may use** in the platform. There is no page for this yet: while signed in as the admin, run the one-line request in step 9 of [docs/ADOPTING.md](./docs/ADOPTING.md) in the browser console. Initiatives can only be created on registered repositories.
-
-### Destroying the stack
-
-Start the **`deploy`** workflow again with `action` = `destroy` and `confirm_destroy` = `destroy`. It removes the ECS cluster, load balancer, RDS, CloudFront distributions, VPC, Cognito pool, and every secret the stack made (including the GitHub App keys the platform wrote at run time).
-
-What destroy leaves behind, and how to remove it:
-
-| Leftover                                                 | Remove it with                                                                                      |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Terraform state bucket and the `sdlc-github-deploy` role | `cd infra/bootstrap; terraform destroy` (the bucket has `prevent_destroy`, so this is the only way) |
-| Your Route 53 hosted zone                                | delete it in Route 53 if you no longer need it (about $0.50 a month)                                |
-
-### Costs and caveats
-
-- **Idle cost is about $3.30 a day (roughly $100 a month)** from us-east-1 list prices: load balancer, three Fargate tasks, RDS, VPC interface endpoints, public IPv4 addresses, and misc. Agent runs add model fees on top (a small app build cost about $2) plus a few cents of Fargate. To measure it: leave the stack up two days, then read Cost Explorer filtered on the tag `Stack=sdlc-dev`.
-- **After a destroy, a redeploy starts fresh.** The Cognito pool is gone (create a new user), and the GitHub Apps and repository registrations must be redone at `/admin/github`.
+- **Idle cost is about $3.30 a day (roughly $100 a month)** from us-east-1 list prices: load balancer, three Fargate tasks, RDS, VPC interface endpoints, public IPv4 addresses, and misc. Agent runs add model fees on top (the two-stage DynamoDB ticket tracker demo cost about $6 in model fees with Claude Sonnet 5.5) plus a few cents of Fargate. To measure it: leave the stack up two days, then read Cost Explorer filtered on the tag `Stack=sdlc-dev`.
 - **Security.** The platform is invite-only and every API route requires sign-in; this is a prototype, not a hardened product. The deploy role has `AdministratorAccess`, so protect `main` and keep write access to yourself; MFA is off for the first admin by default; and previews are served from a sibling domain of the platform, not an isolated one. Treat it accordingly.
 - **The AWS cost alarm is not wired up yet**: the deploy workflow never passes `budget_email`, so the AWS Budgets alert is not created. The platform's own Costs page still tracks model spend against `MONTHLY_BUDGET_USD`.
 - The architecture is drawn in [infra/aws/architecture.md](./infra/aws/architecture.md) (with the diagram).
