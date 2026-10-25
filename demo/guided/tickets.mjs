@@ -32,7 +32,7 @@ export const GOAL2 = [
 const T1 = () => setNow(TITLE1);
 const T2 = () => setNow(TITLE2);
 /** The same scene as in the habit tracker demo, run for the given stage. */
-const via = (set, id, extra = {}) => ({
+export const via = (set, id, extra = {}) => ({
   ...base[id],
   ...extra,
   async run(h) {
@@ -42,7 +42,7 @@ const via = (set, id, extra = {}) => ({
 });
 
 /** A lapse scene that waits until something needs a person. */
-const waitFor = (id, title, say, test, ms = 1_500_000) => ({
+export const waitFor = (id, title, say, test, ms = 1_500_000) => ({
   url: '/#/map',
   lapse: true,
   title,
@@ -54,15 +54,15 @@ const waitFor = (id, title, say, test, ms = 1_500_000) => ({
     await h.waitUntil(id, async () => (await interactions(p)).some((i) => i.initiativeTitle === cur() && test(i)), ms, 5000);
   },
 });
-const cur = () => TITLE_NOW;
+export const cur = () => TITLE_NOW;
 let TITLE_NOW = process.env.DEMO_STAGE === '2' ? TITLE2 : TITLE1;
-const setNow = (t) => {
+export const setNow = (t) => {
   TITLE_NOW = t;
   setTitle(t);
 };
-const askFor = (p, text) => p.getByTestId('ask').filter({ hasText: text });
+export const askFor = (p, text) => p.getByTestId('ask').filter({ hasText: text });
 /** Allow the protected preview file, with the reason said aloud. */
-const allowProtected = (title, first) => ({
+export const allowProtected = (title, first) => ({
   url: '/#/map',
   title,
   async run(h) {
@@ -90,7 +90,7 @@ const allowProtected = (title, first) => ({
   },
 });
 /** Open a task's pull request, run the security review and the smoke test, and wait for both. */
-const checks = (key, title, intro) => ({
+export const checks = (key, title, intro) => ({
   url: '/#/queue',
   title,
   async run(h) {
