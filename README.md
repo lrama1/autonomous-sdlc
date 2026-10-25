@@ -68,7 +68,7 @@ terraform apply \
   -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main
 ```
 
-`actor_id` and `workflow_ref` are optional but recommended: AWS then accepts only your runs of that one workflow file. Write down the two outputs, `deploy_role_arn` and `state_bucket`. Keep `infra/bootstrap/terraform.tfstate` (it is local and gitignored).
+`actor_id` and `workflow_ref` are optional but recommended: AWS then accepts only your runs of that one workflow file. Write down the two outputs, `deploy_role_arn` and `state_bucket`. Keep `infra/bootstrap/terraform.tfstate` (it is local and gitignored). If the apply fails because your account already has a GitHub sign-in provider (an `EntityAlreadyExists` error), import it first and apply again: `terraform import aws_iam_openid_connect_provider.github arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com`.
 
 ### 4. Set the repository variables and secret
 
