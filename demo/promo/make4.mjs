@@ -81,6 +81,24 @@ h2{font-size:70px;margin:6px 0 34px;font-weight:900;letter-spacing:-1px}
 </style><div class="w"><div class="k">TWO THINGS IN THIS VIDEO</div><h2>The platform, and what it builds.</h2>
 <div class="row"><div class="c"><span class="tag">THE PLATFORM</span><div class="n">Autonomous SDLC</div><div class="d">The product you deploy. Agents, a map, a decision queue, reviews and live previews.</div></div>
 <div class="c"><span class="tag">THE APP IT BUILT</span><div class="n">Harbor Goods</div><div class="d">An online shop on DynamoDB, made by the platform as a demo. It is not part of the platform.</div></div></div></div>`,
+  diffvsrun: `<!doctype html><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;${BG}color:#fff;${FONT}overflow:hidden}
+.w{height:100%;padding:0 80px;display:flex;flex-direction:column;justify-content:center}
+.k{letter-spacing:6px;color:#ffb000;font-weight:700;font-size:22px}
+h2{font-size:70px;margin:6px 0 34px;font-weight:900;letter-spacing:-1px}
+.row{display:flex;gap:34px;align-items:stretch}
+.c{flex:1;border-radius:18px;padding:28px 30px;opacity:0;transform:translateY(24px);animation:up .5s forwards}
+.c:nth-child(1){background:#161b26;border:3px solid #4a5568;animation-delay:.3s}
+.c:nth-child(2){background:#0f2a1c;border:3px solid #2fbf71;animation-delay:2.2s}
+.tag{display:inline-block;font-weight:800;letter-spacing:3px;font-size:21px;padding:5px 14px;border-radius:7px;color:#fff}
+.c:nth-child(1) .tag{background:#4a5568}.c:nth-child(2) .tag{background:#1f9d57}
+.n{font-size:44px;font-weight:900;margin:14px 0 10px}
+.d{font-size:28px;color:#c9d6f2;line-height:1.35}
+.d b{color:#fff}
+@keyframes up{to{opacity:1;transform:none}}
+</style><div class="w"><div class="k">A DIFFERENT KIND OF REVIEW</div><h2>A diff shows what changed.<br>Not what happens.</h2>
+<div class="row"><div class="c"><span class="tag">A NORMAL REVIEW</span><div class="n">Read the lines.</div><div class="d">Scroll a diff and <b>imagine</b> how the app will behave.</div></div>
+<div class="c"><span class="tag">HERE</span><div class="n">Run the change.</div><div class="d">The change is <b>applied and running</b>. Click through it in the app, then approve or reject.</div></div></div></div>`,
   sentence: `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;${BG}color:#fff;${FONT}overflow:hidden}
 .w{height:100%;padding:0 110px;display:flex;flex-direction:column;justify-content:center}
@@ -206,15 +224,48 @@ const beats = [
     scope: 'platform',
     sfx: 'whoosh',
   },
+  { id: 'diffvsrun', say: 'A normal review reads a diff, and imagines what the code will do. Here, the incoming change is applied and run. The reviewer uses it, in the app, before deciding.', v: { html: 'diffvsrun' }, sfx: 'hit', min: 12.5, scope: 'platform' },
   {
-    id: 'preview',
-    say: 'Then the platform runs the shop it built, live, so you can try it. Every change runs as an isolated copy of the shop, with its own database table, deleted when you are done.',
-    v: { clip: 's2_t3c', from: 70, zoom: [0.3, 0.3] },
-    over: ['LIVE PREVIEW', 'Use it before you approve it.', 'Isolated. Its own DynamoDB table. Gone when you stop.'],
+    id: 'tryit1',
+    say: 'So you test it. Check out with a card that should be declined, and it is declined, and nothing is charged.',
+    v: { clip: 't4f', from: 82, zoom: [0.3, 0.3] },
+    over: ['TEST IT, DON\u2019T GUESS', 'Bad card. Declined.', 'Behaviour you can see, not lines you read.'],
     scope: 'app',
     sfx: 'whoosh',
   },
-  { id: 'stages', say: 'And features compound. The platform builds a second initiative on top of the first, through the same flow, with a fresh live preview of the new version.', v: { html: 'stages' }, sfx: 'whoosh', min: 7.5 },
+  {
+    id: 'tryit2',
+    say: 'Now a good card, and the order goes through.',
+    v: { clip: 't4f', from: 102, zoom: [0.3, 0.3] },
+    over: ['THE ORDER GOES THROUGH', 'A real checkout. A real table.', 'Written in one DynamoDB transaction.'],
+    scope: 'app',
+    min: 7.5,
+    sfx: 'whoosh',
+  },
+  {
+    id: 'tryit3',
+    say: 'And the stock goes down. All of it on a database table made for this review alone, and deleted when the preview stops.',
+    v: { clip: 't4f', from: 119, zoom: [0.3, 0.3] },
+    over: ['LIVE PREVIEW', 'Isolated. Its own DynamoDB table.', 'Deleted when the preview stops.'],
+    scope: 'app',
+    sfx: 'whoosh',
+  },  {
+    id: 'preview',
+    say: 'The same for the next feature. A discount code, applied to the cart in the live copy, before the change ever merges.',
+    v: { clip: 's2_t3c', from: 70, zoom: [0.3, 0.3] },
+    over: ['NEW FEATURE, LIVE', 'Try the discount code.', 'Before the change merges.'],
+    scope: 'app',
+    sfx: 'whoosh',
+  },
+  {
+    id: 'verdict',
+    say: 'Only then do you approve, or reject. Not on a guess, but because you used the change, running, before it merged.',
+    v: { clip: 's2_t3d', from: 10, zoom: [0.5, 0.6] },
+    over: ['APPROVE OR REJECT', 'Decide with evidence.', 'You used it, so you know it works.'],
+    tone: '#59d98e',
+    scope: 'platform',
+    sfx: 'hit',
+  },  { id: 'stages', say: 'And features compound. The platform builds a second initiative on top of the first, through the same flow, with a fresh live preview of the new version.', v: { html: 'stages' }, sfx: 'whoosh', min: 7.5 },
   {
     id: 'newversion',
     say: 'Discount codes, stock labels, order history and cancel, running live on top of the shop that the platform already built.',
