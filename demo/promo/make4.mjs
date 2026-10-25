@@ -64,6 +64,23 @@ h1{font-size:132px;font-weight:900;margin:10px 0 0;letter-spacing:-2px;opacity:0
 @keyframes in{to{opacity:1}}@keyframes slam{to{opacity:1;transform:none}}@keyframes grow{to{width:260px}}
 </style><div class="w"><div class="k">INTRODUCING</div><h1>Autonomous SDLC</h1><div class="s">AI agents build. People decide.</div><div class="line"></div></div>`,
 
+  twothings: `<!doctype html><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;${BG}color:#fff;${FONT}overflow:hidden}
+.w{height:100%;padding:0 90px;display:flex;flex-direction:column;justify-content:center}
+.k{letter-spacing:6px;color:#ffb000;font-weight:700;font-size:22px}
+h2{font-size:70px;margin:6px 0 34px;font-weight:900;letter-spacing:-1px}
+.row{display:flex;gap:34px;align-items:stretch}
+.c{flex:1;border-radius:18px;padding:28px 30px;opacity:0;transform:translateY(24px);animation:up .5s forwards}
+.c:nth-child(1){background:#0d2247;border:3px solid #1f6feb;animation-delay:.4s}
+.c:nth-child(2){background:#2a1608;border:3px solid #e8590c;animation-delay:1.8s}
+.tag{display:inline-block;font-weight:800;letter-spacing:3px;font-size:22px;padding:5px 14px;border-radius:7px;color:#fff}
+.c:nth-child(1) .tag{background:#1f6feb}.c:nth-child(2) .tag{background:#e8590c}
+.n{font-size:50px;font-weight:900;margin:14px 0 8px}
+.d{font-size:28px;color:#c9d6f2;line-height:1.35}
+@keyframes up{to{opacity:1;transform:none}}
+</style><div class="w"><div class="k">TWO THINGS IN THIS VIDEO</div><h2>The platform, and what it builds.</h2>
+<div class="row"><div class="c"><span class="tag">THE PLATFORM</span><div class="n">Autonomous SDLC</div><div class="d">The product you deploy. Agents, a map, a decision queue, reviews and live previews.</div></div>
+<div class="c"><span class="tag">THE APP IT BUILT</span><div class="n">Harbor Goods</div><div class="d">An online shop on DynamoDB, made by the platform as a demo. It is not part of the platform.</div></div></div></div>`,
   sentence: `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;${BG}color:#fff;${FONT}overflow:hidden}
 .w{height:100%;padding:0 110px;display:flex;flex-direction:column;justify-content:center}
@@ -114,9 +131,9 @@ h2{font-size:84px;margin:6px 0 36px;font-weight:900;letter-spacing:-1px}
 .ar{align-self:center;font-size:90px;color:#ffb000;opacity:0;animation:in .5s 1s forwards}
 @keyframes up{to{opacity:1;transform:none}}@keyframes in{to{opacity:1}}
 </style><div class="w"><div class="k">COMPOUNDING FEATURES</div><h2>Build on what shipped.</h2>
-<div class="row"><div class="s"><div class="h">STAGE 1</div><div class="t">Online shop</div><span class="c">Catalog</span><span class="c">Cart</span><span class="c">Checkout</span><span class="c">DynamoDB</span></div>
+<div class="row"><div class="s"><div class="h">STAGE 1 \u00b7 BUILT BY THE PLATFORM</div><div class="t">The shop</div><span class="c">Catalog</span><span class="c">Cart</span><span class="c">Checkout</span><span class="c">DynamoDB</span></div>
 <div class="ar">&#10142;</div>
-<div class="s"><div class="h">STAGE 2</div><div class="t">Same repo, new initiative</div><span class="c">Discount codes</span><span class="c">Stock labels</span><span class="c">Order history</span></div></div></div>`,
+<div class="s"><div class="h">STAGE 2 \u00b7 SAME REPO, NEW INITIATIVE</div><div class="t">Features added to the shop</div><span class="c">Discount codes</span><span class="c">Stock labels</span><span class="c">Order history</span></div></div></div>`,
   closing: `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;${BG}color:#fff;${FONT}overflow:hidden}
 .w{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 90px}
@@ -129,48 +146,56 @@ html,body{margin:0;height:100%;${BG}color:#fff;${FONT}overflow:hidden}
 };
 
 /** A headline over footage: a dark gradient behind it, a small label, the headline, and one line under it. */
-const headline = (kicker, head, sub, tone = '#ffb000') => `<!doctype html><meta charset="utf-8"><style>
+const headline = (kicker, head, sub, tone = '#ffb000', scope = null) => `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;width:1280px;height:720px;background:transparent;${FONT}overflow:hidden}
-.g{position:absolute;inset:0;background:linear-gradient(0deg,rgba(5,7,13,.92) 0%,rgba(5,7,13,.78) 26%,rgba(5,7,13,0) 56%)}
+.g{position:absolute;inset:0;background:${head ? 'linear-gradient(0deg,rgba(5,7,13,.92) 0%,rgba(5,7,13,.78) 26%,rgba(5,7,13,0) 56%)' : 'transparent'}}
 .t{position:absolute;left:64px;bottom:58px;right:64px;color:#fff}
 .k{display:inline-block;background:${tone};color:#0a1020;font-weight:800;letter-spacing:3px;font-size:19px;padding:4px 12px;border-radius:6px}
 h2{font-size:76px;line-height:1.02;font-weight:900;letter-spacing:-1px;margin:12px 0 8px;text-shadow:0 4px 24px #000a}
 p{font-size:29px;color:#d6e2ff;margin:0;text-shadow:0 2px 12px #000a}
-</style><div class="g"></div><div class="t"><div class="k">${kicker}</div><h2>${head}</h2><p>${sub}</p></div>`;
+.sc{position:absolute;left:28px;top:56px;display:flex;align-items:stretch;border-radius:10px;overflow:hidden;box-shadow:0 6px 24px #000c;font-weight:800}
+.sc b{padding:9px 16px;font-size:22px;letter-spacing:2px;color:#fff;background:${scope === 'app' ? '#e8590c' : '#1f6feb'}}
+.sc i{font-style:normal;padding:9px 16px;font-size:22px;background:#0b1220f2;color:#fff}
+</style><div class="g"></div>${scope ? `<div class="sc"><b>${scope === 'app' ? 'THE APP IT BUILT' : 'THE PLATFORM'}</b><i>${scope === 'app' ? 'Harbor Goods online shop' : 'Autonomous SDLC'}</i></div>` : ''}${head ? `<div class="t"><div class="k">${kicker}</div><h2>${head}</h2><p>${sub}</p></div>` : ''}`;
 
 const beats = [
   { id: 'problem', say: 'Software takes weeks. Reviews pile up. Bugs ship anyway.', v: { html: 'problem' }, sfx: 'hit' },
   { id: 'answer', say: 'What if the agents did the work, and you made the calls?', v: { html: 'answer' }, sfx: 'whoosh' },
   { id: 'title', say: 'Autonomous S D L C.', v: { html: 'title' }, sfx: 'hit' },
-  { id: 'sentence', say: 'Start with an idea. Write a brief in plain words, paste the documentation links, and click create. Agents draft the spec, design the solution, and split the work into tasks.', v: { html: 'sentence' }, sfx: 'whoosh', min: 8 },
+  { id: 'twothings', say: 'Two things appear in this video. The platform, Autonomous S D L C, is the product you deploy. And an online shop, built by the platform as a demo. A label in the corner tells you which one is on screen.', v: { html: 'twothings' }, sfx: 'whoosh', min: 10 },
+  { id: 'sentence', say: 'You give the platform an idea: a brief for an online shop, in plain words, with links to the documentation. Then its agents draft the spec, design the solution, and split the work into tasks.', v: { html: 'sentence' }, sfx: 'whoosh', min: 9, scope: 'platform' },
   {
     id: 'claude',
-    say: 'Every agent is Claude Code, running in its own isolated container in your own AWS account, with every model call metered by the platform.',
+    say: 'Inside the platform, every agent is Claude Code, running in its own isolated container in your own AWS account, with every model call metered.',
     v: { clip: 'buildwait1', from: 6, zoom: [0.2, 0.3] },
     over: ['CLAUDE CODE INSIDE', 'Every agent. Its own container.', 'Every model call metered and capped.'],
+    scope: 'platform',
     sfx: 'whoosh',
   },
   {
     id: 'progress',
-    say: 'Track every initiative on one map. Each stage, each task, and who it is waiting on. No stand-ups. No status reports.',
+    say: 'The platform\u2019s map shows every initiative, each stage, each task, and who it is waiting on. No stand-ups. No status reports.',
     v: { live: '/#/map', zoom: [0.2, 0.3] },
     over: ['TRACK PROGRESS', 'One map. Every task.', 'Always know what is built, and what is waiting on you.'],
+    scope: 'platform',
     sfx: 'whoosh',
   },
   {
     id: 'stop',
-    say: 'People stay in the loop at hard stops. A new outside system, a protected file, a risky change. The agent stops, and only you can let it through.',
+    say: 'The platform stops agents at hard stops: a new outside system, a protected file, a risky change. Only you can let them through. Here, the shop\u2019s agent wants to use DynamoDB.',
     v: { clip: 'integration', from: 25, zoom: [0.2, 0.3] },
     over: ['HARD STOPS', 'Agents stop. You decide.', 'Here, a new outside system: Amazon DynamoDB.'],
     tone: '#ff5a4d',
+    scope: 'platform',
     sfx: 'hit',
   },
   {
     id: 'beyond',
-    say: 'Reviewing is far more than reading a diff. A security review reads the change, and a high finding blocks the merge. A smoke test starts the real app. And the design\u2019s own checks must pass.',
+    say: 'Reviewing goes far beyond a diff. A security review blocks the merge on a high finding. A smoke test starts the real app, and the design\u2019s own checks must pass.',
     v: { clip: 's2_t2b', from: 22, zoom: [0.4, 0.4] },
     over: ['BEYOND THE DIFF', 'A high finding blocks the merge.', 'Security review, smoke test, and the design\u2019s checks.'],
     tone: '#59d98e',
+    scope: 'platform',
     sfx: 'whoosh',
   },
   {
@@ -178,29 +203,33 @@ const beats = [
     say: 'The agent does not just patch it. It asks you how to fix it, with options and a recommendation. Every answer is recorded with who and why.',
     v: { clip: 's2_ask', from: 20, zoom: [0.5, 0.3] },
     over: ['YOU DECIDE', 'It asks. You choose.', 'Every answer is recorded with who and why.'],
+    scope: 'platform',
     sfx: 'whoosh',
   },
   {
     id: 'preview',
-    say: 'Then try it, live. Every change runs as an isolated copy of the shop, with its own database table, deleted when you are done.',
+    say: 'Then the platform runs the shop it built, live, so you can try it. Every change runs as an isolated copy of the shop, with its own database table, deleted when you are done.',
     v: { clip: 's2_t3c', from: 70, zoom: [0.3, 0.3] },
     over: ['LIVE PREVIEW', 'Use it before you approve it.', 'Isolated. Its own DynamoDB table. Gone when you stop.'],
+    scope: 'app',
     sfx: 'whoosh',
   },
-  { id: 'stages', say: 'And features compound. A second initiative builds on the first, through the same flow, with a fresh live preview of the new version.', v: { html: 'stages' }, sfx: 'whoosh', min: 7 },
+  { id: 'stages', say: 'And features compound. The platform builds a second initiative on top of the first, through the same flow, with a fresh live preview of the new version.', v: { html: 'stages' }, sfx: 'whoosh', min: 7.5 },
   {
     id: 'newversion',
-    say: 'Discount codes, stock labels, order history and cancel, running live on top of the shop you already shipped.',
+    say: 'Discount codes, stock labels, order history and cancel, running live on top of the shop that the platform already built.',
     v: { clip: 's2_t3c', from: 122, zoom: [0.3, 0.4] },
     over: ['STAGE TWO, LIVE', 'New features, same shop.', 'Try the change before it merges.'],
+    scope: 'app',
     sfx: 'whoosh',
   },
-  { id: 'numbers', say: 'Every run is metered, so you know what it cost. Two stages, a working shop on a database, under seven dollars in model costs.', v: { html: 'numbers' }, sfx: 'whoosh', min: 6.5 },
+  { id: 'numbers', say: 'The platform meters every run, so you know what it cost. Two stages, a working shop on a database, under seven dollars in model costs.', v: { html: 'numbers' }, sfx: 'whoosh', min: 6.5, scope: 'platform' },
   {
     id: 'aws',
-    say: 'It is built for AWS on purpose, so adoption takes one account and a few clicks. And the shops it builds keep every call to AWS in a single file, so moving to another cloud means writing one new adapter.',
+    say: 'The platform is built for AWS on purpose, so adoption takes one account and a few clicks. The apps it builds keep every AWS call in one file, so moving one to another cloud means one new adapter.',
     v: { image: path.resolve(here, '..', '..', 'infra', 'aws', 'architecture.png'), zoom: [0.5, 0.35] },
-    over: ['BUILT FOR AWS. PORTABLE BY DESIGN.', 'One account. A few clicks.', 'All AWS calls in one file. Swap one adapter.'],
+    over: ['BUILT FOR AWS. PORTABLE BY DESIGN.', 'One account. A few clicks.', 'The apps it builds keep AWS in one file.'],
+    scope: 'platform',
     sfx: 'whoosh',
   },
   { id: 'closing', say: 'Agents do the work. You make the calls.', v: { html: 'closing' }, sfx: 'hit', min: 6.2 },
@@ -228,10 +257,10 @@ const scrollSlowly = async (page, total, ms) => {
   }
 };
 
-async function overlayPng(browser, id, [kicker, head, sub], tone) {
+async function overlayPng(browser, id, [kicker, head, sub], tone, scope) {
   const ctx = await browser.newContext({ viewport: SIZE });
   const page = await ctx.newPage();
-  await page.setContent(headline(kicker, head, sub, tone));
+  await page.setContent(headline(kicker, head, sub, tone, scope));
   const file = path.join(WORK, `${id}-over.png`);
   await page.screenshot({ path: file, omitBackground: true });
   await ctx.close();
@@ -283,8 +312,8 @@ async function main() {
       vf = `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=#05070d,fps=25,${zoom}`;
     }
     let filter;
-    if (b.over) {
-      const png = await overlayPng(browser, b.id, b.over, b.tone ?? '#ffb000');
+    if (b.over || b.scope) {
+      const png = await overlayPng(browser, b.id, b.over ?? ['', '', ''], b.tone ?? '#ffb000', b.scope);
       input.push('-loop', '1', '-framerate', '25', '-i', png);
       filter =
         `[0:v]${vf},eq=brightness=-0.06:saturation=1.1[b];` +
