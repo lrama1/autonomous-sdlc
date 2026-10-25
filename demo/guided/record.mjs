@@ -267,7 +267,7 @@ export function helpers(page, clips, t0, sceneId) {
     },
     async type(loc, text, o = {}) {
       await h.click(loc, { label: o.label ?? 'Click the box to type', why: o.why, hold: o.hold ?? 700 });
-      await loc.pressSequentially(text, { delay: o.delay ?? 32 });
+      await loc.pressSequentially(text, { delay: o.delay ?? 32, timeout: 180000 });
       await sleep(400);
     },
     async scrollBy(total, ms) {
