@@ -58,7 +58,7 @@ In your copy: Settings → Secrets and variables → Actions.
 
 ## 6. Create sign-in users
 
-People cannot sign themselves up. An admin creates each sign-in in Amazon Cognito. Find the user pool id in the AWS console (Cognito → User pools) or with `aws cognito-idp list-user-pools --max-results 10 --region us-east-1`.
+People cannot sign themselves up. An admin creates each sign-in in Amazon Cognito. Find the user pool id in the AWS console (Cognito, User pools; the pool is named `sdlc-dev`) or with `aws cognito-idp list-user-pools --max-results 20 --region us-east-1 --query "UserPools[?Name=='sdlc-dev'].Id" --output text`.
 
 - [ ] Create each person, with a password they can use at once:
 
@@ -71,7 +71,7 @@ People cannot sign themselves up. An admin creates each sign-in in Amazon Cognit
     --username them@example.com --password 'A-long-password-1' --permanent
   ```
 
-  Passwords need 12 or more characters. If you have PowerShell and Terraform state access, `infra/aws/create-user.ps1 -Email … ` or `-UsersFile users.csv` does the same and generates passwords.
+  Passwords need 12 or more characters. The sign-in address is printed in the deploy run's summary, or is your `APP_DOMAIN`. If you have PowerShell and Terraform installed, `infra/aws/create-user.ps1 -Email you@example.com` (or `-UsersFile users.csv`) does the same and generates passwords; run `. ./tf-init.ps1; Initialize-Terraform 'us-east-1'` once in `infra/aws` first, because the script reads the pool id from the stack's Terraform state.
 
 - [ ] Sign in at the platform address as the `BOOTSTRAP_ADMIN_EMAIL` person. They get the **Platform Admin** hat, which can make every decision. That is enough for a team of one.
 - [ ] To give other people hats (`product_owner`, `architect`, `frontend_engineer`, `backend_engineer`, `qa`, `devops_release`, `security`), an admin calls the API. There is no page for it yet. While signed in as an admin, open the browser console on the platform and run:
