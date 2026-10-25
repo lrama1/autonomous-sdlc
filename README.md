@@ -106,13 +106,26 @@ The run stops at "Review deployments": open the run and approve it. It then buil
 
 ### 7. Create the first sign-in
 
-People cannot sign themselves up. From `infra/aws`, with the AWS CLI configured and PowerShell:
+People cannot sign themselves up. An admin creates each sign-in in Amazon Cognito. Make the first one for the person in `BOOTSTRAP_ADMIN_EMAIL`, using the AWS CLI signed in to the same account (nothing else to install, and no Terraform needed):
 
-```powershell
-./create-user.ps1 -Email you@example.com
+```bash
+POOL_ID=$(aws cognito-idp list-user-pools --max-results 20 --region us-east-1 \
+  --query "UserPools[?Name=='sdlc-dev'].Id" --output text)
+
+aws cognito-idp admin-create-user --region us-east-1 --user-pool-id "$POOL_ID" \
+  --username you@example.com \
+  --user-attributes Name=email,Value=you@example.com Name=email_verified,Value=true \
+  --message-action SUPPRESS
+
+aws cognito-idp admin-set-user-password --region us-east-1 --user-pool-id "$POOL_ID" \
+  --username you@example.com --password 'A-long-password-1' --permanent
 ```
 
-It prints a password that works at once. Sign in at the platform address with it: the `BOOTSTRAP_ADMIN_EMAIL` person gets the platform admin hat. Without PowerShell, [docs/ADOPTING.md](./docs/ADOPTING.md) step 6 has the AWS CLI commands, and shows how to give other people hats.
+In PowerShell, write the first line as `$POOL_ID = aws cognito-idp list-user-pools ...` and use `$POOL_ID` in place of `"$POOL_ID"`. Passwords need 12 or more characters.
+
+Then sign in at the platform address, which is printed in the deploy run's summary (or is your `APP_DOMAIN`). The `BOOTSTRAP_ADMIN_EMAIL` person gets the platform admin hat on first sign-in. Repeat the two commands for each other person. Signing in gives them no hats: [docs/ADOPTING.md](./docs/ADOPTING.md) step 6 shows how an admin gives them roles.
+
+Optional, with PowerShell and Terraform installed: `infra/aws/create-user.ps1 -Email you@example.com` does the same and generates a password. It reads the pool id from the stack's Terraform state, so run `. ./tf-init.ps1; Initialize-Terraform 'us-east-1'` once in `infra/aws` first.
 
 ### 8. Register the two GitHub Apps
 
