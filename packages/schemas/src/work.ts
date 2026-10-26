@@ -33,17 +33,69 @@ export const DEFAULT_PROTECTED_PATHS = [
   '.sdlc/**',
 ];
 
+// The settings of a registered repository, with no defaults, so a change can name just the ones it alters.
+const repositorySettings = {
+  access: z.enum(['read_write', 'read_only']),
+  writeMode: z.enum(['direct', 'branch_pr']),
+  integrationBranch: z.string().min(1).max(100),
+  protectedPaths: z.array(z.string().min(1).max(200)).max(50),
+  modelPolicy: z.enum(['any', 'own_account']),
+  verifyCommand: z.string().min(1).max(300),
+  requiredCheck: z.string().min(1).max(100),
+};
+
 export const repositoryCreateSchema = z.object({
   fullName: repoName,
-  access: z.enum(['read_write', 'read_only']).default('read_write'),
-  writeMode: z.enum(['direct', 'branch_pr']).default('branch_pr'),
-  integrationBranch: z.string().min(1).max(100).default('main'),
-  protectedPaths: z.array(z.string().min(1).max(200)).max(50).default(DEFAULT_PROTECTED_PATHS),
-  modelPolicy: z.enum(['any', 'own_account']).default('any'),
-  verifyCommand: z.string().min(1).max(300).default('npm run verify'),
-  requiredCheck: z.string().min(1).max(100).default('verify'),
+  access: repositorySettings.access.default('read_write'),
+  writeMode: repositorySettings.writeMode.default('branch_pr'),
+  integrationBranch: repositorySettings.integrationBranch.default('main'),
+  protectedPaths: repositorySettings.protectedPaths.default(DEFAULT_PROTECTED_PATHS),
+  modelPolicy: repositorySettings.modelPolicy.default('any'),
+  verifyCommand: repositorySettings.verifyCommand.default('npm run verify'),
+  requiredCheck: repositorySettings.requiredCheck.default('verify'),
 });
 export type RepositoryCreate = z.infer<typeof repositoryCreateSchema>;
+
+// Changing a registered repository: any of its settings, but not its name. A setting left out stays as it is.
+export const repositoryUpdateSchema = z
+  .object(repositorySettings)
+  .partial()
+  .refine((b) => Object.values(b).some((v) => v !== undefined), {
+    message: 'Give at least one setting to change.',
+  });
+export type RepositoryUpdate = z.infer<typeof repositoryUpdateSchema>;
+export const repositoryDtoSchema = z.object({
+  id: z.string().uuid(),
+  fullName: z.string(),
+  access: z.enum(['read_write', 'read_only']),
+  writeMode: z.enum(['direct', 'branch_pr']),
+  integrationBranch: z.string(),
+  protectedPaths: z.array(z.string()),
+  modelPolicy: z.enum(['any', 'own_account']),
+  verifyCommand: z.string(),
+  requiredCheck: z.string(),
+});
+export type RepositoryDto = z.infer<typeof repositoryDtoSchema>;
+
+// Repositories both GitHub Apps can see and nobody has registered yet.
+export const repositoryAvailableSchema = z.object({
+  problem: z.string().nullable(),
+  available: z.array(z.string()),
+});
+export type RepositoryAvailableDto = z.infer<typeof repositoryAvailableSchema>;
+
+// What a repository still needs before agents can deliver a change through it.
+export const repositoryReadinessSchema = z.object({
+  checks: z.array(
+    z.object({
+      id: z.enum(['apps', 'branch', 'verify', 'ci']),
+      label: z.string(),
+      status: z.enum(['ok', 'problem', 'unknown']),
+      detail: z.string(),
+    }),
+  ),
+});
+export type RepositoryReadinessDto = z.infer<typeof repositoryReadinessSchema>;
 
 export const initiativeCreateSchema = z.object({
   title: z.string().min(1).max(200),

@@ -343,6 +343,11 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
                 </option>
               ))}
             </TextField>
+            {repos.length === 0 && (
+              <Typography variant="body2" color="text.secondary" data-testid="no-repository">
+                A Platform Admin adds one on the <a href="#/repositories">Repositories</a> page.
+              </Typography>
+            )}
             <TextField
               select
               label="How much runs on its own"

@@ -180,6 +180,22 @@ export class GitHubService {
     }
   }
 
+  /** The names of the files directly inside a folder at a branch or commit; empty if the folder is not there. */
+  async listFiles(repo: string, dir: string, ref: string): Promise<string[]> {
+    const { token } = await this.tokenFor('gate', repo);
+    try {
+      const r = await this.client.call<Array<{ name: string; type: string }>>(
+        'GET',
+        `/repos/${repo}/contents/${dir.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`,
+        token,
+      );
+      return Array.isArray(r) ? r.filter((f) => f.type === 'file').map((f) => f.name) : [];
+    } catch (e) {
+      if (e instanceof GitHubError && e.status === 404) return [];
+      throw e;
+    }
+  }
+
   /** The repository's files at a commit, as a gzipped tar. The Gate App reads it; the preview sandbox never sees a credential. */
   async archive(repo: string, sha: string): Promise<Buffer> {
     const { token } = await this.tokenFor('gate', repo);

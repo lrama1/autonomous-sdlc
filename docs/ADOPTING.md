@@ -108,17 +108,9 @@ This is a different repository from your copy of the platform.
 
 ## 9. Register that repository in the platform
 
-There is no page for this yet. While signed in as the admin, open the browser console on the platform and run:
-
-```js
-await fetch('/api/repositories', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ fullName: 'OWNER/REPO' }),
-}).then((r) => r.json());
-```
-
-- [ ] It answers with the new entry. If it says an App is not installed, check step 7.
+- [ ] Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list and choose **Add repository**. The list holds the repositories both Apps are installed on. If yours is not there, add it to both Apps on GitHub, then choose **Check GitHub again**.
+- [ ] Choose **Check readiness** on its card. Fix anything marked **Needs attention** (a missing branch, `verify` script, or a workflow job with the required check name that runs on pull requests). **Could not tell** means GitHub could not be asked, or the verify command is not an npm script.
+- [ ] **Edit** on the card changes the verify command, required check, protected paths, and how agents deliver.
 
 ## 10. Check that it works
 
