@@ -512,19 +512,30 @@ const beats = [
     id: 'repo',
     step: 'STEP 10',
     stepTitle: 'Register the repository the agents will work on',
-    say: 'Step ten, prepare the repository the agents will work on. It needs a verify script, a workflow with a job named verify, and a protected main branch that requires that check and one approving review. Then register it in the platform. There is no page for this yet, so, signed in as the admin, paste this into the browser console.',
+    say: 'Step ten, prepare the repository the agents will work on. It needs a verify script, a workflow with a job named verify, and a protected main branch that requires that check and one approving review. Both GitHub apps must be installed on it. Then open the Repositories page in the left menu. Choose the repository in the list, which holds every repository both apps can see, and press Add repository. If yours is missing, add it to both apps on GitHub and press Check GitHub again.',
     body: () =>
       win(
-        'Browser console on the platform',
-        `<h1>Register the repository</h1><div class="card" id="snip" style="${MONO};font-size:16px;line-height:1.4;background:#0d1117;color:#e6edf3;border-color:#30363d">await fetch('/api/repositories', {<br>&nbsp;&nbsp;method: 'POST',<br>&nbsp;&nbsp;headers: { 'content-type': 'application/json' },<br>&nbsp;&nbsp;body: JSON.stringify({ fullName: 'OWNER/REPO' }),<br>}).then((r) =&gt; r.json());</div>
-<div class="card" id="chk"><b>On that repository</b><div class="row">&#9745; npm run verify</div><div class="row">&#9745; a workflow with a job named <span style="${MONO}">verify</span></div><div class="row">&#9745; protected main: require verify and one approving review</div><div class="row">&#9745; both GitHub Apps installed on it</div></div>`,
+        'YOUR-PLATFORM-ADDRESS/#/repositories',
+        `<h1>Repositories</h1><div class="card" id="chk"><b>On that repository, first</b><div class="row">&#9745; npm run verify</div><div class="row">&#9745; a workflow with a job named <span style="${MONO}">verify</span></div><div class="row">&#9745; protected main: require verify and one approving review</div><div class="row">&#9745; both GitHub Apps installed on it</div></div>
+<div class="card"><b>Add a repository</b><div class="row"><span class="f" id="pick" style="min-width:340px">OWNER/REPO &#9662;</span><span class="btn g" id="add">Add repository</span><span class="btn" id="again">Check GitHub again</span></div></div>`,
       ),
     targets: [
-      { sel: '#chk', f: 0.3, text: 'Prepare the repository first', kind: 'DO', click: false, hold: 3.5 },
-      { sel: '#snip', f: 0.66, text: 'Paste into the console, with your OWNER/REPO', kind: 'PASTE', click: false, hold: 3.5 },
+      { sel: '#chk', f: 0.22, text: 'Prepare the repository first', kind: 'DO', click: false, hold: 3.5 },
+      { sel: '#pick', f: 0.58, text: 'Choose the repository in the list', kind: 'CHOOSE', click: false, hold: 3 },
+      { sel: '#add', f: 0.74, text: 'Add repository' },
+      { sel: '#again', f: 0.88, text: 'Missing? Add it to both apps on GitHub, then press this', kind: 'TIP', click: false, hold: 3 },
     ],
   },
   {
+    id: 'repocheck',
+    step: 'STEP 10',
+    stepTitle: 'Check that it is ready',
+    live: 'https://app.agentonomous.com/#/repositories',
+    authed: true,
+    blurEmail: true,
+    click: [{ name: 'Check readiness', after: 5, scrollBy: 400 }],
+    say: 'This is the real page, with the repository used in the demo videos. Press Check readiness on its card. The platform asks GitHub and lists what is in place: both apps installed, the integration branch, the verify script in package dot json, and a workflow job named verify that runs on pull requests. Anything that is missing says exactly what to fix. Edit changes the verify command, the protected paths and the other settings later, and Remove takes a repository out when no work has used it.',
+  },  {
     id: 'build',
     step: 'STEP 11',
     stepTitle: 'Build something',
@@ -587,7 +598,7 @@ async function liveSetup(page, b, D) {
   await page.goto(b.live, { waitUntil: 'domcontentloaded' });
   await sleep(1800);
   await page.addStyleTag({
-    content: `html{scroll-padding-top:70px}body{padding-top:62px !important}.__w{position:fixed;z-index:2147483647}
+    content: `html{scroll-padding-top:70px}body{padding-top:62px !important;padding-bottom:110px !important}.__w{position:fixed;z-index:2147483647}
 #__b{top:14px;left:20px;display:flex;gap:12px;align-items:center}
 #__b b{background:#ffb000;color:#0a1020;font:800 17px Roboto,Arial;letter-spacing:2px;padding:6px 12px;border-radius:8px}
 #__b span{font:700 22px Roboto,Arial;color:#fff;background:#0a1020d0;padding:6px 12px;border-radius:8px}
@@ -630,6 +641,17 @@ async function liveSetup(page, b, D) {
     await box.click().catch(() => {});
     await box.pressSequentially(text, { delay: 45 }).catch(() => {});
     await sleep(600);
+  }
+  for (const c of b.click ?? []) {
+    await sleep(c.after * 1000);
+    await page.getByRole('button', { name: c.name }).first().click().catch(() => {});
+    if (c.scrollBy) {
+      await sleep(2500);
+      for (let i = 0; i < 20; i++) {
+        await page.mouse.wheel(0, c.scrollBy / 20);
+        await sleep(40);
+      }
+    }
   }
   if (b.scroll) {
     const steps = Math.round((D * 1000 * 0.7) / 80);
