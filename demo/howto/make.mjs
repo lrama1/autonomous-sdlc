@@ -1,7 +1,7 @@
 // A step-by-step "how to deploy Autonomous SDLC to your own AWS account" video for people who want to adopt it.
-// Pieces: terminal panels (real commands, real output shapes, with every private value replaced by a placeholder and blurred),
+// Pieces: terminal panels (real commands, real output shapes, with every private value replaced by a placeholder),
 // recreated GitHub and AWS screens that carry placeholder values only, and real pages (the platform's GitHub setup page,
-// and a public run of the deploy workflow). A blurred value is already a placeholder: nothing real is shown.
+// and a public run of the deploy workflow). Placeholders are not blurred: only an email address on a real page is.
 //   SDLC_USER=... SDLC_PASSWORD=... node demo/howto/make.mjs [out.mp4]
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -20,7 +20,7 @@ const SIZE = { width: 1280, height: 720 };
 const VOICE = process.env.HOWTO_VOICE ?? 'en-US-AriaNeural';
 const run = (cmd, a, o = {}) => execFileSync(cmd, a, { stdio: 'pipe', ...o });
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-/** {{value}} marks a placeholder that is shown blurred. */
+/** {{value}} marks a placeholder value. */
 const blur = (s) => esc(s).replace(/\{\{(.*?)\}\}/g, '<span class="bl">$1</span>');
 
 function narrate(id, text) {
@@ -51,7 +51,7 @@ function pageHtml({ step, stepTitle, dark = false, body, targets = [], captions,
   return `<!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box}
 html,body{margin:0;width:1280px;height:720px;overflow:hidden;${FONT};background:${dark ? '#0b1020' : '#e9eef6'}}
-.bl{filter:blur(6px);display:inline-block;user-select:none}
+.bl{display:inline}
 .badge{position:absolute;left:28px;top:20px;z-index:50;display:flex;align-items:center;gap:12px}
 .badge b{background:#ffb000;color:#0a1020;font-weight:800;letter-spacing:2px;font-size:17px;padding:6px 12px;border-radius:8px}
 .badge span{font-size:22px;font-weight:700;color:${dark ? '#fff' : '#101828'}}
@@ -184,9 +184,9 @@ const subPane = (title, prompt) => ({
   prompt,
   lines: [
     { cmd: 'gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix', dur: 1700 },
-    { out: 'repo:OWNER@{{5783118}}/REPO@{{1432551776}}' },
+    { out: 'repo:OWNER@{{1111111}}/REPO@{{2222222}}' },
     { cmd: 'gh api users/OWNER --jq .id' },
-    { out: '{{5783118}}' },
+    { out: '{{1111111}}' },
   ],
 });
 const bootstrapPanes = [
@@ -196,7 +196,7 @@ const bootstrapPanes = [
       { cmd: 'cd infra/bootstrap && terraform init' },
       { out: '- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)' },
       { out: 'Terraform has been successfully initialized!', k: 'ok' },
-      { cmd: 'terraform apply \\\n  -var repository=repo:OWNER@{{5783118}}/REPO@{{1432551776}} \\\n  -var actor_id={{5783118}} \\\n  -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main', dur: 3000 },
+      { cmd: 'terraform apply \\\n  -var repository=repo:OWNER@{{1111111}}/REPO@{{2222222}} \\\n  -var actor_id={{1111111}} \\\n  -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main', dur: 3000 },
       { out: 'Plan: 8 to add, 0 to change, 0 to destroy.' },
       { cmd: 'yes', dur: 250 },
       { out: 'Apply complete! Resources: 8 added.', k: 'ok' },
@@ -211,7 +211,7 @@ const bootstrapPanes = [
       { cmd: 'cd infra/bootstrap; terraform init' },
       { out: '- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)' },
       { out: 'Terraform has been successfully initialized!', k: 'ok' },
-      { cmd: 'terraform apply `\n  -var repository=repo:OWNER@{{5783118}}/REPO@{{1432551776}} `\n  -var actor_id={{5783118}} `\n  -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main', dur: 3000 },
+      { cmd: 'terraform apply `\n  -var repository=repo:OWNER@{{1111111}}/REPO@{{2222222}} `\n  -var actor_id={{1111111}} `\n  -var workflow_ref=OWNER/REPO/.github/workflows/deploy.yml@refs/heads/main', dur: 3000 },
       { out: 'Plan: 8 to add, 0 to change, 0 to destroy.' },
       { cmd: 'yes', dur: 250 },
       { out: 'Apply complete! Resources: 8 added.', k: 'ok' },
@@ -275,7 +275,7 @@ const beats = [
     id: 'need',
     step: 'BEFORE YOU START',
     stepTitle: 'What you need',
-    say: 'You need an AWS account where you are an administrator, a GitHub account, and the AWS command line, Terraform, Git and the GitHub command line installed. You also need an OpenRouter API key for the agents model calls, and a separate GitHub repository for the agents to work on. A domain in Route 53 is optional. Everything on screen uses placeholders, and anything private, like account ids, is blurred.',
+    say: 'You need an AWS account where you are an administrator, a GitHub account, and the AWS command line, Terraform, Git and the GitHub command line installed. You also need an OpenRouter API key for the agents model calls, and a separate GitHub repository for the agents to work on. A domain in Route 53 is optional. Everything on screen uses placeholder values, and on the real pages anything private is blurred.',
     body: () =>
       win(
         'Checklist',
@@ -319,7 +319,7 @@ const beats = [
     step: 'STEP 1',
     stepTitle: 'Check the CLI is signed in',
     dark: true,
-    say: 'Check that the command line is signed in to the account you intend to use. The account id and user are blurred here. Use this same account for everything that follows.',
+    say: 'Check that the command line is signed in to the account you intend to use. The account id and user name are placeholders here, and yours will show your own. Use this same account for everything that follows.',
     body: () => terminal([stsPane]),
     typing: () => typingFor([stsPane]),
   },
@@ -405,7 +405,7 @@ const beats = [
     id: 'variables',
     step: 'STEP 5',
     stepTitle: 'Set the repository variables and secret',
-    say: 'Step five, in your copy, open Settings, Secrets and variables, Actions. Add the role ARN, the state bucket, and the email of the first person to sign in, as variables. Add your OpenRouter key as a secret. Optionally, set the three domain variables together, or none of them. Values are blurred here.',
+    say: 'Step five, in your copy, open Settings, Secrets and variables, Actions. Add the role ARN, the state bucket, and the email of the first person to sign in, as variables. Add your OpenRouter key as a secret. Optionally, set the three domain variables together, or none of them. The values shown are placeholders.',
     body: () =>
       win(
         'github.com/YOUR-ACCOUNT/my-autonomous-sdlc/settings/secrets/actions',
