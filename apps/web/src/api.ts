@@ -7,6 +7,9 @@ import {
   costsSchema,
   portfolioSchema,
   monthlyBudgetSchema,
+  repositoryAvailableSchema,
+  repositoryDtoSchema,
+  repositoryReadinessSchema,
   healthSchema,
   integrationSchema,
   interactionSchema,
@@ -29,6 +32,7 @@ import type {
   BuildPlanDto,
   CostsDto,
   PortfolioDto,
+  RepositoryUpdate,
   Health,
   IntegrationDto,
   InteractionDto,
@@ -278,6 +282,19 @@ const repositories = z.array(
   z.object({ id: z.string().uuid(), fullName: z.string() }).passthrough(),
 );
 export const getRepositories = () => call('/api/repositories', repositories);
+
+// The registry, as a Platform Admin manages it.
+export const listRegistry = () => call('/api/repositories', z.array(repositoryDtoSchema));
+export const getAvailableRepositories = (refresh: boolean) =>
+  call(`/api/repositories/available${refresh ? '?refresh=1' : ''}`, repositoryAvailableSchema);
+export const registerRepository = (fullName: string) =>
+  call('/api/repositories', repositoryDtoSchema, { method: 'POST', body: { fullName } });
+export const updateRepository = (id: string, body: RepositoryUpdate) =>
+  call(`/api/repositories/${id}`, repositoryDtoSchema, { method: 'PATCH', body });
+export const removeRepository = (id: string) =>
+  call(`/api/repositories/${id}`, z.null(), { method: 'DELETE' });
+export const getRepositoryReadiness = (id: string) =>
+  call(`/api/repositories/${id}/readiness`, repositoryReadinessSchema);
 
 export const createInitiative = (body: {
   title: string;

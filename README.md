@@ -137,15 +137,8 @@ This is a different repository from your copy of the platform.
 
 - It needs an `npm run verify` script that fails when something is wrong (a new repository can start with `"verify": "node --test"`), and a GitHub Actions workflow with a job named `verify` that runs it on pull requests. Agents cannot edit `.github/workflows/**`.
 - Protect its `main`: require the `verify` check, require one approving review, and dismiss stale approvals. The Gate App's approving review is what allows a merge.
-- Register it in the platform. There is no page for this yet. Signed in as the admin, run this in the browser console on the platform:
-
-```js
-await fetch('/api/repositories', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ fullName: 'OWNER/REPO' }),
-}).then((r) => r.json());
-```
+- Register it in the platform. Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list (it holds the repositories both GitHub Apps are installed on; if yours is missing, add it to both Apps on GitHub and choose **Check GitHub again**), then choose **Add repository**.
+- Choose **Check readiness** on its card. It looks at the repository on GitHub and tells you what is still missing: both Apps installed, the integration branch, the `verify` script in `package.json`, and a workflow job with the required check name that runs on pull requests. **Edit** changes its settings (verify command, required check, protected paths and so on) later.
 
 ### 10. Build something
 

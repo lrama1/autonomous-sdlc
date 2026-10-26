@@ -14,7 +14,7 @@ import type { RunRow } from './runs.js';
 const id = z.object({ id: z.string().uuid() });
 const notFound = (what: string) => ({ error: { code: 'not_found', message: `No such ${what}.` } });
 
-const repoDto = (r: typeof repositoryEntry.$inferSelect) => ({
+export const repoDto = (r: typeof repositoryEntry.$inferSelect) => ({
   id: r.id,
   fullName: r.fullName,
   access: r.access,
