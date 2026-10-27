@@ -42,6 +42,14 @@ export const repositoryEntry = pgTable('repository_entry', {
   updatedAt: updatedAt(),
 });
 
+// Which model an alias means right now. A row overrides the gateway's built-in default; no row means the default.
+export const modelSetting = pgTable('model_setting', {
+  alias: text('alias').primaryKey(),
+  model: text('model').notNull(),
+  updatedBy: uuid('updated_by').references(() => person.id),
+  updatedAt: updatedAt(),
+});
+
 export const initiative = pgTable('initiative', {
   id: id(),
   title: text('title').notNull(),

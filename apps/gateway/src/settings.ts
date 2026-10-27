@@ -1,4 +1,4 @@
-import { DEFAULT_PRICES } from '@sdlc/core';
+import { DEFAULT_MODEL_ALIASES, DEFAULT_PRICES } from '@sdlc/core';
 import type { ModelPrice } from '@sdlc/core';
 import type { GatewayConfig } from '@sdlc/schemas';
 
@@ -27,11 +27,8 @@ export const DEFAULT_PROVIDER: ProviderPrefs = {
   data_collection: 'deny',
 };
 
-export const DEFAULT_ALIASES: Record<string, string> = {
-  'agent-fast': 'anthropic/claude-haiku-4.5',
-  'agent-default': 'anthropic/claude-sonnet-5.5',
-  'agent-strong': 'anthropic/claude-sonnet-5.5',
-};
+// An alias can be changed on the platform's Settings page; that choice wins over these, and over GATEWAY_ALIASES.
+export const DEFAULT_ALIASES: Record<string, string> = DEFAULT_MODEL_ALIASES;
 
 function parseJson<T>(name: string, raw: string | undefined, fallback: T): T {
   if (!raw) return fallback;

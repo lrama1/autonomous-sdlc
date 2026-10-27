@@ -97,6 +97,47 @@ export const repositoryReadinessSchema = z.object({
 });
 export type RepositoryReadinessDto = z.infer<typeof repositoryReadinessSchema>;
 
+// The Settings page: which model each alias means, and the models a Platform Admin may choose from.
+export const modelSettingsSchema = z.object({
+  aliases: z.array(
+    z.object({
+      alias: z.string(),
+      purpose: z.string(),
+      model: z.string(),
+      defaultModel: z.string(),
+      usedBy: z.array(z.string()),
+      changedAt: z.string().nullable(),
+      changedBy: z.string().nullable(),
+    }),
+  ),
+  models: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      note: z.string(),
+      price: z.object({
+        input: z.number(),
+        output: z.number(),
+        cacheRead: z.number(),
+        cacheWrite: z.number(),
+      }),
+    }),
+  ),
+});
+export type ModelSettingsDto = z.infer<typeof modelSettingsSchema>;
+
+export const modelChangeSchema = z.object({ model: z.string().min(1).max(200) });
+
+export const modelTestSchema = z.object({
+  ok: z.boolean(),
+  answer: z.string().optional(),
+  ms: z.number().optional(),
+  costMicros: z.number().optional(),
+  status: z.number().optional(),
+  error: z.string().optional(),
+});
+export type ModelTestDto = z.infer<typeof modelTestSchema>;
+
 export const initiativeCreateSchema = z.object({
   title: z.string().min(1).max(200),
   goal: z.string().min(1).max(4000),
