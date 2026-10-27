@@ -7,9 +7,10 @@ import {
   authenticateRunToken,
   bearerFrom,
   costRecord,
+  modelSetting,
 } from '@sdlc/db';
 import type { Db, RunContext } from '@sdlc/db';
-import { costMicros } from '@sdlc/core';
+import { costMicros, internalKeyMatches } from '@sdlc/core';
 import { healthSchema } from '@sdlc/schemas';
 import type { GatewayConfig } from '@sdlc/schemas';
 import { addCacheBreakpoints } from './cache.js';
@@ -24,6 +25,8 @@ export interface GatewayDeps {
   config: GatewayConfig;
   settings?: Settings;
   fetchImpl?: typeof fetch;
+  /** How long a saved alias choice may be remembered before the table is read again. */
+  aliasCacheMs?: number;
   log?: (entry: Record<string, unknown>) => void;
 }
 
@@ -67,7 +70,93 @@ export function createGatewayServer(deps: GatewayDeps): http.Server {
   const log =
     deps.log ?? ((e) => console.log(JSON.stringify({ ts: new Date().toISOString(), ...e })));
   const maxBytes = config.GATEWAY_MAX_BODY_MB * 1024 * 1024;
+  const aliasCacheMs = deps.aliasCacheMs ?? 5000;
 
+  // A Platform Admin picks the model behind each alias on the Settings page. That choice is read from the table and wins
+  // over the built-in or configured default. A model without a price is ignored, because its cost would be recorded as zero.
+  let saved: { at: number; models: Map<string, string> } | null = null;
+  async function liveAliases(): Promise<Record<string, string>> {
+    if (!saved || Date.now() - saved.at > aliasCacheMs) {
+      try {
+        const rows = await db.select().from(modelSetting);
+        saved = { at: Date.now(), models: new Map(rows.map((r) => [r.alias, r.model])) };
+      } catch (e) {
+        log({ level: 'error', msg: 'could not read model settings', error: String(e) });
+        saved = { at: Date.now(), models: saved?.models ?? new Map() };
+      }
+    }
+    const out = { ...settings.aliases };
+    for (const [alias, model] of saved.models) {
+      if (settings.prices[model]) out[alias] = model;
+      else log({ level: 'warn', msg: 'saved model has no price, ignored', alias, model });
+    }
+    return out;
+  }
+
+  // The Settings page's Test button. Only the API calls it, with a key both services can compute. It asks one tiny question
+  // of one priced model, the way a run would, and says what came back. It costs a fraction of a cent.
+  async function testModel(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const reply = (status: number, body: unknown) => {
+      res.statusCode = status;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(body));
+    };
+    const given = req.headers['x-sdlc-internal'];
+    if (!internalKeyMatches(typeof given === 'string' ? given : undefined, config.DATABASE_URL))
+      return reply(401, { ok: false, error: 'not allowed' });
+    const raw = await readBody(req, 4096);
+    let model: string;
+    try {
+      model = String(
+        (JSON.parse(raw?.toString('utf8') ?? '{}') as { model?: unknown }).model ?? '',
+      );
+    } catch {
+      return reply(400, { ok: false, error: 'body is not valid JSON' });
+    }
+    const price = settings.prices[model];
+    if (!price) return reply(400, { ok: false, error: `${model || 'no model'} has no price here` });
+    const startedAt = Date.now();
+    try {
+      const up = await doFetch(config.UPSTREAM_URL + '/v1/messages', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.OPENROUTER_KEY_AGENTS}`,
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 16,
+          messages: [{ role: 'user', content: 'Reply with the single word OK.' }],
+          provider: settings.provider,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const text = await up.text();
+      if (!up.ok) {
+        let message = text;
+        try {
+          message = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? text;
+        } catch {
+          // keep the raw text
+        }
+        return reply(200, { ok: false, status: up.status, error: message.slice(0, 300) });
+      }
+      const body = JSON.parse(text) as { content?: Array<{ type: string; text?: string }> };
+      const answer = (body.content ?? [])
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text ?? '')
+        .join('')
+        .trim();
+      const cost = costMicros(price, usageFromJson(text).usage, model);
+      return reply(200, { ok: true, answer, ms: Date.now() - startedAt, costMicros: cost });
+    } catch (e) {
+      return reply(200, {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
   async function overBudget(run: RunContext): Promise<boolean> {
     if (run.costMicros < run.budgetMicros) return false;
     // Only move a live run. A run that already finished keeps its state.
@@ -139,6 +228,7 @@ export function createGatewayServer(deps: GatewayDeps): http.Server {
       );
       return;
     }
+    if (method === 'POST' && path === '/internal/model-test') return testModel(req, res);
     // Claude Code probes HEAD / at start-up.
     if (path === '/' && (method === 'HEAD' || method === 'GET')) {
       res.statusCode = 200;
@@ -180,7 +270,7 @@ export function createGatewayServer(deps: GatewayDeps): http.Server {
 
     // Only aliases are accepted, never raw provider model ids.
     const alias = typeof body.model === 'string' ? body.model : '';
-    const model = settings.aliases[alias];
+    const model = (await liveAliases())[alias];
     if (!model || !run.scopes.includes(`alias:${alias}`)) {
       anthropicError(
         res,

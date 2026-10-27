@@ -63,6 +63,7 @@ import type { AttentionPolicy } from '@sdlc/core';
 import { registerMcpRoute } from './mcp.js';
 import { requirePerson } from './people.js';
 import { registerRegistryRoutes } from './registry-routes.js';
+import { registerSettingsRoutes } from './settings-routes.js';
 import { registerWorkRoutes, repoDto } from './work-routes.js';
 
 export const VERSION = '0.0.0';
@@ -174,6 +175,11 @@ export async function buildApp({
   const refreshApps = () => refreshInstallations(db, secretStore, ghClient);
   registerWorkRoutes(app, db, loadedAgents, refreshApps);
   registerRegistryRoutes(app, db, { refreshApps, github: ghService, dto: repoDto });
+  registerSettingsRoutes(app, db, {
+    agents: loadedAgents,
+    gatewayUrl: config.GATEWAY_URL,
+    databaseUrl: config.DATABASE_URL,
+  });
   const ruleSet = await loadRules(config.RULES_FILE);
   let smoke: SmokeService | null = null;
   let security: SecurityService | null = null;

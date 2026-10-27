@@ -29,7 +29,7 @@ You do not install this repository, and nobody but its owner can change it. `mai
 
 On a free GitHub plan, a private copy cannot enforce rulesets or required reviewers (they need a paid plan). Use a public copy, or a paid plan, if you want the protections in steps 2 and 5.
 
-Your copy is yours to modify: change agents' prompts in `agents/`, the rules in `rules/`, the model aliases in `apps/gateway/src/settings.ts`, the infrastructure in `infra/`. To get later changes from here into a fork, use GitHub's "Sync fork" button; into a template copy, `git remote add upstream https://github.com/lrama1/autonomous-sdlc.git`, then `git fetch upstream` and merge. To offer a change back, open a pull request from your fork. The owner reviews and merges it.
+Your copy is yours to modify: change agents' prompts in `agents/`, the rules in `rules/`, the infrastructure in `infra/`. Which Claude model each agent uses is not code: a Platform Admin changes it on the **Settings** page (see [Choosing the models](#choosing-the-models)). To get later changes from here into a fork, use GitHub's "Sync fork" button; into a template copy, `git remote add upstream https://github.com/lrama1/autonomous-sdlc.git`, then `git fetch upstream` and merge. To offer a change back, open a pull request from your fork. The owner reviews and merges it.
 
 ## Run it on your own AWS account, step by step
 
@@ -219,6 +219,15 @@ Without Slack, asks are in the attention queue and the notifier writes to the AP
 ### Compose
 
 `docker compose up --build` runs the same stack in containers (PostgreSQL, the API serving the web app, the gateway, and the dev identity provider). Open http://localhost:8080 and sign in as "Dev Admin". `docker compose down -v` removes it.
+
+## Choosing the models
+
+Agents do not name a model. They ask for one of three aliases (`agent-fast`, `agent-default`, `agent-strong`), and the gateway decides which model answers. A Platform Admin sets that on the **Settings** page, with no redeploy:
+
+- Each alias shows who uses it, the model in use now, and what each choice costs per million tokens. Choosing a dearer model says how much more its output costs.
+- **Test model** sends one tiny real request through the gateway (a fraction of a cent) so you see it work before you save.
+- A change reaches the next model call, including runs already in progress. Every change and test is recorded in the activity log.
+- Only Claude models with a known price are offered. The agents run on Claude Code, which needs the Anthropic protocol with tool use, and the gateway sends every call to Anthropic with no fallback. The list is `VETTED_MODELS` in `packages/core/src/models.ts`; add a model there, with its price in `packages/core/src/pricing.ts`, to offer it.
 
 ## Costs and caveats
 

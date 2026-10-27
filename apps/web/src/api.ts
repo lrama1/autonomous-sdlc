@@ -7,6 +7,8 @@ import {
   costsSchema,
   portfolioSchema,
   monthlyBudgetSchema,
+  modelSettingsSchema,
+  modelTestSchema,
   repositoryAvailableSchema,
   repositoryDtoSchema,
   repositoryReadinessSchema,
@@ -282,6 +284,13 @@ const repositories = z.array(
   z.object({ id: z.string().uuid(), fullName: z.string() }).passthrough(),
 );
 export const getRepositories = () => call('/api/repositories', repositories);
+
+// Which model each alias means (the Settings page).
+export const getModelSettings = () => call('/api/settings/models', modelSettingsSchema);
+export const setAliasModel = (alias: string, model: string) =>
+  call(`/api/settings/models/${alias}`, modelSettingsSchema, { method: 'PUT', body: { model } });
+export const testModel = (model: string) =>
+  call('/api/settings/models/test', modelTestSchema, { method: 'POST', body: { model } });
 
 // The registry, as a Platform Admin manages it.
 export const listRegistry = () => call('/api/repositories', z.array(repositoryDtoSchema));

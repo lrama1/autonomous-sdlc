@@ -7,6 +7,7 @@ import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -44,6 +45,7 @@ import { Landing, SignInCard } from './Landing';
 import { Interruptions } from './Interruptions';
 import { Queue } from './Queue';
 import { Repositories } from './Repositories';
+import { Settings } from './Settings';
 import { getHealth, getMe, getReady, signOut } from './api';
 import { AgentFlow } from './flow/AgentFlow';
 import { ROLE_LABEL } from './labels';
@@ -61,6 +63,7 @@ type Route =
   | { page: 'autopilot' }
   | { page: 'integrations' }
   | { page: 'repositories' }
+  | { page: 'settings' }
   | { page: 'bugs' }
   | { page: 'costs' }
   | { page: 'portfolio' }
@@ -74,6 +77,7 @@ function parseRoute(hash: string): Route {
   if (page === 'autopilot') return { page: 'autopilot' };
   if (page === 'integrations') return { page: 'integrations' };
   if (page === 'repositories') return { page: 'repositories' };
+  if (page === 'settings') return { page: 'settings' };
   if (page === 'bugs') return { page: 'bugs' };
   if (page === 'costs') return { page: 'costs' };
   if (page === 'portfolio') return { page: 'portfolio' };
@@ -123,6 +127,7 @@ const NAV: Array<{ page: Route['page']; href: string; label: string; icon: React
     label: 'Repositories',
     icon: <FolderOpenOutlinedIcon />,
   },
+  { page: 'settings', href: '#/settings', label: 'Settings', icon: <SettingsOutlinedIcon /> },
 ];
 
 const DRAWER_WIDTH = 252;
@@ -260,6 +265,9 @@ export function App() {
           {state.phase === 'ready' && state.me && route.page === 'integrations' && <Integrations />}
           {state.phase === 'ready' && state.me && route.page === 'repositories' && (
             <Repositories me={state.me} />
+          )}
+          {state.phase === 'ready' && state.me && route.page === 'settings' && (
+            <Settings me={state.me} />
           )}
           {state.phase === 'ready' && state.me && route.page === 'bugs' && <Bugs me={state.me} />}
           {state.phase === 'ready' && state.me && route.page === 'costs' && <Costs />}
