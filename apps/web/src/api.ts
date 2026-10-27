@@ -300,6 +300,12 @@ export const registerRepository = (fullName: string) =>
   call('/api/repositories', repositoryDtoSchema, { method: 'POST', body: { fullName } });
 export const updateRepository = (id: string, body: RepositoryUpdate) =>
   call(`/api/repositories/${id}`, repositoryDtoSchema, { method: 'PATCH', body });
+export const createFirstCommit = (id: string) =>
+  call(
+    `/api/repositories/${id}/first-commit`,
+    z.object({ sha: z.string(), branch: z.string(), path: z.string() }),
+    { method: 'POST' },
+  );
 export const removeRepository = (id: string) =>
   call(`/api/repositories/${id}`, z.null(), { method: 'DELETE' });
 export const getRepositoryReadiness = (id: string) =>

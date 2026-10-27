@@ -101,10 +101,9 @@ The platform acts on GitHub through two Apps: an **Agent App** (pushes branches,
 
 This is a different repository from your copy of the platform.
 
-- [ ] It has a script `npm run verify` that runs its checks and fails when something is wrong. Agents run it before every pull request, and CI runs it on every pull request. A new repository can start with `"verify": "node --test"` in `package.json`.
-- [ ] It has a GitHub Actions workflow whose **job is named `verify`** and that runs `npm run verify` on pull requests. Agents cannot edit `.github/workflows/**`.
-- [ ] Protect its `main` branch the way the platform expects: require the `verify` check (up to date with `main`), require **one approving review**, and dismiss stale approvals. The Gate App's approving review is what allows a merge.
-- [ ] Install both Apps on this repository (step 7).
+- [ ] **An existing project:** it has a script `npm run verify` that runs its checks and fails when something is wrong, and a GitHub Actions workflow whose **job is named `verify`** and that runs it on pull requests.
+- [ ] **A brand-new, empty repository:** nothing yet. In step 9, **Check readiness** offers **Create the first commit** (a README, shown to you first). The design stage then makes its first task set up the verify command and CI for the chosen stack, and asks you to allow `.github/workflows/ci.yml`, which agents cannot edit alone.
+- [ ] Protect its `main` branch the way the platform expects, once the `verify` check has run on a pull request: require the `verify` check (up to date with `main`), require **one approving review**, and dismiss stale approvals. The Gate App's approving review is what allows a merge. **Check readiness** shows the steps.- [ ] Install both Apps on this repository (step 7).
 
 ## 9. Register that repository in the platform
 

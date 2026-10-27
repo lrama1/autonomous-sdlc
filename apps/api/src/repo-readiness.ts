@@ -1,17 +1,37 @@
 import { parse } from 'yaml';
-import { GitHubError } from './github-app.js';
 
 type Status = 'ok' | 'problem' | 'unknown';
 export interface ReadinessCheck {
-  id: 'apps' | 'branch' | 'verify' | 'ci';
+  id: 'apps' | 'branch' | 'verify' | 'ci' | 'protection';
   label: string;
   status: Status;
   detail: string;
+  /** Something the platform can do for the person with one click. */
+  fix?: { kind: 'first_commit'; path: string; content: string; message: string };
+  /** Something only the person can do, step by step. */
+  howTo?: { steps: string[]; link?: string };
+}
+
+/** The one file the platform writes into an empty repository so that the integration branch exists. */
+export function firstCommitFor(fullName: string): {
+  kind: 'first_commit';
+  path: string;
+  content: string;
+  message: string;
+} {
+  const name = fullName.split('/')[1] ?? fullName;
+  return {
+    kind: 'first_commit',
+    path: 'README.md',
+    content: `# ${name}\n\nStarted by Autonomous SDLC, so that agents have a main branch to work from.\n`,
+    message: 'Start the repository',
+  };
 }
 
 /** What the checks read from GitHub. The Gate App does the reading. */
 export interface RepoReader {
-  branchHead(repo: string, branch: string): Promise<string>;
+  branchInfo(repo: string, branch: string): Promise<{ sha: string; protected: boolean } | null>;
+  isEmpty(repo: string): Promise<boolean>;
   readFile(repo: string, filePath: string, ref: string): Promise<string | null>;
   listFiles(repo: string, dir: string, ref: string): Promise<string[]>;
 }
@@ -101,31 +121,53 @@ export async function checkReadiness(
         status: 'unknown',
         detail: needApps,
       },
+      {
+        id: 'protection',
+        label: `The branch ${repo.integrationBranch} is protected`,
+        status: 'unknown',
+        detail: needApps,
+      },
     ];
   }
 
   let head: string | null = null;
+  let isProtected = false;
   const branchLabel = `The branch ${repo.integrationBranch} exists`;
   try {
-    head = await github.branchHead(repo.fullName, repo.integrationBranch);
-    out.push({
-      id: 'branch',
-      label: branchLabel,
-      status: 'ok',
-      detail: `It points at ${head.slice(0, 7)}.`,
-    });
+    const info = await github.branchInfo(repo.fullName, repo.integrationBranch);
+    if (info) {
+      head = info.sha;
+      isProtected = info.protected;
+      out.push({
+        id: 'branch',
+        label: branchLabel,
+        status: 'ok',
+        detail: `It points at ${info.sha.slice(0, 7)}.`,
+      });
+    } else if (await github.isEmpty(repo.fullName)) {
+      out.push({
+        id: 'branch',
+        label: branchLabel,
+        status: 'problem',
+        detail: `This repository has no commits yet, so agents have nothing to start from. Create the first commit and ${repo.integrationBranch} will exist.`,
+        fix: firstCommitFor(repo.fullName),
+      });
+    } else {
+      out.push({
+        id: 'branch',
+        label: branchLabel,
+        status: 'problem',
+        detail: `There is no branch called ${repo.integrationBranch}. Push it, or change the integration branch to one that exists.`,
+      });
+    }
   } catch (e) {
-    const gone = e instanceof GitHubError && e.status === 404;
     out.push({
       id: 'branch',
       label: branchLabel,
-      status: gone ? 'problem' : 'unknown',
-      detail: gone
-        ? `There is no branch called ${repo.integrationBranch}. Push a first commit to it, or change the integration branch.`
-        : `Could not ask GitHub: ${message(e)}`,
+      status: 'unknown',
+      detail: `Could not ask GitHub: ${message(e)}`,
     });
   }
-
   const verifyLabel = `The verify command exists (${repo.verifyCommand})`;
   const script = scriptOf(repo.verifyCommand);
   if (!head) {
@@ -219,6 +261,40 @@ export async function checkReadiness(
         detail: `Could not ask GitHub: ${message(e)}`,
       });
     }
+  }
+  const protectionLabel = `The branch ${repo.integrationBranch} is protected`;
+  if (!head) {
+    out.push({
+      id: 'protection',
+      label: protectionLabel,
+      status: 'unknown',
+      detail: 'Needs the branch first.',
+    });
+  } else if (isProtected) {
+    out.push({
+      id: 'protection',
+      label: protectionLabel,
+      status: 'ok',
+      detail:
+        'GitHub applies a rule to it. Check that the rule asks for the pull request, one approval and the check below.',
+    });
+  } else {
+    out.push({
+      id: 'protection',
+      label: protectionLabel,
+      status: 'problem',
+      detail: `Nothing stops a direct push to ${repo.integrationBranch}, and the Gate's approval is not what allows a merge. Protect it once the ${repo.requiredCheck} check has run on a pull request, because GitHub can only require a check it has seen.`,
+      howTo: {
+        link: `https://github.com/${repo.fullName}/settings/rules/new?target=branch`,
+        steps: [
+          `Name the rule, and target the branch ${repo.integrationBranch}.`,
+          'Turn on "Require a pull request before merging", with 1 required approval and "Dismiss stale pull request approvals when new commits are pushed".',
+          `Turn on "Require status checks to pass", and add ${repo.requiredCheck}. It appears in the list after the check has run once.`,
+          'Turn on "Block force pushes", and set Enforcement to Active.',
+          'On a free GitHub plan a private repository cannot enforce rules. Use a public repository or a paid plan.',
+        ],
+      },
+    });
   }
   return out;
 }

@@ -70,6 +70,21 @@ describe('slugify and buildTaskText', () => {
     expect(t).not.toContain('Reference links');
   });
 
+  it('names the required CI check, so an agent can tell whether the repository has it', () => {
+    const t = buildTaskText({
+      repo: 'o/r',
+      branch: 'b',
+      goal: 'G',
+      task: 'T',
+      verifyCommand: 'npm run verify',
+      requiredCheck: 'verify',
+      protectedPaths: [],
+    });
+    expect(t).toContain('Required CI check');
+    expect(t).toContain('must run on pull requests');
+    expect(t).toContain(': verify');
+  });
+
   it("hands the person's reference links to the engine as information, to pass on when proposing an integration", () => {
     const t = buildTaskText({
       repo: 'o/r',

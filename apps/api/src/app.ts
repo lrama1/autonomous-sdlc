@@ -173,7 +173,15 @@ export async function buildApp({
   const ghService = new GitHubService(db, secretStore, ghClient);
   const apiUrl = `http://127.0.0.1:${config.API_PORT}`;
   const refreshApps = () => refreshInstallations(db, secretStore, ghClient);
-  registerWorkRoutes(app, db, loadedAgents, refreshApps);
+  registerWorkRoutes(app, db, loadedAgents, refreshApps, async (repo) => {
+    try {
+      return (await ghService.branchInfo(repo.fullName, repo.integrationBranch))
+        ? 'exists'
+        : 'missing';
+    } catch {
+      return 'unknown';
+    }
+  });
   registerRegistryRoutes(app, db, { refreshApps, github: ghService, dto: repoDto });
   registerSettingsRoutes(app, db, {
     agents: loadedAgents,

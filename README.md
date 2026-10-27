@@ -41,7 +41,7 @@ Plan on one to two hours of work and about 20 minutes of waiting for the first d
 
 - An **AWS account** where you have administrator rights, and the **AWS CLI** signed in to it. The stack deploys to `us-east-1`.
 - **Terraform 1.6 or later**, **Git**, and the **GitHub CLI** (`gh`), signed in.
-- A **GitHub account or organization** for your copy of the platform, and a **separate repository** for the agents to work on (it can start nearly empty; see step 9).
+- A **GitHub account or organization** for your copy of the platform, and a **separate repository** for the agents to work on (it can be brand new and empty; see step 9).
 - An **OpenRouter API key** for the agents' model calls. Give it a daily credit limit.
 - Optional: a domain in a **Route 53 hosted zone** (for example `app.example.com` and `previews.example.com`). Without it the platform uses its CloudFront addresses.
 
@@ -138,9 +138,9 @@ As the admin, open `<platform address>/admin/github`. Register the **Agent** App
 
 This is a different repository from your copy of the platform.
 
-- It needs an `npm run verify` script that fails when something is wrong (a new repository can start with `"verify": "node --test"`), and a GitHub Actions workflow with a job named `verify` that runs it on pull requests. Agents cannot edit `.github/workflows/**`.
-- Protect its `main`: require the `verify` check, require one approving review, and dismiss stale approvals. The Gate App's approving review is what allows a merge.
-- Register it in the platform. Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list (it holds the repositories both GitHub Apps are installed on; if yours is missing, add it to both Apps on GitHub and choose **Check GitHub again**), then choose **Add repository**.
+- **An existing project** needs an `npm run verify` script that fails when something is wrong, a GitHub Actions workflow with a job named `verify` that runs it on pull requests, and a protected `main`.
+- **A brand-new, empty repository** needs nothing yet. Register it (next bullets), choose **Check readiness**, and choose **Create the first commit**: the platform shows the one file it will add (a README) and makes `main` exist. The design stage then sees that the repository has no `verify` command or CI, and makes its first task set them up for the stack it chooses. Agents cannot edit `.github/workflows/**` by themselves, so that task asks you to allow `ci.yml`; allow it. The workflow runs on that first pull request, so the check exists from then on.
+- **Protect `main`** once the `verify` check has run on a pull request (GitHub can only require a check it has seen): require the `verify` check, require one approving review, and dismiss stale approvals. The Gate App's approving review is what allows a merge. **Check readiness** shows this as Needs attention until it is done, with the steps and a link to the rule form.- Register it in the platform. Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list (it holds the repositories both GitHub Apps are installed on; if yours is missing, add it to both Apps on GitHub and choose **Check GitHub again**), then choose **Add repository**.
 - Choose **Check readiness** on its card. It looks at the repository on GitHub and tells you what is still missing: both Apps installed, the integration branch, the `verify` script in `package.json`, and a workflow job with the required check name that runs on pull requests. **Edit** changes its settings (verify command, required check, protected paths and so on) later.
 
 ### 10. Build something

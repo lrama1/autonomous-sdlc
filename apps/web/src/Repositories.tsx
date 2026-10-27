@@ -7,11 +7,14 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import {
   ApiProblem,
+  createFirstCommit,
   getAvailableRepositories,
   getRepositoryReadiness,
   listRegistry,
@@ -288,7 +291,88 @@ function EditForm({
   );
 }
 
-function Readiness({ checks }: { checks: RepositoryReadinessDto['checks'] }) {
+type Check = RepositoryReadinessDto['checks'][number];
+
+/** Offers a fix the platform can make itself, after showing exactly what it will write. */
+function FirstCommit({
+  repoId,
+  fix,
+  onDone,
+}: {
+  repoId: string;
+  fix: NonNullable<Check['fix']>;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!open)
+    return (
+      <Button size="small" variant="contained" sx={{ mt: 1 }} onClick={() => setOpen(true)}>
+        Create the first commit
+      </Button>
+    );
+  return (
+    <Box sx={{ mt: 1 }} data-testid="first-commit">
+      <Typography variant="body2" sx={{ mb: 0.5 }}>
+        The Agent App will add one file, <code>{fix.path}</code>, to the integration branch with the
+        message “{fix.message}”:
+      </Typography>
+      <Box
+        component="pre"
+        sx={{
+          m: 0,
+          p: 1.5,
+          borderRadius: 1,
+          bgcolor: 'action.hover',
+          fontSize: 13,
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {fix.content}
+      </Box>
+      {error && (
+        <Alert severity="warning" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
+      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+        <Button
+          size="small"
+          variant="contained"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await createFirstCommit(repoId);
+              onDone();
+            } catch (e) {
+              setError(problemText(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Make the commit
+        </Button>
+        <Button size="small" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </Stack>
+    </Box>
+  );
+}
+
+function Readiness({
+  repoId,
+  checks,
+  onFixed,
+}: {
+  repoId: string;
+  checks: RepositoryReadinessDto['checks'];
+  onFixed: () => void;
+}) {
   return (
     <Stack spacing={1} sx={{ mt: 2 }} data-testid="readiness">
       {checks.map((c) => (
@@ -297,6 +381,7 @@ function Readiness({ checks }: { checks: RepositoryReadinessDto['checks'] }) {
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1.5}
           sx={{ alignItems: { sm: 'flex-start' } }}
+          data-testid={`check-${c.id}`}
         >
           <Box sx={{ minWidth: 140 }}>
             <StatusChip label={READINESS_WORD[c.status]} tone={READINESS_TONE[c.status]} />
@@ -308,13 +393,37 @@ function Readiness({ checks }: { checks: RepositoryReadinessDto['checks'] }) {
             <Typography variant="body2" color="text.secondary">
               {c.detail}
             </Typography>
+            {c.fix && <FirstCommit repoId={repoId} fix={c.fix} onDone={onFixed} />}
+            {c.howTo && (
+              <Box sx={{ mt: 1 }} data-testid="how-to">
+                <List dense disablePadding sx={{ listStyleType: 'decimal', pl: 2.5 }}>
+                  {c.howTo.steps.map((s) => (
+                    <ListItem key={s} disableGutters sx={{ display: 'list-item', py: 0.25 }}>
+                      <Typography variant="body2">{s}</Typography>
+                    </ListItem>
+                  ))}
+                </List>
+                {c.howTo.link && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    component="a"
+                    href={c.howTo.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    sx={{ mt: 0.5 }}
+                  >
+                    Open the rule form on GitHub
+                  </Button>
+                )}
+              </Box>
+            )}
           </Box>
         </Stack>
       ))}
     </Stack>
   );
 }
-
 function RepoCard({
   repo,
   onChanged,
@@ -453,7 +562,7 @@ function RepoCard({
             {error}
           </Alert>
         )}
-        {checks && <Readiness checks={checks} />}
+        {checks && <Readiness repoId={repo.id} checks={checks} onFixed={() => void check()} />}
         {editing && (
           <EditForm
             repo={repo}

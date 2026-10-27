@@ -41,6 +41,10 @@ describe('loadAgents', () => {
     expect(a.definition.limits.budget_usd).toBe(2);
     expect(a.prompt).toContain('ask_human');
     expect(a.prompt).toContain('search_standing_decisions');
+    expect(a.prompt).toContain('set up the verification command and CI');
+    const architect = agents.get('architect')!;
+    expect(architect.prompt).toContain('Set up the verification command and CI');
+    expect(architect.prompt).toContain('make every other task depend on T1');
   });
 
   it('returns nothing when the folder does not exist', async () => {
