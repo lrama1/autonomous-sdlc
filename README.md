@@ -14,6 +14,7 @@
 - **[spec.md](./spec.md)**: what and why (v0.6).
 - **[mvp-contract.md](./mvp-contract.md)**: the interfaces to code against for the MVP.
 - **[docs/ADOPTING.md](./docs/ADOPTING.md)**: the same AWS setup as a checkbox list, with the extra steps (hats, other users).
+- **[How-to video](https://youtu.be/GYV5AgwOBW4)** (9 minutes): the AWS setup below, from making your copy to a running platform.
 - **[spikes/README.md](./spikes/README.md)**: results of the risk spikes (model gateway, MCP `ask_human`, Fargate runner).
 - **[designs/](./designs/README.md)** and **[demo/](./demo/README.md)**: clickable mockups and narrated demo videos.
 
@@ -31,6 +32,8 @@ On a free GitHub plan, a private copy cannot enforce rulesets or required review
 Your copy is yours to modify: change agents' prompts in `agents/`, the rules in `rules/`, the model aliases in `apps/gateway/src/settings.ts`, the infrastructure in `infra/`. To get later changes from here into a fork, use GitHub's "Sync fork" button; into a template copy, `git remote add upstream https://github.com/lrama1/autonomous-sdlc.git`, then `git fetch upstream` and merge. To offer a change back, open a pull request from your fork. The owner reviews and merges it.
 
 ## Run it on your own AWS account, step by step
+
+**Prefer to watch first?** The [step-by-step video](https://youtu.be/GYV5AgwOBW4) walks through every step below, from making your copy to starting the deploy from GitHub Actions and registering the repository the agents work on.
 
 Plan on one to two hours of work and about 20 minutes of waiting for the first deploy. The stack costs about $3.30 a day while it is up (roughly $100 a month), plus model fees for every agent run.
 
