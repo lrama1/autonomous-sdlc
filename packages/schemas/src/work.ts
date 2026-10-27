@@ -88,10 +88,19 @@ export type RepositoryAvailableDto = z.infer<typeof repositoryAvailableSchema>;
 export const repositoryReadinessSchema = z.object({
   checks: z.array(
     z.object({
-      id: z.enum(['apps', 'branch', 'verify', 'ci']),
+      id: z.enum(['apps', 'branch', 'verify', 'ci', 'protection']),
       label: z.string(),
       status: z.enum(['ok', 'problem', 'unknown']),
       detail: z.string(),
+      fix: z
+        .object({
+          kind: z.literal('first_commit'),
+          path: z.string(),
+          content: z.string(),
+          message: z.string(),
+        })
+        .optional(),
+      howTo: z.object({ steps: z.array(z.string()), link: z.string().optional() }).optional(),
     }),
   ),
 });

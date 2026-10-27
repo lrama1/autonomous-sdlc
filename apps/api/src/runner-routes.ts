@@ -45,6 +45,8 @@ export function buildTaskText(p: {
   referenceLinks?: string[];
   task: string;
   verifyCommand: string;
+  /** The name of the CI job that must be green before the Gate merges. */
+  requiredCheck?: string;
   protectedPaths: string[];
 }): string {
   return [
@@ -58,6 +60,11 @@ export function buildTaskText(p: {
       : []),
     `Your task: ${p.task}`,
     `Verification command (it must pass before you finish): ${p.verifyCommand}`,
+    ...(p.requiredCheck
+      ? [
+          `Required CI check (a job with this name in .github/workflows must run on pull requests and pass before the pull request can merge): ${p.requiredCheck}`,
+        ]
+      : []),
     `Protected paths (never edit these, ask a person instead): ${p.protectedPaths.join(', ') || 'none'}`,
     'Commit your work to this branch with git. Do not push. The platform runs verification again, pushes, and opens the pull request.',
   ].join('\n');
@@ -204,6 +211,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         referenceLinks: init.referenceLinks,
         task: run!.task,
         verifyCommand: repo.verifyCommand,
+        requiredCheck: repo.requiredCheck,
         protectedPaths: repo.protectedPaths,
       }),
       systemPrompt: agent.prompt,

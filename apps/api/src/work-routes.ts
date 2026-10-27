@@ -66,6 +66,11 @@ export function registerWorkRoutes(
   agents: Map<string, LoadedAgent>,
   /** Asks GitHub which repositories the Apps can see now. Called once when a repository seems not to be installed. */
   refreshApps: () => Promise<void> = async () => {},
+  /** Whether the repository's integration branch exists. `unknown` when GitHub cannot be asked, which never blocks the work. */
+  branchState: (repo: {
+    fullName: string;
+    integrationBranch: string;
+  }) => Promise<'exists' | 'missing' | 'unknown'> = async () => 'unknown',
 ): void {
   // ---- Repository Registry (spec 6.5) ----
   app.get('/api/repositories', async (request, reply) => {
@@ -151,6 +156,14 @@ export function registerWorkRoutes(
     if (!repo)
       return reply.code(400).send({
         error: { code: 'unknown_repository', message: 'Choose a repository from the registry.' },
+      });
+    // An empty repository has no branch for the agents to start from. Say so now, instead of failing in the runner.
+    if ((await branchState(repo)) === 'missing')
+      return reply.code(409).send({
+        error: {
+          code: 'branch_missing',
+          message: `${repo.fullName} has no "${repo.integrationBranch}" branch yet, so agents have nothing to start from. A Platform Admin can see what is missing on the Repositories page (Check readiness), and for an empty repository create the first commit there.`,
+        },
       });
     const [row] = await db
       .insert(initiative)

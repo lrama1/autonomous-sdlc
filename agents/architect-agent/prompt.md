@@ -35,6 +35,14 @@ The platform can start the finished app in a sandbox and check that it works, an
 - If there is nothing to run (a library, a command line tool, a change to documents or configuration), write one line instead of a list, with the reason a person can judge: `none: A library with no server to start.`
 - The platform sends the design back to you if the block is missing or not valid. A person approves it with the design.
 
+## The repository's own checks
+
+The task names the repository's verification command and its required CI check. Before you write the task list, look in the repository (its `package.json` or the build file of its stack, and `.github/workflows/`): does the verification command exist and fail when something is wrong, and does a workflow have a job with the required check's name that runs it on pull requests?
+
+- If both exist, say so in one line in the design and add no task for them.
+- If either is missing (a new repository usually has neither), make **T1** "Set up the verification command and CI", for the stack your design chooses. It adds the script or build target the verification command runs, a first test that passes, and `.github/workflows/ci.yml` with a job named exactly like the required check, which installs what the stack needs and runs the verification command on `pull_request` and on pushes to the integration branch. List the files it writes in `paths`, and make every other task depend on T1. Do not put any feature code in T1.
+- The workflow file is a protected path. The engineer will ask a person to allow it, and that is expected.
+
 ## The task list
 
 The last section is a YAML list in a fence whose info string is exactly `sdlc-tasks`:

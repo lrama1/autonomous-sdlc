@@ -7,7 +7,7 @@ import { repositoryUpdateSchema } from '@sdlc/schemas';
 import { recordActivity } from './activity.js';
 import { requirePerson } from './people.js';
 import type { Signed } from './people.js';
-import { checkReadiness } from './repo-readiness.js';
+import { checkReadiness, firstCommitFor } from './repo-readiness.js';
 import type { RepoReader } from './repo-readiness.js';
 
 const id = z.object({ id: z.string().uuid() });
@@ -20,7 +20,12 @@ export function registerRegistryRoutes(
   deps: {
     /** Asks GitHub which repositories the Apps can see now. */
     refreshApps: () => Promise<void>;
-    github: RepoReader;
+    github: RepoReader & {
+      createFirstCommit(
+        repo: string,
+        f: { branch: string; path: string; content: string; message: string },
+      ): Promise<{ sha: string }>;
+    };
     dto: (r: typeof repositoryEntry.$inferSelect) => unknown;
   },
 ): void {
@@ -124,6 +129,46 @@ export function registerRegistryRoutes(
       detail: { fullName: repo.fullName },
     });
     return reply.code(204).send();
+  });
+
+  // An empty repository has no branch for agents to start from. With a person's click, the Agent App makes the first commit.
+  app.post('/api/repositories/:id/first-commit', async (request, reply) => {
+    const me = await admin(request, reply);
+    if (!me) return;
+    const { id: repoId } = id.parse(request.params);
+    const [repo] = await db.select().from(repositoryEntry).where(eq(repositoryEntry.id, repoId));
+    if (!repo)
+      return reply.code(404).send({ error: { code: 'not_found', message: 'No such repository.' } });
+    try {
+      if (!(await deps.github.isEmpty(repo.fullName)))
+        return reply.code(409).send({
+          error: {
+            code: 'not_empty',
+            message: `${repo.fullName} already has commits, so the platform leaves it alone.`,
+          },
+        });
+      const file = firstCommitFor(repo.fullName);
+      const { sha } = await deps.github.createFirstCommit(repo.fullName, {
+        branch: repo.integrationBranch,
+        path: file.path,
+        content: file.content,
+        message: file.message,
+      });
+      await recordActivity(db, {
+        actorType: 'person',
+        actorId: me.id,
+        action: 'registry.first_commit',
+        detail: { fullName: repo.fullName, branch: repo.integrationBranch, sha, path: file.path },
+      });
+      return reply.code(201).send({ sha, branch: repo.integrationBranch, path: file.path });
+    } catch (e) {
+      return reply.code(502).send({
+        error: {
+          code: 'github_failed',
+          message: `GitHub did not accept the first commit: ${e instanceof Error ? e.message : String(e)}`,
+        },
+      });
+    }
   });
 
   app.get('/api/repositories/:id/readiness', async (request, reply) => {

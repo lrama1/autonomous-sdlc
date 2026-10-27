@@ -144,6 +144,57 @@ export class GitHubService {
     return r.object.sha;
   }
 
+  /**
+   * The branch's head commit and whether GitHub protects it, or null when there is no such branch. (The git ref endpoint
+   * answers 409 for an empty repository, so the branch endpoint is the one that says "not found" in every case.)
+   */
+  async branchInfo(
+    repo: string,
+    branch: string,
+  ): Promise<{ sha: string; protected: boolean } | null> {
+    const { token } = await this.tokenFor('gate', repo);
+    try {
+      const r = await this.client.call<{ commit: { sha: string }; protected: boolean }>(
+        'GET',
+        `/repos/${repo}/branches/${branch.split('/').map(encodeURIComponent).join('/')}`,
+        token,
+      );
+      return { sha: r.commit.sha, protected: Boolean(r.protected) };
+    } catch (e) {
+      if (e instanceof GitHubError && (e.status === 404 || e.status === 409)) return null;
+      throw e;
+    }
+  }
+
+  /** True when the repository has no branch at all, that is, no commit. */
+  async isEmpty(repo: string): Promise<boolean> {
+    const { token } = await this.tokenFor('gate', repo);
+    const r = await this.client.call<unknown[]>('GET', `/repos/${repo}/branches?per_page=1`, token);
+    return Array.isArray(r) && r.length === 0;
+  }
+
+  /**
+   * Makes the first commit of an empty repository: one file, on the given branch. GitHub creates the branch with it. The Agent
+   * App does this (contents write), and it can do nothing under .github/workflows.
+   */
+  async createFirstCommit(
+    repo: string,
+    f: { branch: string; path: string; content: string; message: string },
+  ): Promise<{ sha: string }> {
+    const { token } = await this.tokenFor('agent', repo, { contents: 'write' });
+    const r = await this.client.call<{ commit: { sha: string } }>(
+      'PUT',
+      `/repos/${repo}/contents/${f.path.split('/').map(encodeURIComponent).join('/')}`,
+      token,
+      {
+        message: f.message,
+        content: Buffer.from(f.content, 'utf8').toString('base64'),
+        branch: f.branch,
+      },
+    );
+    return { sha: r.commit.sha };
+  }
+
   /** Publishes a release: a tag on the given commit and a release page with the notes. The Gate App does this, never an agent. */
   async publishRelease(
     repo: string,
