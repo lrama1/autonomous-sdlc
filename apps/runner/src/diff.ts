@@ -1,5 +1,5 @@
 import {
-  dependencyAddedInPackageJson,
+  dependencyNamesAdded,
   matchingPaths,
   testsDeletedOrSkipped,
   writesUnescapedHtml,
@@ -12,6 +12,7 @@ export interface DiffSummary {
   changedPaths: string[];
   linesChanged: number;
   dependencyAdded: boolean;
+  dependenciesAdded: string[];
   testsDeletedOrSkipped: boolean;
   protectedPathsTouched: string[];
   unsafeHtml: boolean;
@@ -42,19 +43,21 @@ export async function summarizeDiff(
     .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
     .map((l) => l.slice(1));
 
-  let dependencyAdded = false;
+  const dependenciesAdded = new Set<string>();
   for (const p of names.filter((n) => n === 'package.json' || n.endsWith('/package.json'))) {
     const before = await git(dir, ['show', `origin/${integrationBranch}:${p}`], {
       allowFail: true,
     });
     const after = await readFile(path.join(dir, p), 'utf8').catch(() => null);
-    if (dependencyAddedInPackageJson(before.ok ? before.out : null, after)) dependencyAdded = true;
+    for (const n of dependencyNamesAdded(before.ok ? before.out : null, after))
+      dependenciesAdded.add(n);
   }
 
   return {
     changedPaths: names,
     linesChanged,
-    dependencyAdded,
+    dependencyAdded: dependenciesAdded.size > 0,
+    dependenciesAdded: [...dependenciesAdded].sort(),
     testsDeletedOrSkipped: testsDeletedOrSkipped(deleted, addedLines),
     protectedPathsTouched: matchingPaths(names, protectedGlobs),
     unsafeHtml: writesUnescapedHtml(addedLines),

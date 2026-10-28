@@ -403,6 +403,10 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
         'Checks',
         "Reviews: whether the agent's own checks passed before the pull request opened, and how many files and lines changed.",
       ),
+      el(
+        'Dependencies added',
+        'Reviews: the packages the change added. When the approved design names all of them, no review is needed for that reason alone, and this says so. A package the design does not mention is a reason to review.',
+      ),
       el('Pull request link', 'Reviews: "#n on GitHub", opens the pull request in a new tab.'),
       el(
         'Documentation (new outside system)',
@@ -548,6 +552,10 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       el(
         '"Done." card',
         'After you answer, the ask turns into a green "Done." card saying what happens next. It stays until you leave the page.',
+      ),
+      el(
+        'Make it standing offer',
+        'A blue note under a Done. card: you have given this same answer three or more times to the same question on this repository. Make it standing saves it as a standing decision for the repository, so agents stop asking; No hides it. It is never offered for hard stops. You can end it later on Assumptions and decisions.',
       ),
       el(
         'Assumptions to review',

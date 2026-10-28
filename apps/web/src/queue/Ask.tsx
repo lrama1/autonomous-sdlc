@@ -68,7 +68,7 @@ export function Ask({
   /** Every undecided assumption. The ones the run behind this ask made are shown with it. */
   assumptions?: AssumptionDto[];
   onChanged: () => void;
-  onAnswered: (note: string) => void;
+  onAnswered: (note: string, suggestStanding?: InteractionDto['suggestStanding']) => void;
 }) {
   const options = optionsOf(i);
   const c = card(i);
@@ -91,8 +91,8 @@ export function Ask({
     setBusy(true);
     setProblem(null);
     try {
-      await answerInteraction(i.id, body);
-      onAnswered(note);
+      const done = await answerInteraction(i.id, body);
+      onAnswered(note, done.suggestStanding);
     } catch (e) {
       setProblem(e instanceof ApiProblem ? e.message : 'Could not send your answer.');
     } finally {
@@ -158,6 +158,20 @@ export function Ask({
               [
                 'Checks',
                 `${checksPassed(c.verify) ? 'The checks passed before the pull request opened.' : 'The checks did not pass.'}${c.diff?.changedPaths ? ` ${c.diff.changedPaths.length} file${c.diff.changedPaths.length === 1 ? '' : 's'} changed, ${c.diff.linesChanged ?? 0} lines.` : ''}`,
+              ],
+            ] as Array<[string, React.ReactNode]>)
+          : []),
+        ...(c.dependencies && c.dependencies.added.length > 0
+          ? ([
+              [
+                'Dependencies added',
+                `. ${
+                  c.dependencies.planned
+                    ? 'The approved design names them, so they did not hold this for review.'
+                    : c.dependencies.namedInDesign.length > 0
+                      ? `The design names ${c.dependencies.namedInDesign.join(', ')}; the others are new.`
+                      : 'The approved design does not name them.'
+                }`,
               ],
             ] as Array<[string, React.ReactNode]>)
           : []),

@@ -28,6 +28,7 @@ export const card = (i: InteractionDto) =>
     kind?: string;
     docs?: string[];
     failures?: Array<{ attempt: number; why: string }>;
+    dependencies?: { added: string[]; namedInDesign: string[]; planned: boolean };
     attempts?: number;
     docsUnknown?: boolean;
     prUrl?: string;

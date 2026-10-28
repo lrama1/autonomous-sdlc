@@ -20,6 +20,8 @@ export interface TriggerRule {
   description?: string;
   when: TriggerWhen;
   action: TriggerAction;
+  /** Kinds of initiative this rule does not apply to (for example new_app, which adds its own dependencies and is large). */
+  except_kinds?: string[];
 }
 
 export interface PreApprovedType {
@@ -29,10 +31,20 @@ export interface PreApprovedType {
   review_by?: string | Date;
 }
 
+/** A protected path a person has decided, ahead of time, an agent may edit when its task asks for that very file. */
+export interface PreApprovedPath {
+  id: string;
+  description?: string;
+  paths: string[];
+  owner?: string;
+  review_by?: string | Date;
+}
+
 export interface RuleSet {
   version: number;
   triggers: TriggerRule[];
   pre_approved_change_types: PreApprovedType[];
+  pre_approved_protected_paths?: PreApprovedPath[];
 }
 
 /** Everything the rules look at, computed from the diff by whoever holds the checkout. */
@@ -44,6 +56,8 @@ export interface DiffSummary {
   protectedPathsTouched: string[];
   /** Optional so a runner built before this rule existed still fits: absent means no. */
   unsafeHtml?: boolean;
+  /** The names of the dependencies the change added. Optional so a runner built before this fits. */
+  dependenciesAdded?: string[];
 }
 
 export interface FiredTrigger {
@@ -82,8 +96,13 @@ function holds(when: TriggerWhen, d: DiffSummary): boolean {
   return checks.length > 0 && checks.every(Boolean);
 }
 
-export function evaluateTriggers(rules: RuleSet, d: DiffSummary): FiredTrigger[] {
+export function evaluateTriggers(
+  rules: RuleSet,
+  d: DiffSummary,
+  ctx: { kind?: string | null } = {},
+): FiredTrigger[] {
   return rules.triggers
+    .filter((t) => !(ctx.kind && t.except_kinds?.includes(ctx.kind)))
     .filter((t) => holds(t.when, d))
     .map((t) => ({ id: t.id, action: t.action, description: t.description }));
 }
@@ -99,6 +118,20 @@ export function matchPreApproved(
   for (const p of rules.pre_approved_change_types) {
     if (p.review_by && new Date(p.review_by).getTime() < now.getTime()) continue;
     if (holds(p.when, d)) return p;
+  }
+  return null;
+}
+
+/** The pre-approved path rule that covers every one of these paths, if its review date has not passed. */
+export function matchPreApprovedPaths(
+  rules: RuleSet,
+  paths: string[],
+  now = new Date(),
+): PreApprovedPath | null {
+  if (paths.length === 0) return null;
+  for (const p of rules.pre_approved_protected_paths ?? []) {
+    if (p.review_by && new Date(p.review_by).getTime() < now.getTime()) continue;
+    if (matchingPaths(paths, p.paths).length === paths.length) return p;
   }
   return null;
 }
@@ -130,9 +163,9 @@ export function testsDeletedOrSkipped(deletedPaths: string[], addedLines: string
   return deletedPaths.some((p) => TEST_PATH(p)) || addedLines.some((l) => SKIP_MARKER.test(l));
 }
 
-/** True if package.json gained a dependency of any kind. */
-export function dependencyAddedInPackageJson(before: string | null, after: string | null): boolean {
-  if (after === null) return false;
+/** The names of the dependencies package.json gained, of any kind. */
+export function dependencyNamesAdded(before: string | null, after: string | null): string[] {
+  if (after === null) return [];
   const names = (text: string | null): Set<string> => {
     if (text === null) return new Set();
     try {
@@ -147,7 +180,30 @@ export function dependencyAddedInPackageJson(before: string | null, after: strin
     }
   };
   const was = names(before);
-  return [...names(after)].some((n) => !was.has(n));
+  return [...names(after)].filter((n) => !was.has(n)).sort();
+}
+
+/** True if package.json gained a dependency of any kind. */
+export function dependencyAddedInPackageJson(before: string | null, after: string | null): boolean {
+  return dependencyNamesAdded(before, after).length > 0;
+}
+
+/**
+ * Which of these package names a document (an approved design) mentions by name. A name inside a longer one does not count: 
+eact
+ * is not named by react-dom, nor material by @mui/material.
+ */
+export function dependenciesNamedIn(
+  text: string,
+  names: string[],
+): { named: string[]; unnamed: string[] } {
+  const named: string[] = [];
+  const unnamed: string[] = [];
+  for (const n of names) {
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    (new RegExp(`(?<![\\w@/.-])${escaped}(?![\\w-])`).test(text) ? named : unnamed).push(n);
+  }
+  return { named, unnamed };
 }
 
 // Writing text into page markup. `textContent` and DOM calls are safe; these are the ways to hand a string to the HTML

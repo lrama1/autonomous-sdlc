@@ -4,6 +4,8 @@ import {
   agentRun,
   appendRunEvent,
   assumption,
+  buildPlan,
+  buildTask,
   initiative,
   interaction,
   repositoryEntry,
@@ -13,7 +15,9 @@ import { authenticateRunToken, bearerFrom } from '@sdlc/db';
 import {
   decideMerge,
   defaultRoleForAgent,
+  dependenciesNamedIn,
   evaluateTriggers,
+  matchPreApprovedPaths,
   matchPreApproved,
   strongestAction,
 } from '@sdlc/core';
@@ -31,7 +35,12 @@ import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
 import type { ApiConfig } from './config.js';
 import type { GitHubService } from './github-service.js';
-import { createInteraction, getInteraction, parkRun } from './interactions.js';
+import {
+  createInteraction,
+  getInteraction,
+  parkRun,
+  settleDecisionByRule,
+} from './interactions.js';
 import { TERMINAL_STATES, revokeRunTokens } from './runs.js';
 
 const MAX_VERIFY_ATTEMPTS = 3;
@@ -154,7 +163,6 @@ interface AnswerShape {
   source?: string;
 }
 
-/** What the engine is told when a parked run resumes. */
 /**
  * What to recommend when a run edited a protected path. A path the task itself names was asked for, by the design or by a
  * person who sent the work back, so the edit is what was wanted and a person only has to look at it. A path nobody
@@ -177,6 +185,7 @@ export function protectedPathAdvice(
       };
 }
 
+/** What the engine is told when a parked run resumes. */
 export function buildResumeMessage(row: typeof interaction.$inferSelect): string {
   const a = (row.answer ?? {}) as AnswerShape;
   const kind = (row.contextCard as { kind?: string }).kind;
@@ -208,6 +217,21 @@ export interface RunnerDeps {
 
 export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): void {
   const { db, config, agents, rules, github, apiUrl } = deps;
+
+  /** The approved design a build task of this run is built from, as text. Null for a run that is not a build task. */
+  async function designTextOf(runId: string): Promise<string | null> {
+    const [task] = await db.select().from(buildTask).where(eq(buildTask.runId, runId));
+    if (!task) return null;
+    const [plan] = await db.select().from(buildPlan).where(eq(buildPlan.id, task.planId));
+    if (!plan) return null;
+    const [r] = await db
+      .select({ repo: repositoryEntry.fullName })
+      .from(agentRun)
+      .innerJoin(repositoryEntry, eq(repositoryEntry.id, agentRun.repositoryId))
+      .where(eq(agentRun.id, runId));
+    if (!r) return null;
+    return github.readFile(r.repo, plan.designPath, plan.designSha).catch(() => null);
+  }
 
   /** Authenticates the runner by its run token. A finished or cancelled run gets 403, which tells the runner to stop. */
   async function runnerAuth(
@@ -437,6 +461,22 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       kind: body.kind,
     });
     await parkRun(db, ctx.runId, row.id);
+    // A file a person pre-approved, that the task itself names, is allowed without asking, except in guided mode, where a
+    // person decides everything. The ask stays on record with the rule that answered it, and the run resumes at once.
+    if (protectedPath && advice?.recommend === 'allow') {
+      const [init] = await db
+        .select({ mode: initiative.autonomyMode })
+        .from(initiative)
+        .where(eq(initiative.id, ctx.initiativeId));
+      const rule = init?.mode === 'guided' ? null : matchPreApprovedPaths(rules, body.paths);
+      if (rule)
+        await settleDecisionByRule(db, row.id, {
+          choice: 'allow',
+          label: 'Allow this change to the protected path',
+          reason: `The task names this file, and the rule "${rule.id}" pre-approves it.`,
+          rule: rule.id,
+        });
+    }
     return { interactionId: row.id };
   });
 
@@ -457,10 +497,22 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
 
     // A path a person allowed for this run is not a hard stop again. The card still lists it among the changed paths.
     const allowed = await allowedPathsOf(db, ctx.runId);
-    const fired = evaluateTriggers(rules, {
+    const [init] = await db
+      .select({ mode: initiative.autonomyMode, kind: initiative.kind })
+      .from(initiative)
+      .where(eq(initiative.id, ctx.initiativeId));
+    // A dependency the approved design names was decided with the design. Only one nobody planned is a surprise.
+    const added = body.diff.dependenciesAdded ?? [];
+    const designText =
+      body.diff.dependencyAdded && added.length > 0 ? await designTextOf(ctx.runId) : null;
+    const named = designText ? dependenciesNamedIn(designText, added) : null;
+    const plannedDependencies = named !== null && named.unnamed.length === 0;
+    const forRules = {
       ...body.diff,
+      dependencyAdded: plannedDependencies ? false : body.diff.dependencyAdded,
       protectedPathsTouched: body.diff.protectedPathsTouched.filter((p) => !allowed.includes(p)),
-    });
+    };
+    const fired = evaluateTriggers(rules, forRules, { kind: init?.kind });
     if (strongestAction(fired) === 'hard_stop') {
       return reply.code(409).send({
         error: {
@@ -469,11 +521,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         },
       });
     }
-    const preApproved = matchPreApproved(rules, body.diff, fired);
-    const [init] = await db
-      .select({ mode: initiative.autonomyMode })
-      .from(initiative)
-      .where(eq(initiative.id, ctx.initiativeId));
+    const preApproved = matchPreApproved(rules, forRules, fired);
     const mode = (init?.mode ?? 'balanced') as AutonomyMode;
     // A spec or a design is always decided by a person (checkpoint G1), in every mode (spec 6.1, 8.2).
     const isSpec = run!.agentRole === 'product' || run!.agentRole === 'architect';
@@ -509,6 +557,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         summary: body.summary,
         verify: body.verify,
         diff: body.diff,
+        dependencies: { added, namedInDesign: named?.named ?? [], planned: plannedDependencies },
         triggers: fired,
         preApprovedType: preApproved?.id ?? null,
         // Why this will merge on its own, or why a person is asked. Shown on the review and on the Autopilot page.

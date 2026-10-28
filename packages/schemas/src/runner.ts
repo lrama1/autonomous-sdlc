@@ -81,6 +81,8 @@ export const diffSummarySchema = z.object({
   protectedPathsTouched: z.array(z.string()),
   // A runner built before this rule existed does not send it.
   unsafeHtml: z.boolean().default(false),
+  // The names of the dependencies the change added. A runner built before this does not send them.
+  dependenciesAdded: z.array(z.string()).optional(),
 });
 
 export const runnerPullRequestSchema = z.object({
@@ -120,6 +122,18 @@ export const ruleSetSchema = z.object({
           writes_unescaped_html: z.boolean().optional(),
         }),
         action: z.enum(['require_review', 'require_checkpoint', 'hard_stop']),
+        except_kinds: z.array(z.string()).optional(),
+      }),
+    )
+    .default([]),
+  pre_approved_protected_paths: z
+    .array(
+      z.object({
+        id: z.string(),
+        description: z.string().optional(),
+        paths: z.array(z.string()).min(1),
+        owner: z.string().optional(),
+        review_by: z.union([z.string(), z.date()]).optional(),
       }),
     )
     .default([]),

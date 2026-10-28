@@ -447,3 +447,10 @@ export const setAssistantProposal = (
       body: { state },
     },
   );
+
+// Remember an answer the person has given several times, so agents stop asking.
+export const makeStanding = (id: string): Promise<InteractionDto> =>
+  call(`/api/interactions/${id}/standing`, interactionSchema, {
+    method: 'POST',
+    body: { scope: 'repository' },
+  });

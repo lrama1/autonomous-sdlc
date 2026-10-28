@@ -319,6 +319,44 @@ export async function settleByPolicy(
   return row;
 }
 
+/**
+ * The platform answers a decision by rule (a pre-approved protected path): the person is not asked, and the answer says which
+ * rule decided. Returns null if somebody settled it first.
+ */
+export async function settleDecisionByRule(
+  db: Db,
+  id: string,
+  input: { choice: string; label: string; reason: string; rule: string },
+): Promise<InteractionRow | null> {
+  const [row] = await db
+    .update(interaction)
+    .set({
+      state: 'answered',
+      answer: {
+        text: `: ${input.label}`,
+        decision: null,
+        choice: input.choice,
+        source: 'policy',
+        rule: input.rule,
+        reason: input.reason,
+      },
+      answeredVia: 'auto',
+      answeredAt: new Date(),
+    })
+    .where(and(eq(interaction.id, id), eq(interaction.state, 'open')))
+    .returning();
+  if (!row) return null;
+  await recordActivity(db, {
+    actorType: 'system',
+    initiativeId: row.initiativeId,
+    runId: row.runId,
+    interactionId: row.id,
+    action: 'interaction.answered_by_rule',
+    detail: { choice: input.choice, rule: input.rule, reason: input.reason },
+  });
+  return row;
+}
+
 /** Applies the default if this interaction is due. Mirrors defaultApplies() in packages/core. */
 export async function settleDefaultIfDue(
   db: Db,

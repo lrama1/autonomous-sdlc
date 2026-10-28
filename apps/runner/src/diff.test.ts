@@ -61,3 +61,20 @@ describe('summarizeDiff and unescaped HTML', () => {
     expect((await summarizeDiff(dir, 'main', [])).unsafeHtml).toBe(false);
   });
 });
+
+describe('summarizeDiff and added dependencies', () => {
+  it('names each dependency the change adds, across package.json files', async () => {
+    await commit(
+      'package.json',
+      JSON.stringify({ dependencies: { express: '4' }, devDependencies: { vitest: '1' } }),
+    );
+    let d = await summarizeDiff(dir, 'main', []);
+    expect(d.dependencyAdded).toBe(true);
+    expect([...(d.dependenciesAdded ?? [])].sort()).toEqual(['express', 'vitest']);
+
+    await mkdir(path.join(dir, 'apps'), { recursive: true });
+    await commit('apps/package.json', JSON.stringify({ dependencies: { zod: '3' } }));
+    d = await summarizeDiff(dir, 'main', []);
+    expect([...(d.dependenciesAdded ?? [])].sort()).toEqual(['express', 'vitest', 'zod']);
+  });
+});
