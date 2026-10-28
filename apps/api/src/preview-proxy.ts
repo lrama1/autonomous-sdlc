@@ -55,6 +55,10 @@ export function verifyAccess(
 
 export const cookieName = (id: string) => `sdlc_pv_${id.replace(/-/g, '')}`;
 
+/** Which preview a request without a preview in its address belongs to: the one this browser last opened. */
+export const CURRENT_COOKIE = 'sdlc_pv_cur';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /** The cookies the preview's own program set, without the platform's. */
 export function appCookies(header: string | undefined): string | undefined {
   const kept = (header ?? '')
@@ -64,8 +68,11 @@ export function appCookies(header: string | undefined): string | undefined {
   return kept.length ? kept.join('; ') : undefined;
 }
 
-/** A cookie the preview set is kept to the preview's own folder on this origin, and never given a domain. */
-export function rewriteSetCookie(cookie: string, id: string): string {
+/**
+ * A cookie the preview set never gets a domain. When the preview is reached under its own folder (/<id>/...) it is kept
+ * to that folder too. When it is served from the root of this origin, its own path stands.
+ */
+export function rewriteSetCookie(cookie: string, id: string, prefixed = true): string {
   const parts = cookie.split(';').map((p) => p.trim());
   const out = [parts[0]!];
   let path = '/';
@@ -75,7 +82,8 @@ export function rewriteSetCookie(cookie: string, id: string): string {
     if (name === 'path') path = p.slice(p.indexOf('=') + 1) || '/';
     else out.push(p);
   }
-  out.push(`Path=/${id}${path.startsWith('/') ? path : `/${path}`}`);
+  const own = path.startsWith('/') ? path : `/${path}`;
+  out.push(prefixed ? `Path=/${id}${own}` : `Path=${own}`);
   return out.join('; ');
 }
 
@@ -151,48 +159,71 @@ export function registerPreviewProxy(
       .send(message);
 
   async function handle(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const m = PATH.exec(request.raw.url ?? '');
-    if (!m) return void (await text(reply, 404, 'Not found.'));
-    const [, id = '', rest, query = ''] = m;
-    if (!rest) return void reply.redirect(`/${id}/${query}`, 302);
-
-    const [row] = await db.select().from(previewRun).where(eq(previewRun.id, id));
-    if (!row || row.state !== 'ready' || !row.target)
-      return void (await text(reply, 404, 'This preview is not running.'));
-
+    const raw = request.raw.url ?? '';
     const cookies = Object.fromEntries(
       (request.headers.cookie ?? '').split(';').map((c) => {
         const i = c.indexOf('=');
         return [c.slice(0, i).trim(), c.slice(i + 1).trim()];
       }),
     );
+    const m = PATH.exec(raw);
+    // A page that links to "/assets/app.js" or calls "/api/items" has no preview in its address, so the browser's
+    // current preview answers. The link in the address (`/<id>/?t=...`) is only the way in.
+    let id: string;
+    let rest: string;
+    let query: string;
+    let prefixed: boolean;
+    if (m) {
+      prefixed = true;
+      id = m[1] ?? '';
+      query = m[3] ?? '';
+      if (!m[2]) return void reply.redirect(`/${id}/${query}`, 302);
+      rest = m[2];
+    } else {
+      const q = raw.indexOf('?');
+      const current = cookies[CURRENT_COOKIE] ?? '';
+      if (!UUID.test(current)) return void (await text(reply, 404, 'Not found.'));
+      prefixed = false;
+      id = current;
+      rest = q < 0 ? raw : raw.slice(0, q);
+      query = q < 0 ? '' : raw.slice(q);
+      if (!rest.startsWith('/')) return void (await text(reply, 404, 'Not found.'));
+    }
+
+    const [row] = await db.select().from(previewRun).where(eq(previewRun.id, id));
+    if (!row || row.state !== 'ready' || !row.target)
+      return void (await text(reply, 404, 'This preview is not running.'));
+
     const now = nowSec();
     if (!verifyAccess(opts.secret, cookies[cookieName(id)], 'cookie', id, now)) {
       const params = new URLSearchParams(query);
-      const link = verifyAccess(opts.secret, params.get('t') ?? undefined, 'open', id, now);
+      const link = prefixed
+        ? verifyAccess(opts.secret, params.get('t') ?? undefined, 'open', id, now)
+        : null;
       if (!link)
         return void (await text(
           reply,
           401,
           'Open this preview from the platform: it signs you in to it.',
         ));
-      // A good link becomes a cookie for this one preview, and the link is dropped from the address.
+      // A good link becomes a cookie for this one preview, and the link is dropped from the address. The app is then
+      // served from the root of this origin, so what it links to by absolute address (assets, its API) works.
       const maxAge = opts.cookieTtlSec ?? 8 * 3600;
       const cookie = signAccess(opts.secret, { k: 'cookie', id, sub: link.sub, exp: now + maxAge });
       params.delete('t');
       const q = params.toString();
+      const flags = `Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
       return void reply
-        .header(
-          'set-cookie',
-          `${cookieName(id)}=${cookie}; Path=/${id}/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`,
-        )
+        .header('set-cookie', [
+          `${cookieName(id)}=${cookie}; ${flags}`,
+          `${CURRENT_COOKIE}=${id}; ${flags}`,
+        ])
         .header('cache-control', 'no-store')
-        .redirect(`/${id}${rest}${q ? `?${q}` : ''}`, 302);
+        .redirect(`${rest}${q ? `?${q}` : ''}`, 302);
     }
 
-    proxy(request, reply, id, row.target, rest, query);
+    proxy(request, reply, id, row.target, rest, query, prefixed);
   }
-
   function proxy(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -200,13 +231,14 @@ export function registerPreviewProxy(
     target: string,
     rest: string,
     query: string,
+    prefixed: boolean,
   ): void {
     const headers: IncomingHttpHeaders = {};
     for (const [k, v] of Object.entries(request.headers))
       if (!HOP.has(k) && !NOT_FORWARDED.test(k)) headers[k] = v;
     const cookie = appCookies(request.headers.cookie);
     if (cookie) headers.cookie = cookie;
-    headers['x-forwarded-prefix'] = `/${id}`;
+    if (prefixed) headers['x-forwarded-prefix'] = `/${id}`;
     headers['x-forwarded-proto'] = 'https';
     if (opts.origin) headers['x-forwarded-host'] = new URL(opts.origin).host;
 
@@ -226,8 +258,10 @@ export function registerPreviewProxy(
         const out: Record<string, string | string[]> = {};
         for (const [k, v] of Object.entries(back.headers)) {
           if (HOP.has(k) || v === undefined) continue;
-          if (k === 'set-cookie') out[k] = (v as string[]).map((c) => rewriteSetCookie(c, id));
+          if (k === 'set-cookie')
+            out[k] = (v as string[]).map((c) => rewriteSetCookie(c, id, prefixed));
           else if (
+            prefixed &&
             k === 'location' &&
             typeof v === 'string' &&
             v.startsWith('/') &&
