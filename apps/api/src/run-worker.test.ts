@@ -169,6 +169,28 @@ describe('resuming parked runs', () => {
     });
   });
 
+  it('is not failed when the runner it parked with stops after the run was resumed', async () => {
+    const f = await createRunFixture(db, { state: 'queued' });
+    const a = new FakeAdapter();
+    const w = worker(a);
+    await w.tick();
+    const first = launchedFor(a, f.runId)[0]!;
+    const q = await parkedOn(f);
+    await settleWithAnswer(db, q.id, { answer: 'Allow', by: f.personId, via: 'workspace' });
+    await w.tick();
+    const second = launchedFor(a, f.runId)[1]!;
+    expect((await stateOf(f.runId)).state).toBe('resuming');
+    // A cloud task takes a while to stop, so the first one can end after the second began.
+    first.end(0);
+    await settle();
+    expect((await stateOf(f.runId)).state).toBe('resuming');
+    expect(await authenticateRunToken(db, second.input.token)).toMatchObject({ runId: f.runId });
+    // The second runner is still the one the worker watches.
+    second.end(1);
+    await settle();
+    expect(await stateOf(f.runId)).toMatchObject({ state: 'failed', exitReason: 'error' });
+  });
+
   it('resumes a run parked on a default that applied, too', async () => {
     const f = await createRunFixture(db, { state: 'running' });
     const q = await parkedOn(f);

@@ -113,6 +113,8 @@ export function createRunWorker(opts: RunWorkerOptions) {
       children.set(run.id, launched);
       log(`[worker] ${mode} run ${run.id}`);
       void launched.done.then(async ({ code }) => {
+        // A runner that stopped after the run was answered and started again is not this run's runner any more.
+        if (children.get(run.id) !== launched) return;
         children.delete(run.id);
         await handleLost(run, code);
         await releaseIfOver(run.id);
