@@ -114,7 +114,11 @@ const get = (url: string, headers: Record<string, string> = {}) =>
 async function cookieFor(id: string, sub = 'p1') {
   const t = signAccess(SECRET, { k: 'open', id, sub, exp: Math.floor(Date.now() / 1000) + 300 });
   const res = await get(`/${id}/?t=${t}`);
-  return { res, cookie: String(res.headers['set-cookie']).split(';')[0]! };
+  const cookie = [res.headers['set-cookie']]
+    .flat()
+    .map((c) => String(c).split(';')[0]!)
+    .join('; ');
+  return { res, cookie };
 }
 
 beforeAll(async () => {
@@ -216,9 +220,11 @@ describe('the preview origin', () => {
 
     const { res, cookie } = await cookieFor(id);
     expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toBe(`/${id}/`);
+    // The app is then served from the root of the origin, so what it links to by absolute address works.
+    expect(res.headers.location).toBe('/');
     const set = String(res.headers['set-cookie']);
-    expect(set).toContain(`Path=/${id}/`);
+    expect(set).toContain('Path=/;');
+    expect(set).toContain(`sdlc_pv_cur=${id}`);
     expect(set).toMatch(/HttpOnly/);
     expect(set).toMatch(/Secure/);
     expect(set).toMatch(/SameSite=Lax/);
@@ -286,6 +292,27 @@ describe('the preview origin', () => {
     expect(redirect.headers.location).toBe(`/${id}/landing`);
   });
 
+  it('serves the app from the root of the origin, so absolute addresses in its pages work', async () => {
+    const id = await preview();
+    const { cookie } = await cookieFor(id);
+    seen.length = 0;
+    const asset = await get('/assets/app.js?v=3', { cookie });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.body).toBe('<h1>preview /assets/app.js?v=3</h1>');
+    const s = seen.at(-1)!;
+    expect(s.url).toBe('/assets/app.js?v=3');
+    expect(s.headers['x-forwarded-prefix']).toBeUndefined();
+    // Its cookie keeps its own path, and its redirects keep their address.
+    expect([asset.headers['set-cookie']].flat()).toEqual(['visit=1; Path=/']);
+    const redirect = await get('/redirect', { cookie });
+    expect(redirect.headers.location).toBe('/landing');
+
+    // Without the cookie for it, or after it stopped, nothing is served.
+    expect((await get('/assets/app.js', { cookie: `sdlc_pv_cur=${id}` })).statusCode).toBe(401);
+    expect((await get('/assets/app.js', { cookie: 'sdlc_pv_cur=nonsense' })).statusCode).toBe(404);
+    await db.update(previewRun).set({ state: 'stopped' }).where(eq(previewRun.id, id));
+    expect((await get('/assets/app.js', { cookie })).statusCode).toBe(404);
+  });
   it("serves nothing but previews: not the API, not the web app, not another preview's state", async () => {
     for (const url of [
       '/',
@@ -298,7 +325,10 @@ describe('the preview origin', () => {
       expect((await get(url)).statusCode, url).toBe(404);
     const id = await preview();
     const { cookie } = await cookieFor(id);
-    expect((await get(`/api/costs`, { cookie })).statusCode).toBe(404);
+    // An address with no preview in it is the preview this browser opened: its own program answers, not the platform.
+    const own = await get('/api/costs', { cookie });
+    expect(own.statusCode).toBe(200);
+    expect(own.body).toBe('<h1>preview /api/costs</h1>');
     // And the platform's own address does not serve previews.
     const platform = await app.inject({ method: 'GET', url: `/${id}/`, headers: { cookie } });
     expect(platform.statusCode).toBe(404);
