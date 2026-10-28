@@ -20,6 +20,7 @@ import { PreviewService } from './previews.js';
 import { registerSmokeRoutes } from './smoke-routes.js';
 import { SmokeService } from './smoke-service.js';
 import { SmokeDiagnosisService } from './smoke-diagnosis.js';
+import { AutoChecks } from './auto-checks.js';
 import { GatewayModel } from './inline-model.js';
 import type { InlineModel } from './inline-model.js';
 import { registerSecurityRoutes } from './security-routes.js';
@@ -393,6 +394,33 @@ export async function buildApp({
     secrets: secretStore,
     github: ghClient,
   });
+
+  // The checks a review needs start by themselves (security in every mode, the smoke test unless guided).
+  const autoChecks = new AutoChecks({
+    db,
+    security: () => security,
+    smoke: () => smoke,
+    previews: () => previews,
+    log: (l) => app.log.info(l),
+  });
+  app.decorate('autoChecks', autoChecks);
+  if (workers) {
+    let checksTimer: NodeJS.Timeout | undefined;
+    let checksBusy = false;
+    app.addHook('onReady', async () => {
+      checksTimer = setInterval(() => {
+        if (checksBusy) return;
+        checksBusy = true;
+        autoChecks
+          .tick()
+          .catch((e) => app.log.error({ err: e }, 'checks tick failed'))
+          .finally(() => {
+            checksBusy = false;
+          });
+      }, config.BUILD_TICK_MS);
+    });
+    app.addHook('onClose', async () => clearInterval(checksTimer));
+  }
 
   if (workers) {
     let gateTimer: NodeJS.Timeout | undefined;
