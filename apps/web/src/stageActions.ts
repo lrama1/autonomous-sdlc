@@ -1,7 +1,16 @@
 // What a person can do at each stage of the Map, worked out from where the stage is. Pure.
 
 export type StageActionKind =
-  'start_step' | 'skip_step' | 'retry_run' | 'start_plan' | 'retry_task' | 'skip_task';
+  | 'start_step'
+  | 'skip_step'
+  | 'retry_run'
+  | 'start_plan'
+  | 'retry_task'
+  | 'skip_task'
+  | 'preview_start'
+  | 'preview_stop'
+  | 'preview_open'
+  | 'preview_wait';
 
 export interface StageAction {
   kind: StageActionKind;
@@ -11,6 +20,17 @@ export interface StageAction {
   taskKey?: string;
   label: string;
   primary: boolean;
+  /** A link to open, for a button that goes somewhere instead of doing something. */
+  href?: string;
+}
+
+/** The platform's preview of what the build produced. */
+export interface MainPreviewIn {
+  available: boolean;
+  id: string | null;
+  state: string;
+  url: string | null;
+  detail: string | null;
 }
 
 interface StageIn {
@@ -37,6 +57,8 @@ export function stageActions(
     tasks?: Array<{ key: string; title: string; state: string; detail?: string | null }>;
   } | null,
   mayControl: boolean,
+  /** The preview of the built app, and whether this person may start one. */
+  preview: { main: MainPreviewIn | null; mayStart: boolean } | null = null,
 ): Record<string, { actions: StageAction[]; notes: string[] }> {
   const out: Record<string, { actions: StageAction[]; notes: string[] }> = {};
   for (const s of stages) out[s.id] = { actions: [], notes: [] };
@@ -104,6 +126,44 @@ export function stageActions(
           primary: false,
         });
       }
+    }
+  }
+
+  // Once something has merged, a person can run what the build made, whether or not every task is done.
+  const merged = (plan?.tasks ?? []).some((t) => t.state === 'merged');
+  if (build && preview?.main?.available && merged) {
+    const p = preview.main;
+    if (p.state === 'starting')
+      build.actions.push({
+        kind: 'preview_wait',
+        targetId: p.id ?? '',
+        label: 'Starting the preview...',
+        primary: false,
+      });
+    else if (p.state === 'ready' && p.url) {
+      build.actions.push({
+        kind: 'preview_open',
+        targetId: p.id ?? '',
+        label: 'Open the built app',
+        primary: true,
+        href: p.url,
+      });
+      if (preview.mayStart && p.id)
+        build.actions.push({
+          kind: 'preview_stop',
+          targetId: p.id,
+          label: 'Stop the preview',
+          primary: false,
+        });
+    } else if (preview.mayStart) {
+      if ((p.state === 'failed' || p.state === 'unavailable') && p.detail)
+        build.notes.push(`The preview did not start: ${p.detail}`);
+      build.actions.push({
+        kind: 'preview_start',
+        targetId: '',
+        label: p.state === 'none' ? 'Preview the built app' : 'Preview the built app again',
+        primary: plan?.state === 'done',
+      });
     }
   }
   return out;

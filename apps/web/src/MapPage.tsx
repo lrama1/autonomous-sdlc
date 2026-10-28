@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { BuildPlanDto, Me, StageStartDto } from '@sdlc/schemas';
+import type { BuildPlanDto, MainPreviewDto, Me, StageStartDto } from '@sdlc/schemas';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -22,6 +22,7 @@ import {
   createInitiative,
   getBuildPlan,
   getInitiatives,
+  getMainPreview,
   getMap,
   getReleases,
   getRepositories,
@@ -33,8 +34,10 @@ import {
   skipStageStep,
   skipBuildTask,
   startBuildPlan,
+  startMainPreview,
   startStageStep,
   startRun,
+  stopPlatformPreview,
 } from './api';
 import type { InitiativeMap } from './api';
 import { PipelineFlow } from './flow/PipelineFlow';
@@ -360,6 +363,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const [version, setVersion] = useState('0.1.0');
   const [plan, setPlan] = useState<BuildPlanDto | null>(null);
   const [steps, setSteps] = useState<StageStartDto[]>([]);
+  const [preview, setPreview] = useState<MainPreviewDto | null>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -379,16 +383,19 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const loadMap = useCallback(async () => {
     if (!initiativeId) return setMap(null);
     try {
-      const [m, r, p, st] = await Promise.all([
+      const [m, r, p, st, pv] = await Promise.all([
         getMap(initiativeId),
         getReleases(initiativeId),
         getBuildPlan(initiativeId),
         getStageStarts(initiativeId),
+        // The preview is a convenience. Without it the Map still works.
+        getMainPreview(initiativeId).catch(() => null),
       ]);
       setMap(m);
       setReleases(r);
       setPlan(p);
       setSteps(st);
+      setPreview(pv);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -428,7 +435,12 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const mayControlBuild = me.roles.some((r) =>
     ['product_owner', 'architect', 'platform_admin'].includes(r),
   );
-  const extras = map ? stageActions(map.stages, steps, plan, mayControlBuild) : {};
+  const extras = map
+    ? stageActions(map.stages, steps, plan, mayControlBuild, {
+        main: preview,
+        mayStart: me.roles.length > 0,
+      })
+    : {};
   const stageViews = map
     ? map.stages.map((s) => ({ ...s, actions: extras[s.id]?.actions, notes: extras[s.id]?.notes }))
     : [];
@@ -440,6 +452,13 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
       );
     else if (a.kind === 'skip_step')
       void act(() => skipStageStep(a.targetId), 'Skipped. You can still start that run by hand.');
+    else if (a.kind === 'preview_start' && initiativeId)
+      void act(
+        () => startMainPreview(initiativeId),
+        'Starting the built app in a sandbox. A link appears on the Build and review box when it is ready.',
+      );
+    else if (a.kind === 'preview_stop')
+      void act(() => stopPlatformPreview(a.targetId), 'The preview is stopped.');
     else if (a.kind === 'retry_task')
       void act(() => retryBuildTask(a.targetId, a.taskKey!), `${a.taskKey} will run again.`);
     else if (a.kind === 'skip_task')

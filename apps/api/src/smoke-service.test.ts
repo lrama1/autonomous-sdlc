@@ -72,6 +72,7 @@ const github = {
   getPullRequest: async () => ({ state: gh.state, head: { sha: gh.head, ref: 'b' } }) as never,
   readFile: async () => gh.config,
   archive: async () => Buffer.from('tar'),
+  branchHead: async () => gh.head,
 };
 
 let devDb: DevDb;
