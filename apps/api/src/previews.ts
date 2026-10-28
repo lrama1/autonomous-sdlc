@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { initiative, interaction, previewRun } from '@sdlc/db';
+import { initiative, interaction, previewRun, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { parsePreviewConfig, PREVIEW_CONFIG_PATH } from '@sdlc/core';
 import { recordActivity } from './activity.js';
@@ -22,7 +22,10 @@ export interface PreviewSettings {
   portCount?: number;
 }
 
-type PreviewGitHub = Pick<GitHubService, 'getPullRequest' | 'readFile' | 'archive'>;
+type PreviewGitHub = Pick<GitHubService, 'getPullRequest' | 'readFile' | 'archive' | 'branchHead'>;
+
+/** The pull request number a preview of an integration branch is filed under. */
+export const MAIN_PREVIEW = 0;
 export type PreviewRow = typeof previewRun.$inferSelect;
 
 export type StartResult =
@@ -95,7 +98,7 @@ export class PreviewService {
   }
 
   async start(interactionId: string, by: string | null): Promise<StartResult> {
-    const { db, github, settings } = this.deps;
+    const { db, github } = this.deps;
     const [review] = await db.select().from(interaction).where(eq(interaction.id, interactionId));
     const card = review?.contextCard as
       { kind?: string; repository?: string; prNumber?: number } | undefined;
@@ -113,15 +116,84 @@ export class PreviewService {
     if (pr.state !== 'open')
       return fail(409, 'pull_request_closed', 'That pull request is no longer open.');
 
+    return this.begin({
+      repository,
+      prNumber,
+      sha: pr.head.sha,
+      interactionId: review.id,
+      initiativeId: review.initiativeId,
+      by,
+      moved: 'The pull request has a new commit.',
+    });
+  }
+
+  /** The repository and integration branch an initiative builds on. */
+  private async repositoryOf(initiativeId: string) {
+    const [init] = await this.deps.db
+      .select({ repositoryId: initiative.repositoryId })
+      .from(initiative)
+      .where(eq(initiative.id, initiativeId));
+    if (!init) return null;
+    const [repo] = await this.deps.db
+      .select()
+      .from(repositoryEntry)
+      .where(eq(repositoryEntry.id, init.repositoryId));
+    return repo ?? null;
+  }
+
+  /** The latest preview of an initiative's integration branch (what the build produced), if there was one. */
+  async forMain(initiativeId: string): Promise<PreviewRow | null> {
+    const repo = await this.repositoryOf(initiativeId);
+    return repo ? this.forPullRequest(repo.fullName, MAIN_PREVIEW) : null;
+  }
+
+  /** Runs the tip of the integration branch, which is what the merged tasks built. */
+  async startMain(initiativeId: string, by: string): Promise<StartResult> {
+    const repo = await this.repositoryOf(initiativeId);
+    if (!repo) return fail(404, 'not_found', 'That initiative has no registered repository.');
+    let sha: string;
+    try {
+      sha = await this.deps.github.branchHead(repo.fullName, repo.integrationBranch);
+    } catch {
+      return fail(
+        409,
+        'no_branch',
+        `GitHub has no commit on ${repo.integrationBranch} of ${repo.fullName} to run.`,
+      );
+    }
+    return this.begin({
+      repository: repo.fullName,
+      prNumber: MAIN_PREVIEW,
+      sha,
+      interactionId: null,
+      initiativeId,
+      by,
+      moved: `${repo.integrationBranch} has a new commit.`,
+    });
+  }
+
+  /** The part of a start that a pull request and a branch share: reuse, replace, limit, and launch. */
+  private async begin(o: {
+    repository: string;
+    prNumber: number;
+    sha: string;
+    interactionId: string | null;
+    initiativeId: string;
+    by: string | null;
+    moved: string;
+  }): Promise<StartResult> {
+    const { db, settings } = this.deps;
+    const { repository, prNumber, by } = o;
+
     const active = await db
       .select()
       .from(previewRun)
       .where(inArray(previewRun.state, [...ACTIVE]));
     const mine = active.filter((r) => r.repository === repository && r.prNumber === prNumber);
-    const same = mine.find((r) => r.headSha === pr.head.sha);
+    const same = mine.find((r) => r.headSha === o.sha);
     if (same) return { ok: true, row: same, existing: true };
-    // The pull request moved on. The old preview shows code nobody is reviewing any more.
-    for (const r of mine) await this.stop(r.id, 'stopped', 'The pull request has a new commit.');
+    // The code moved on. The old preview shows code nobody is looking at any more.
+    for (const r of mine) await this.stop(r.id, 'stopped', o.moved);
 
     const others = active.filter((r) => !mine.includes(r));
     if (others.length >= settings.maxActive)
@@ -138,11 +210,11 @@ export class PreviewService {
     const [row] = await db
       .insert(previewRun)
       .values({
-        interactionId: review.id,
-        initiativeId: review.initiativeId,
+        interactionId: o.interactionId,
+        initiativeId: o.initiativeId,
         repository,
         prNumber,
-        headSha: pr.head.sha,
+        headSha: o.sha,
         state: 'starting',
         hostPort,
         startedBy: by,
@@ -152,10 +224,10 @@ export class PreviewService {
     await recordActivity(db, {
       actorType: by ? 'person' : 'system',
       actorId: by ?? undefined,
-      initiativeId: review.initiativeId,
-      interactionId: review.id,
+      initiativeId: o.initiativeId,
+      interactionId: o.interactionId ?? undefined,
       action: 'preview.started',
-      detail: { repository, prNumber, sha: pr.head.sha, by: by ? 'a person' : 'autopilot' },
+      detail: { repository, prNumber, sha: o.sha, by: by ? 'a person' : 'autopilot' },
     });
     const job = this.launch(row!, by === null).finally(() => this.running.delete(job));
     this.running.add(job);

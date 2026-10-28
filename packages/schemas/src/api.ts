@@ -325,6 +325,19 @@ export const previewSchema = z.object({
 });
 export type PreviewDto = z.infer<typeof previewSchema>;
 
+// The platform's preview of what an initiative's merged tasks built (the integration branch), not of one pull request.
+export const mainPreviewSchema = z.object({
+  available: z.boolean(),
+  id: z.string().nullable(),
+  state: z.enum(['none', 'starting', 'ready', 'failed', 'stopped', 'expired', 'unavailable']),
+  url: z.string().nullable(),
+  sha: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  detail: z.string().nullable(),
+  ttlMinutes: z.number(),
+});
+export type MainPreviewDto = z.infer<typeof mainPreviewSchema>;
+
 // The smoke test of a pull request's code at the commit under review (mvp-contract section 16).
 export const smokeResultSchema = z.object({
   kind: z.enum(['get', 'run']),

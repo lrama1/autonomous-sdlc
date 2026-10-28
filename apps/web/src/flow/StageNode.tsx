@@ -129,7 +129,10 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
                 size="small"
                 variant={a.primary ? 'contained' : 'outlined'}
                 data-testid={`stage-action-${a.kind}`}
-                onClick={() => run(a)}
+                disabled={a.kind === 'preview_wait'}
+                {...(a.href
+                  ? { href: a.href, target: '_blank', rel: 'noreferrer noopener' }
+                  : { onClick: () => run(a) })}
               >
                 {a.label}
               </Button>

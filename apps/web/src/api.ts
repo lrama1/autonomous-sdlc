@@ -17,6 +17,7 @@ import {
   interactionSchema,
   interruptionMetricsSchema,
   meSchema,
+  mainPreviewSchema,
   previewSchema,
   securitySchema,
   smokeSchema,
@@ -41,6 +42,7 @@ import type {
   InterruptionMetricsDto,
   Me,
   MonthlyBudgetDto,
+  MainPreviewDto,
   PreviewDto,
   SecurityDto,
   SmokeDto,
@@ -126,6 +128,18 @@ export const getProfile = (): Promise<AttentionProfile> =>
 
 export const getPreview = (id: string): Promise<PreviewDto> =>
   call(`/api/interactions/${id}/preview`, previewSchema);
+
+export const getMainPreview = (initiativeId: string): Promise<MainPreviewDto> =>
+  call(`/api/initiatives/${initiativeId}/preview`, mainPreviewSchema);
+
+export const startMainPreview = (initiativeId: string) =>
+  call(
+    `/api/initiatives/${initiativeId}/preview/start`,
+    z.object({ id: z.string(), state: z.string() }),
+    {
+      method: 'POST',
+    },
+  );
 
 export const startPlatformPreview = (interactionId: string) =>
   call(

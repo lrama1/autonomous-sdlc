@@ -5,7 +5,7 @@ import { interaction, previewRun } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { choosePreview } from '@sdlc/core';
 import type { PreviewCandidate } from '@sdlc/core';
-import { previewSchema } from '@sdlc/schemas';
+import { mainPreviewSchema, previewSchema } from '@sdlc/schemas';
 import type { PreviewDto } from '@sdlc/schemas';
 import { GitHubError } from './github-app.js';
 import type { GitHubService } from './github-service.js';
@@ -133,6 +133,48 @@ export function registerPreviewRoutes(
       });
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const out = await svc.start(id, me.id);
+    if (!out.ok)
+      return reply.code(out.status).send({ error: { code: out.code, message: out.message } });
+    return reply.code(out.existing ? 200 : 202).send({ id: out.row.id, state: out.row.state });
+  });
+
+  // The same sandbox preview, of the tip of the branch the tasks merged into: the app the build produced.
+  app.get('/api/initiatives/:id/preview', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const svc = previews();
+    const mine = svc ? await svc.forMain(id) : null;
+    const live = mine?.state === 'starting' || mine?.state === 'ready';
+    return mainPreviewSchema.parse({
+      available: svc !== null,
+      id: mine?.id ?? null,
+      state: mine?.state ?? 'none',
+      url: live ? (mine?.url ?? null) : null,
+      sha: mine?.headSha ?? null,
+      expiresAt: mine?.expiresAt?.toISOString() ?? null,
+      detail: mine?.detail ?? null,
+      ttlMinutes,
+    });
+  });
+
+  app.post('/api/initiatives/:id/preview/start', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    if (!holdsAHat(me))
+      return reply.code(403).send({
+        error: { code: 'wrong_role', message: 'Only a person with a role can start a preview.' },
+      });
+    const svc = previews();
+    if (!svc)
+      return reply.code(409).send({
+        error: {
+          code: 'previews_off',
+          message: 'This platform is not set up to run previews (it needs the Docker runner).',
+        },
+      });
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const out = await svc.startMain(id, me.id);
     if (!out.ok)
       return reply.code(out.status).send({ error: { code: out.code, message: out.message } });
     return reply.code(out.existing ? 200 : 202).send({ id: out.row.id, state: out.row.state });

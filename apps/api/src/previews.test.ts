@@ -44,6 +44,7 @@ const gh = {
   state: 'open',
   config: CONFIG as string | null,
   calls: [] as string[],
+  mainSha: null as string | null,
 };
 
 class FakeHost implements PreviewHost {
@@ -176,6 +177,10 @@ beforeAll(async () => {
         head: { sha: gh.headOf.get(Number(pr[1])) ?? sha(0), ref: 'agent/run/change' },
         base: { ref: 'main' },
       });
+    if (/\/git\/ref\/heads\/main$/.test(url)) {
+      if (gh.mainSha === null) return json(404, { message: 'Not Found' });
+      return json(200, { object: { sha: gh.mainSha } });
+    }
     if (url.includes('/contents/.sdlc/preview.yaml')) {
       if (gh.config === null) return json(404, { message: 'Not Found' });
       return json(200, {
@@ -244,6 +249,76 @@ afterAll(async () => {
   await devDb?.stop();
   await rm(dataDir, { recursive: true, force: true }).catch(() => {});
 }, 60_000);
+
+describe('a preview of what the build produced', () => {
+  const startMain = (headers: Record<string, string>, id: string) =>
+    app.inject({ method: 'POST', url: `/api/initiatives/${id}/preview/start`, headers });
+  const viewMain = (headers: Record<string, string>, id: string) =>
+    app.inject({ method: 'GET', url: `/api/initiatives/${id}/preview`, headers });
+
+  it('runs the tip of the integration branch, and is replaced when the branch moves', async () => {
+    const r = await review();
+    const who = await newPerson();
+    gh.mainSha = sha(901);
+    expect((await viewMain(who.headers, r.initiativeId)).json()).toMatchObject({
+      available: true,
+      state: 'none',
+      url: null,
+    });
+
+    const a = await startMain(who.headers, r.initiativeId);
+    expect(a.statusCode).toBe(202);
+    await settle();
+    const ready = (await viewMain(who.headers, r.initiativeId)).json();
+    expect(ready).toMatchObject({
+      state: 'ready',
+      sha: sha(901),
+      url: expect.stringContaining('http://127.0.0.1:'),
+    });
+    // The config is read at the branch's commit.
+    expect(gh.calls.some((c) => c.includes(`ref=${sha(901)}`))).toBe(true);
+
+    const again = await startMain(who.headers, r.initiativeId);
+    expect(again.statusCode).toBe(200);
+    expect((again.json() as { id: string }).id).toBe(ready.id);
+
+    gh.mainSha = sha(902);
+    const next = await startMain(who.headers, r.initiativeId);
+    expect(next.statusCode).toBe(202);
+    await settle();
+    expect(await rowOf(ready.id)).toMatchObject({
+      state: 'stopped',
+      detail: 'main has a new commit.',
+    });
+    expect((await viewMain(who.headers, r.initiativeId)).json()).toMatchObject({ sha: sha(902) });
+    // The pull request's own preview is a different thing.
+    expect((await view(who.headers, r.row.id)).json().platform.state).toBe('none');
+  });
+
+  it('is stopped like any other preview, and needs a role to start', async () => {
+    const r = await review();
+    const who = await newPerson();
+    const nobody = await newPerson([]);
+    gh.mainSha = sha(903);
+    expect((await startMain(nobody.headers, r.initiativeId)).statusCode).toBe(403);
+    const { id } = (await startMain(who.headers, r.initiativeId)).json() as { id: string };
+    await settle();
+    expect((await stopIt(who.headers, id)).statusCode).toBe(200);
+    expect((await viewMain(who.headers, r.initiativeId)).json()).toMatchObject({
+      state: 'stopped',
+      url: null,
+    });
+  });
+
+  it('says so when the branch has no commit to run', async () => {
+    const r = await review();
+    const who = await newPerson();
+    gh.mainSha = null;
+    const res = await startMain(who.headers, r.initiativeId);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('no_branch');
+  });
+});
 
 describe('a preview the platform runs', () => {
   it('starts when a person asks, shows as ready in the review pack, and says who started it', async () => {

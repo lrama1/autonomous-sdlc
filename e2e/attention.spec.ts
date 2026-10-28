@@ -706,6 +706,76 @@ test('a failed build task is named on the build stage, with Retry and Skip right
   await build.getByRole('button', { name: 'Retry T1' }).click();
   await expect(page.getByTestId('note')).toContainText('T1 will run again');
 });
+test('the build box offers a preview of the built app once something has merged, and links to it when it runs', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [design] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G1',
+      state: 'answered',
+      title: `Review PR #92: design ${randomUUID().slice(0, 6)}`,
+      roleNeeded: 'architect',
+      contextCard: { kind: 'pull_request', prNumber: 92 },
+    })
+    .returning();
+  const [plan] = await db
+    .insert(buildPlan)
+    .values({
+      initiativeId: f.initiativeId,
+      designInteractionId: design!.id,
+      designPath: 'docs/design/previewable.md',
+      designSha: 'abc123',
+      state: 'done',
+      detail: 'Every task is merged or skipped.',
+      startedBy: f.personId,
+    })
+    .returning();
+  await db.insert(buildTask).values({
+    planId: plan!.id,
+    key: 'T1',
+    position: 0,
+    title: 'Add the route',
+    role: 'backend_engineer',
+    paths: ['src/server.js'],
+    doneWhen: ['it answers'],
+    state: 'merged',
+  });
+  let state: 'none' | 'starting' | 'ready' = 'none';
+  const dto = () => ({
+    available: true,
+    id: state === 'none' ? null : 'p1',
+    state,
+    url: state === 'ready' ? 'https://preview.example.test/p1/' : null,
+    sha: state === 'none' ? null : 'abc123',
+    expiresAt: null,
+    detail: null,
+    ttlMinutes: 30,
+  });
+  await page.route(`**/api/initiatives/${f.initiativeId}/preview`, (route) =>
+    route.fulfill({ json: dto() }),
+  );
+  await page.route(`**/api/initiatives/${f.initiativeId}/preview/start`, (route) => {
+    state = 'starting';
+    setTimeout(() => (state = 'ready'), 1500);
+    return route.fulfill({ status: 202, json: { id: 'p1', state: 'starting' } });
+  });
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
+  const build = page.getByTestId('stage-build');
+  await build.getByRole('button', { name: 'Preview the built app' }).click();
+  await expect(page.getByTestId('note')).toContainText('Starting the built app');
+  const open = build.getByRole('link', { name: 'Open the built app' });
+  await expect(open).toHaveAttribute('href', 'https://preview.example.test/p1/', {
+    timeout: 15_000,
+  });
+  await expect(build.getByRole('button', { name: 'Stop the preview' })).toBeVisible();
+});
 test('a task that failed twice asks a person why it failed and takes their words for the next attempt', async ({
   page,
 }) => {
