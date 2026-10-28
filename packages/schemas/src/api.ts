@@ -313,6 +313,8 @@ export const previewSchema = z.object({
   sha: z.string().nullable(),
   headSha: z.string(),
   detail: z.string(),
+  // The change holds only documents (a spec, a design), so there is no program to run.
+  docsOnly: z.boolean().optional(),
   // The preview the platform itself runs from the pull request, if that is switched on.
   platform: z.object({
     available: z.boolean(),

@@ -101,7 +101,7 @@ async function newPerson(roles: string[] = ['backend_engineer']) {
 }
 
 /** An open pull request review, on its own pull request number. */
-async function review(o: { mode?: string; kind?: string } = {}) {
+async function review(o: { mode?: string; kind?: string; paths?: string[] } = {}) {
   const f = await createRunFixture(db);
   await db
     .update(initiative)
@@ -140,6 +140,7 @@ async function review(o: { mode?: string; kind?: string } = {}) {
         prNumber,
         prUrl: 'https://github.com/o/r/pull/7',
         headSha: sha(prNumber),
+        ...(o.paths ? { diff: { changedPaths: o.paths } } : {}),
       },
     })
     .returning();
@@ -320,6 +321,39 @@ describe('a preview of what the build produced', () => {
   });
 });
 
+describe('a change that only touches documents', () => {
+  it('has nothing to run: the panel says so, a start is refused, and autopilot starts nothing', async () => {
+    const docs = await review({ mode: 'autopilot', paths: ['docs/spec/thing.md', 'README.md'] });
+    const code = await review({ mode: 'autopilot', paths: ['docs/design/x.md', 'src/app.ts'] });
+    const who = await newPerson();
+
+    const shown = (await view(who.headers, docs.row.id)).json();
+    expect(shown).toMatchObject({ docsOnly: true, state: 'none' });
+    expect(shown.platform.available).toBe(false);
+    expect(shown.detail).toContain('only touches documents');
+    const refused = await start(who.headers, docs.row.id);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error.code).toBe('nothing_to_run');
+
+    await app.previews()!.tick();
+    await settle();
+    expect(
+      await db.select().from(previewRun).where(eq(previewRun.interactionId, docs.row.id)),
+    ).toHaveLength(0);
+    // A change with any code in it is still previewed.
+    expect(
+      await db.select().from(previewRun).where(eq(previewRun.interactionId, code.row.id)),
+    ).toHaveLength(1);
+    expect((await view(who.headers, code.row.id)).json().docsOnly).toBeUndefined();
+  });
+
+  it('treats a review whose files are not known as code', async () => {
+    const unknown = await review({ mode: 'balanced' });
+    const who = await newPerson();
+    expect((await start(who.headers, unknown.row.id)).statusCode).toBe(202);
+    await settle();
+  });
+});
 describe('a preview the platform runs', () => {
   it('starts when a person asks, shows as ready in the review pack, and says who started it', async () => {
     const r = await review();

@@ -744,6 +744,28 @@ test('a protected-path ask shows the patch, and recommends allowing a file the t
   await expect(ask.getByText('recommended')).toBeVisible();
 });
 
+test('a spec review has no preview to start, and says why', async ({ page }) => {
+  const f = await createRunFixture(db);
+  const title = `Review PR: Draft the spec ${randomUUID().slice(0, 6)}`;
+  await db.insert(interaction).values({
+    initiativeId: f.initiativeId,
+    runId: f.runId,
+    type: 'review',
+    checkpointId: 'G1',
+    title,
+    contextCard: { ...prCard, diff: { changedPaths: ['docs/spec/thing.md'] } },
+    blocks: [{ runId: f.runId }],
+    roleNeeded: 'backend_engineer',
+  });
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+  const preview = ask.getByTestId('preview');
+  await expect(preview).toContainText('Nothing to run: this change only touches documents.');
+  await expect(preview.getByRole('button')).toHaveCount(0);
+});
+
 test('a person who started the run is told up front that they may not decide it', async ({
   page,
 }) => {
