@@ -70,7 +70,9 @@ export function startProgram(
 ): { child: ChildProcess; done: Promise<number> } {
   // Without an install line, a repository that lists packages still gets them, so the app can start.
   const install = env.install ?? DEFAULT_INSTALL;
-  const script = `(${install}) && (${env.start})`;
+  // The image sets NODE_ENV=production, which makes npm skip devDependencies. A build step in the start command (vite, tsc)
+  // needs them, so the install runs without it. The start command keeps it.
+  const script = `(unset NODE_ENV; ${install}) && (${env.start})`;
   const child = spawn('sh', ['-c', script], { cwd: env.dir, env: childEnv, stdio: 'inherit' });
   const done = new Promise<number>((resolve) => {
     child.on('error', () => resolve(127));

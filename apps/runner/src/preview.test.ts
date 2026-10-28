@@ -94,6 +94,22 @@ describe.skipIf(process.platform === 'win32')('running a preview', () => {
     await expect(readFile(path.join(work, 'ran.txt'))).rejects.toThrow();
   });
 
+  it('installs without NODE_ENV, so devDependencies come too, and starts with it', async () => {
+    const work = path.join(dir, 'work5');
+    await mkdir(work, { recursive: true });
+    const env = {
+      codeUrl: '',
+      install: 'echo "[$NODE_ENV]" > install-env.txt',
+      start: 'echo "[$NODE_ENV]" > start-env.txt',
+      dir: work,
+    };
+    expect(
+      await startProgram(env, { PATH: process.env.PATH ?? '', NODE_ENV: 'production' }).done,
+    ).toBe(0);
+    expect((await readFile(path.join(work, 'install-env.txt'), 'utf8')).trim()).toBe('[]');
+    expect((await readFile(path.join(work, 'start-env.txt'), 'utf8')).trim()).toBe('[production]');
+  });
+
   it('installs packages by itself when the repository lists some and the preview file has no install line', async () => {
     const work = path.join(dir, 'work4');
     const bin = path.join(dir, 'bin');
