@@ -81,3 +81,20 @@ export async function pushBranch(dir: string, branch: string, token: string): Pr
 export async function fetchOrigin(dir: string, token: string): Promise<void> {
   await git(dir, ['fetch', '--quiet', 'origin'], { token });
 }
+
+/** What the work changed in the given paths, as a patch, cut to a length a person can read in a card. */
+export async function diffExcerpt(
+  dir: string,
+  integrationBranch: string,
+  paths: string[],
+  max = 3000,
+): Promise<string> {
+  if (paths.length === 0) return '';
+  const r = await git(
+    dir,
+    ['diff', '--no-color', '--unified=2', `origin/${integrationBranch}...HEAD`, '--', ...paths],
+    { allowFail: true },
+  );
+  const out = r.out.trim();
+  return out.length > max ? `${out.slice(0, max)}\n[cut]` : out;
+}

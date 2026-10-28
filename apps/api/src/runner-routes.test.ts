@@ -36,6 +36,7 @@ import {
   allowedProtectedPaths,
   buildResumeMessage,
   buildTaskText,
+  protectedPathAdvice,
   settledAssumptionLines,
   slugify,
 } from './runner-routes.js';
@@ -560,6 +561,49 @@ describe('triggers', () => {
     expect(run).toMatchObject({ state: 'parked', parkReason: interactionId });
   });
 
+  it('recommends allowing a protected file the task itself asks for, and discarding one nobody mentioned', async () => {
+    const asked = await setup({ state: 'running' });
+    await db
+      .update(agentRun)
+      .set({ task: 'Update the smoke checks. Edit .sdlc/preview.yaml and keep the rest.' })
+      .where(eq(agentRun.id, asked.runId));
+    const a = await post(asked.token, '/runner/trigger', {
+      kind: 'protected_path',
+      summary: 'The change edits protected paths: .sdlc/preview.yaml\n\n-  - get: /a\n+  - get: /b',
+      paths: ['.sdlc/preview.yaml'],
+    });
+    const [yes] = await db
+      .select()
+      .from(interaction)
+      .where(eq(interaction.id, (await j(a)).interactionId));
+    expect(yes).toMatchObject({ recommendation: 'allow' });
+    expect(yes!.contextCard).toMatchObject({ whyNow: expect.stringContaining('asks for') });
+    expect((yes!.contextCard as { summary: string }).summary).toContain('+  - get: /b');
+
+    const stray = await setup({ state: 'running' });
+    const b = await post(stray.token, '/runner/trigger', {
+      kind: 'protected_path',
+      summary: 'Edited the CI workflow',
+      paths: ['.github/workflows/ci.yml'],
+    });
+    const [no] = await db
+      .select()
+      .from(interaction)
+      .where(eq(interaction.id, (await j(b)).interactionId));
+    expect(no).toMatchObject({ recommendation: 'discard' });
+    expect(no!.contextCard).toMatchObject({
+      whyNow: expect.stringContaining('Nothing in the task'),
+    });
+  });
+
+  it('wants every path named before it recommends allowing', () => {
+    const task = 'Edit .sdlc/preview.yaml.';
+    expect(protectedPathAdvice(task, ['.sdlc/preview.yaml']).recommend).toBe('allow');
+    expect(protectedPathAdvice(task, ['.sdlc/preview.yaml', 'scripts/x.sh']).recommend).toBe(
+      'discard',
+    );
+    expect(protectedPathAdvice(task, []).recommend).toBe('discard');
+  });
   it('repeated verification failures become a question and park the run', async () => {
     const f = await setup({ state: 'running' });
     const res = await post(f.token, '/runner/trigger', {

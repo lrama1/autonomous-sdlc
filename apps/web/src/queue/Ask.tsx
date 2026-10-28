@@ -174,7 +174,32 @@ export function Ask({
       ]
     : [
         ...((c.context ?? c.summary)
-          ? ([['What it was doing', c.context ?? c.summary]] as Array<[string, React.ReactNode]>)
+          ? ([
+              [
+                'What it was doing',
+                c.kind === 'protected_path' ? (
+                  // The first line says which paths; what follows is the patch the person is asked to allow.
+                  <Box
+                    key="p"
+                    component="pre"
+                    data-testid="protected-patch"
+                    sx={{
+                      m: 0,
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      maxHeight: 320,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {c.context ?? c.summary}
+                  </Box>
+                ) : (
+                  (c.context ?? c.summary)
+                ),
+              ],
+            ] as Array<[string, React.ReactNode]>)
           : []),
         ...(c.whyNow ? ([['Why it needs you', c.whyNow]] as Array<[string, React.ReactNode]>) : []),
         ...(c.kind === 'integration_proposal'

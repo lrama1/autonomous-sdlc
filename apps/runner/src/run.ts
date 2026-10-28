@@ -15,6 +15,7 @@ import {
   commitLeftovers,
   commitsAhead,
   configureRepo,
+  diffExcerpt,
   fetchOrigin,
   pushBranch,
 } from './git.js';
@@ -305,9 +306,11 @@ export async function runOnce(env: RunnerEnv): Promise<ExitReason> {
       const blockedPaths = diff.protectedPathsTouched.filter((p) => !spec.allowedPaths.includes(p));
       if (blockedPaths.length > 0) {
         events.push([{ type: 'trigger.protected_path', payload: { paths: blockedPaths } }]);
+        // The person is asked to allow it, so they see what they would be allowing.
+        const patch = await diffExcerpt(repoDir, spec.repo.integrationBranch, blockedPaths);
         await api.trigger(
           'protected_path',
-          `The change edits protected paths: ${blockedPaths.join(', ')}`,
+          `The change edits protected paths: ${blockedPaths.join(', ')}${patch ? `\n\n${patch}` : ''}`,
           blockedPaths,
         );
         await events.flush();

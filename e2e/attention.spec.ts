@@ -708,6 +708,42 @@ test('a failed smoke test can be explained, and the reading sent to the engineer
   await expect.poll(() => sent).toBe(1);
 });
 
+test('a protected-path ask shows the patch, and recommends allowing a file the task asked for', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Protected path changed: .sdlc/preview.yaml ${randomUUID().slice(0, 6)}`;
+  await db.insert(interaction).values({
+    initiativeId: f.initiativeId,
+    runId: f.runId,
+    type: 'decision',
+    title,
+    hardStop: true,
+    contextCard: {
+      kind: 'protected_path',
+      summary:
+        'The change edits protected paths: .sdlc/preview.yaml\n\n-  - get: /api/accounts\n+  - get: /api/accounts\n+    status: 401',
+      paths: ['.sdlc/preview.yaml'],
+      whyNow: 'The task asks for a change to this file, so this edit is what was wanted.',
+    },
+    options: [
+      { id: 'allow', label: 'Allow this change to the protected path' },
+      { id: 'discard', label: 'Discard the edits to protected paths' },
+    ],
+    recommendation: 'allow',
+    blocks: [{ runId: f.runId }],
+    roleNeeded: 'platform_admin',
+  });
+  await signInAs(page, /Dev Admin/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+  await expect(ask.getByTestId('protected-patch')).toContainText('+    status: 401');
+  await expect(ask).toContainText('this edit is what was wanted');
+  await expect(ask.getByRole('radio', { name: /allow/ })).toBeChecked();
+  await expect(ask.getByText('recommended')).toBeVisible();
+});
+
 test('a person who started the run is told up front that they may not decide it', async ({
   page,
 }) => {
