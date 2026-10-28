@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { InteractionDto } from '@sdlc/schemas';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -41,16 +42,34 @@ export function CheckPanel({
   testId,
   state,
   status,
+  required = false,
   children,
 }: {
   title: string;
   testId: string;
   state: string;
   status?: ReactNode;
+  /** This check must be dealt with before the change can be approved. */
+  required?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <Paper data-testid={testId} data-state={state} sx={{ p: 1.5 }}>
+    <Paper
+      data-testid={testId}
+      data-state={state}
+      data-required={required}
+      tabIndex={-1}
+      sx={{
+        p: 1.5,
+        // A check that stands in the way of approving is marked, so it is not mistaken for an optional one.
+        ...(required && {
+          borderLeft: 4,
+          borderLeftStyle: 'solid',
+          borderLeftColor: 'warning.main',
+          outline: 0,
+        }),
+      }}
+    >
       <Stack
         direction="row"
         spacing={1}
@@ -60,6 +79,14 @@ export function CheckPanel({
           {title}
         </Typography>
         {status}
+        {required && (
+          <Chip
+            size="small"
+            color="warning"
+            label="Required before you can approve"
+            data-testid="required-chip"
+          />
+        )}
       </Stack>
       {children && <Box sx={{ mt: 1 }}>{children}</Box>}
     </Paper>

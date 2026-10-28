@@ -10,6 +10,7 @@ import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Link from '@mui/material/Link';
+import Tooltip from '@mui/material/Tooltip';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import Stack from '@mui/material/Stack';
@@ -19,6 +20,7 @@ import { ApiProblem, answerInteraction, didntNeedToAsk, snoozeInteraction } from
 import { TYPE_LABEL, formatSpan, roleLabel } from '../labels';
 import { PreviewPanel } from './PreviewPanel';
 import { ReviewAssumptions, undecidedNote } from './ReviewAssumptions';
+import { blockersOf, stopsApprove, stopsSendingBack } from './blockers';
 import { ReviewFlow } from './ReviewFlow';
 import { SecurityPanel } from './SecurityPanel';
 import { SmokePanel } from './SmokePanel';
@@ -112,6 +114,17 @@ export function Ask({
   };
 
   const isDecision = i.type === 'review' || i.type === 'checkpoint';
+  const blockers = isDecision
+    ? blockersOf({ smoke, security, youMayNotDecide: i.youMayNotDecide })
+    : [];
+  const approveBlocked = stopsApprove(blockers);
+  const sendBackBlocked = stopsSendingBack(blockers);
+  // Takes the person to the check that clears a blocker, and puts the cursor on its button.
+  const goTo = (panel: 'smoke' | 'security') => {
+    const el = ref.current?.querySelector<HTMLElement>(`[data-testid="${panel}"]`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+  };
   const mine = isDecision && i.runId ? assumptions.filter((a) => a.runId === i.runId) : [];
   const recommended = options.find((o) => o.id === i.recommendation);
   const snoozeButton = !i.hardStop && (
@@ -267,8 +280,17 @@ export function Ask({
             <>
               <ReviewFlow verified={checksPassed(c.verify)} smoke={smoke} security={security} />
               <PreviewPanel id={i.id} />
-              <SmokePanel id={i.id} onData={setSmoke} />
-              <SecurityPanel id={i.id} onSentBack={onAnswered} onData={setSecurity} />
+              <SmokePanel
+                id={i.id}
+                onData={setSmoke}
+                required={blockers.some((b) => b.id === 'smoke')}
+              />
+              <SecurityPanel
+                id={i.id}
+                onSentBack={onAnswered}
+                onData={setSecurity}
+                required={blockers.some((b) => b.id === 'security')}
+              />
             </>
           )}
         </Stack>
@@ -289,21 +311,25 @@ export function Ask({
               spacing={1}
               sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
             >
-              <Button
-                variant="contained"
-                disabled={busy}
-                onClick={() =>
-                  send(
-                    { decision: 'approved', answer: text },
-                    'Approved. The change can merge once the checks are green.',
-                  )
-                }
-              >
-                Approve
-              </Button>
+              <Tooltip title={approveBlocked ? blockers[0]!.reason : ''}>
+                <span>
+                  <Button
+                    variant="contained"
+                    disabled={busy || approveBlocked}
+                    onClick={() =>
+                      send(
+                        { decision: 'approved', answer: text },
+                        'Approved. The change can merge once the checks are green.',
+                      )
+                    }
+                  >
+                    Approve
+                  </Button>
+                </span>
+              </Tooltip>
               <Button
                 variant="outlined"
-                disabled={busy}
+                disabled={busy || sendBackBlocked}
                 onClick={() =>
                   send(
                     { decision: 'changes_requested', answer: text },
@@ -316,13 +342,45 @@ export function Ask({
               <Button
                 variant="outlined"
                 color="error"
-                disabled={busy}
+                disabled={busy || sendBackBlocked}
                 onClick={() => send({ decision: 'rejected', answer: text }, 'Rejected.')}
               >
                 Reject
               </Button>
               {snoozeButton}
             </Stack>
+            {blockers.length > 0 && (
+              <Alert
+                severity="warning"
+                variant="outlined"
+                data-testid="approve-blocked"
+                sx={{ mt: 1.25 }}
+              >
+                <Typography variant="subtitle2" component="div" sx={{ mb: 0.25 }}>
+                  {sendBackBlocked ? 'You cannot decide this one' : 'Approve is waiting on'}
+                </Typography>
+                <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                  {blockers.map((b) => (
+                    <li key={b.id} data-testid={`blocker-${b.id}`}>
+                      {b.reason}
+                      {b.panel && (
+                        <>
+                          {' '}
+                          <Link
+                            component="button"
+                            type="button"
+                            variant="body2"
+                            onClick={() => goTo(b.panel!)}
+                          >
+                            Go to it
+                          </Link>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </Box>
+              </Alert>
+            )}
             {undecidedNote(mine.length) && (
               <Typography
                 variant="caption"

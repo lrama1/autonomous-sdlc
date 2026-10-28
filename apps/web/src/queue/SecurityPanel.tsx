@@ -33,10 +33,13 @@ export function SecurityPanel({
   id,
   onSentBack,
   onData,
+  required = false,
 }: {
   id: string;
   onSentBack: (note: string) => void;
   onData?: (s: SecurityDto | null) => void;
+  /** Approving waits for this review. */
+  required?: boolean;
 }) {
   const [s, setS] = useState<SecurityDto | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export function SecurityPanel({
       title="Security review"
       testId="security"
       state={state}
+      required={required}
       status={
         <Chip
           data-testid="security-state"
@@ -215,7 +219,7 @@ export function SecurityPanel({
         >
           <Button
             size="small"
-            variant="outlined"
+            variant={required && (!run || run.state === 'error') ? 'contained' : 'outlined'}
             disabled={busy || run?.state === 'running'}
             onClick={() => void act(() => startSecurity(id))}
           >

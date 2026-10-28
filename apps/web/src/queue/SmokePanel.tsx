@@ -31,7 +31,16 @@ const COLOR = {
  * The smoke test of the commit under review. The repository lists the checks; a person starts them; the review cannot be
  * approved until they pass or a person overrides them with a reason that stays with the pull request.
  */
-export function SmokePanel({ id, onData }: { id: string; onData?: (s: SmokeDto | null) => void }) {
+export function SmokePanel({
+  id,
+  onData,
+  required = false,
+}: {
+  id: string;
+  onData?: (s: SmokeDto | null) => void;
+  /** Approving waits for this test. */
+  required?: boolean;
+}) {
   const [s, setS] = useState<SmokeDto | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,6 +94,7 @@ export function SmokePanel({ id, onData }: { id: string; onData?: (s: SmokeDto |
       title="Smoke test"
       testId="smoke"
       state={state}
+      required={required}
       status={
         <Chip
           data-testid="smoke-state"
@@ -135,7 +145,7 @@ export function SmokePanel({ id, onData }: { id: string; onData?: (s: SmokeDto |
           {s.required === 'required' && (
             <Button
               size="small"
-              variant="outlined"
+              variant={required && (!run || run.state === 'error') ? 'contained' : 'outlined'}
               disabled={busy || run?.state === 'running'}
               onClick={() => void act(() => startSmoke(id))}
             >
