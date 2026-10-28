@@ -62,6 +62,15 @@ export class PreviewService {
     this.deps.log?.(line);
   }
 
+  /** Whether another preview can start now. A person's own request is never held back by this, but an automatic one is. */
+  async hasFreeSlot(): Promise<boolean> {
+    const active = await this.deps.db
+      .select({ id: previewRun.id })
+      .from(previewRun)
+      .where(inArray(previewRun.state, [...ACTIVE]));
+    return active.length < this.deps.settings.maxActive;
+  }
+
   /** Waits for starts that are in progress. For tests and shutdown. */
   async idle(): Promise<void> {
     await Promise.allSettled([...this.running]);
