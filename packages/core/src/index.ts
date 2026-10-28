@@ -8,6 +8,7 @@ export * from './metrics.js';
 export * from './autonomy.js';
 export * from './map.js';
 export * from './security.js';
+export * from './smoke-diagnosis.js';
 export * from './triggers.js';
 export * from './preview.js';
 export * from './preview-config.js';

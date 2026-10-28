@@ -481,6 +481,14 @@ export const smokeRun = pgTable(
       .notNull()
       .default([]),
     detail: text('detail'),
+    // An AI's reading of why a failed run failed. It advises. Nothing here lets a review through.
+    diagnosis: jsonb('diagnosis').$type<{
+      verdict: 'code' | 'checks' | 'environment' | 'unclear';
+      summary: string;
+      recommendation: string;
+      instruction: string;
+      at: string;
+    }>(),
     startedBy: uuid('started_by').references(() => person.id),
     createdAt: createdAt(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
