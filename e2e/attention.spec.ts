@@ -637,6 +637,77 @@ test('Approve is disabled until the required check has run, and the check is mar
   await expect(panel).toHaveAttribute('data-required', 'false');
 });
 
+test('a failed smoke test can be explained, and the reading sent to the engineer in one click', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review with a failed smoke test ${randomUUID().slice(0, 6)}`;
+  const review = await reviewOf(f, title);
+  let diagnosis: Record<string, unknown> | null = null;
+  const smoke = () => ({
+    available: true,
+    required: 'required',
+    detail: null,
+    commit: 'abc123',
+    run: {
+      id: 's1',
+      state: 'failed',
+      results: [
+        { kind: 'get', label: 'GET /health', ok: true, detail: '200', ms: 5 },
+        {
+          kind: 'get',
+          label: 'GET /api/accounts',
+          ok: false,
+          detail: 'expected 200, got 401',
+          ms: 5,
+        },
+      ],
+      detail: null,
+      diagnosis,
+      by: null,
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    },
+    blocks: 'The smoke test failed on this commit. Run it again, or override it with a reason.',
+  });
+  await page.route(`**/api/interactions/${review.id}/smoke`, (route) =>
+    route.fulfill({ json: smoke() }),
+  );
+  await page.route(`**/api/interactions/${review.id}/smoke/diagnose`, (route) => {
+    diagnosis = {
+      verdict: 'checks',
+      summary: 'GET /api/accounts now needs a login, so the old check gets 401.',
+      recommendation: 'Update the smoke checks.',
+      instruction: 'Edit .sdlc/preview.yaml.',
+      at: new Date().toISOString(),
+    };
+    return route.fulfill({ json: diagnosis });
+  });
+  let sent = 0;
+  await page.route(`**/api/interactions/${review.id}/smoke/send-back`, (route) => {
+    sent++;
+    return route.fulfill({ status: 201, json: { sent: 1 } });
+  });
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+
+  await expect(ask.getByTestId('smoke-diagnosis')).toHaveCount(0);
+  await ask.getByRole('button', { name: 'Explain why it failed' }).click();
+  const reading = ask.getByTestId('smoke-diagnosis');
+  await expect(reading).toContainText('AI reading, not verified');
+  await expect(reading).toContainText('Likely out-of-date smoke checks');
+  await expect(reading).toContainText('now needs a login');
+  // The reading does not clear the hold on Approve.
+  await expect(ask.getByRole('button', { name: 'Approve' })).toBeDisabled();
+
+  await reading
+    .getByRole('button', { name: 'Ask the engineer to update the smoke checks' })
+    .click();
+  await expect.poll(() => sent).toBe(1);
+});
+
 test('a person who started the run is told up front that they may not decide it', async ({
   page,
 }) => {

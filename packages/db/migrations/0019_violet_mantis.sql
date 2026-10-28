@@ -1,0 +1,1 @@
+ALTER TABLE "smoke_run" ADD COLUMN "diagnosis" jsonb;

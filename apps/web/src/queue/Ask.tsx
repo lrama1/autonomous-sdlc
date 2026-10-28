@@ -299,6 +299,8 @@ export function Ask({
               <SmokePanel
                 id={i.id}
                 onData={setSmoke}
+                onSentBack={onAnswered}
+                sendBackBlocked={sendBackBlocked}
                 required={blockers.some((b) => b.id === 'smoke')}
               />
               <SecurityPanel

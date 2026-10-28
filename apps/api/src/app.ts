@@ -19,6 +19,7 @@ import type { PreviewHost } from './docker-preview.js';
 import { PreviewService } from './previews.js';
 import { registerSmokeRoutes } from './smoke-routes.js';
 import { SmokeService } from './smoke-service.js';
+import { SmokeDiagnosisService } from './smoke-diagnosis.js';
 import { GatewayModel } from './inline-model.js';
 import type { InlineModel } from './inline-model.js';
 import { registerSecurityRoutes } from './security-routes.js';
@@ -191,6 +192,7 @@ export async function buildApp({
   const ruleSet = await loadRules(config.RULES_FILE);
   let smoke: SmokeService | null = null;
   let security: SecurityService | null = null;
+  let diagnosis: SmokeDiagnosisService | null = null;
   const gate = createGate({
     db,
     github: ghService,
@@ -242,6 +244,13 @@ export async function buildApp({
       agent: securityAgent,
       model: securityModel ?? new GatewayModel(config.GATEWAY_URL),
       log: (l) => app.log.info(l),
+    });
+    // Explaining a failed smoke test is the same kind of call: one reading through the gateway, on the same agent.
+    diagnosis = new SmokeDiagnosisService({
+      db,
+      github: ghService,
+      agent: securityAgent,
+      model: securityModel ?? new GatewayModel(config.GATEWAY_URL),
     });
     // The platform starts, and says so on its health page, even when the database is not there yet.
     await security
@@ -301,7 +310,14 @@ export async function buildApp({
   registerPreviewRoutes(app, db, ghService, () => previews, {
     ttlMinutes: config.PREVIEW_TTL_MIN,
   });
-  registerSmokeRoutes(app, db, rules, () => smoke);
+  registerSmokeRoutes(
+    app,
+    db,
+    rules,
+    () => smoke,
+    () => diagnosis,
+    gate,
+  );
   registerSecurityRoutes(app, db, rules, gate, () => security);
   app.decorate('previews', () => previews);
   registerPreviewProxy(app, db, { secret: config.SESSION_SECRET, origin: config.PREVIEW_ORIGIN });

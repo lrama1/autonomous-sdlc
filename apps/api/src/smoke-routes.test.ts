@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
@@ -22,6 +23,8 @@ import type { Db } from '@sdlc/db';
 import { startDevDb } from '@sdlc/dev-db';
 import type { DevDb } from '@sdlc/dev-db';
 import { buildApp } from './app.js';
+import { loadAgents } from './agents.js';
+import type { InlineModel } from './inline-model.js';
 import { loadConfig } from './config.js';
 import type { PreviewHost } from './docker-preview.js';
 import { GitHubClient, secretName } from './github-app.js';
@@ -63,6 +66,17 @@ let db: Db;
 let closeDb: () => Promise<void>;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let bare: Awaited<ReturnType<typeof buildApp>>;
+let diag: Awaited<ReturnType<typeof buildApp>>;
+let quiet: Awaited<ReturnType<typeof buildApp>>;
+const model = { replies: [] as string[], asked: [] as Array<{ system: string; user: string }> };
+const fakeModel: InlineModel = {
+  async ask(_token, q) {
+    model.asked.push({ system: q.system, user: q.messages.map((m) => m.content).join('\n---\n') });
+    const next = model.replies.shift();
+    if (next === undefined) throw new Error('the fake model has nothing to say');
+    return next;
+  },
+};
 let n = 0;
 const sha = (k: number) => `beef${String(k).padStart(36, '0')}`;
 
@@ -216,7 +230,8 @@ beforeAll(async () => {
   const secrets = new MemorySecrets();
   for (const kind of ['agent', 'gate'] as const)
     await secrets.put(secretName(kind, 'private_key'), privateKey);
-  const make = (previewHost?: PreviewHost) =>
+  const agents = await loadAgents(fileURLToPath(new URL('../../../agents', import.meta.url)));
+  const make = (previewHost?: PreviewHost, withModel = false, noAgents = false) =>
     buildApp({
       config: loadConfig({
         DATABASE_URL: devDb.url,
@@ -232,15 +247,25 @@ beforeAll(async () => {
       secrets,
       github: new GitHubClient(githubUrl),
       previewHost,
+      ...(withModel ? { agents, securityModel: fakeModel } : {}),
+      ...(noAgents ? { agents: new Map() } : {}),
     });
   app = await make(new Host());
   await app.ready();
   // The same platform without a way to run previews.
   bare = await make();
   await bare.ready();
+  // And one with the Security agent and a model to ask, which is what explaining a failure needs.
+  diag = await make(new Host(), true);
+  await diag.ready();
+  // The same with no agents at all, so nothing can explain a failure.
+  quiet = await make(new Host(), false, true);
+  await quiet.ready();
 }, 180_000);
 
 beforeEach(() => {
+  model.replies = [];
+  model.asked = [];
   gh.config = CONFIG;
   gh.calls = [];
   target.healthy = true;
@@ -250,6 +275,8 @@ beforeEach(() => {
 afterAll(async () => {
   await app?.close();
   await bare?.close();
+  await diag?.close();
+  await quiet?.close();
   appServer?.closeAllConnections();
   await new Promise((r) => appServer?.close(r));
   await new Promise((r) => server?.close(r));
@@ -489,5 +516,140 @@ describe('the smoke test on a review', () => {
     expect((await start(nobody.headers, r.id)).statusCode).toBe(403);
     const who = await newPerson();
     expect((await get(who.headers, '00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+  });
+});
+
+describe('explaining a failed smoke test', () => {
+  const explain = (headers: Headers, id: string, a = diag) =>
+    a.inject({ method: 'POST', url: `/api/interactions/${id}/smoke/diagnose`, headers });
+  const sendBack = (headers: Headers, id: string) =>
+    diag.inject({ method: 'POST', url: `/api/interactions/${id}/smoke/send-back`, headers });
+  const READING = JSON.stringify({
+    verdict: 'checks',
+    summary: 'GET /items now needs a login, so the old check gets 404.',
+    recommendation: 'Update the smoke checks.',
+    instruction: 'Edit .sdlc/preview.yaml: remove the /items check, keep the rest.',
+  });
+
+  async function failedReview() {
+    const r = await review();
+    const who = await newPerson(['backend_engineer'], diag);
+    target.healthy = false;
+    target.exitCode = 1;
+    const start = await diag.inject({
+      method: 'POST',
+      url: `/api/interactions/${r.id}/smoke/start`,
+      headers: who.headers,
+    });
+    expect(start.statusCode).toBe(202);
+    for (let i = 0; i < 200; i++) {
+      const s = (
+        await diag.inject({
+          method: 'GET',
+          url: `/api/interactions/${r.id}/smoke`,
+          headers: who.headers,
+        })
+      ).json();
+      if (s.run && s.run.state !== 'running') break;
+      await new Promise((x) => setTimeout(x, 25));
+    }
+    return { r, who };
+  }
+
+  it('reads the failure once, keeps the reading with the run, and sends nothing to the model twice', async () => {
+    const { r, who } = await failedReview();
+    model.replies = [READING];
+    const res = await explain(who.headers, r.id);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      verdict: 'checks',
+      recommendation: 'Update the smoke checks.',
+    });
+    // The model saw the failed checks and the smoke file at that commit, not only a verdict to repeat.
+    expect(model.asked).toHaveLength(1);
+    expect(model.asked[0]!.user).toContain('FAILED GET /health');
+    expect(model.asked[0]!.user).toContain('run npm run smoke');
+    expect(model.asked[0]!.user).toContain('smoke:');
+    const shown = (
+      await diag.inject({
+        method: 'GET',
+        url: `/api/interactions/${r.id}/smoke`,
+        headers: who.headers,
+      })
+    ).json();
+    expect(shown.run.diagnosis).toMatchObject({ verdict: 'checks' });
+    // The failure still holds the approval. The reading lets nothing through.
+    expect(shown.blocks).toBeTruthy();
+    expect((await explain(who.headers, r.id)).statusCode).toBe(200);
+    expect(model.asked).toHaveLength(1);
+  });
+
+  it('sends the reading and the failed checks to the engineer as a change request', async () => {
+    const { r, who } = await failedReview();
+    model.replies = [READING];
+    await explain(who.headers, r.id);
+    const sent = await sendBack(who.headers, r.id);
+    expect(sent.statusCode).toBe(201);
+    const [row] = await db.select().from(interaction).where(eq(interaction.id, r.id));
+    expect(row).toMatchObject({ state: 'answered' });
+    const answer = row!.answer as { decision: string; text: string };
+    expect(answer.decision).toBe('changes_requested');
+    expect(answer.text).toContain('Edit .sdlc/preview.yaml: remove the /items check');
+    expect(answer.text).toContain('- GET /health: expected 200, got 500');
+    expect(answer.text).toContain('not verified');
+  });
+
+  it('does not offer a send-back for an environment problem, and says when the answer cannot be read', async () => {
+    const { r, who } = await failedReview();
+    model.replies = [
+      JSON.stringify({
+        verdict: 'environment',
+        summary: 'The preview never answered.',
+        recommendation: 'Run it again.',
+        instruction: '',
+      }),
+    ];
+    expect((await explain(who.headers, r.id)).json()).toMatchObject({ verdict: 'environment' });
+    expect((await sendBack(who.headers, r.id)).json().error.code).toBe('no_diagnosis');
+
+    const other = await failedReview();
+    model.replies = ['I think it is the checks.', 'Still not JSON.'];
+    const bad = await explain(other.who.headers, other.r.id);
+    expect(bad.statusCode).toBe(502);
+    expect(bad.json().error.code).toBe('unreadable');
+  });
+
+  it('needs a failed test, a person with a role, and a platform with the agent on', async () => {
+    const { r, who } = await failedReview();
+    const nobody = await newPerson([], diag);
+    expect((await explain(nobody.headers, r.id)).statusCode).toBe(403);
+    // A platform with no Security agent has nothing to ask.
+    const off = await explain(who.headers, r.id, quiet);
+    expect(off.statusCode).toBe(409);
+    expect(off.json().error.code).toBe('diagnosis_off');
+
+    target.healthy = true;
+    target.exitCode = 0;
+    const fine = await review();
+    const ran = await diag.inject({
+      method: 'POST',
+      url: `/api/interactions/${fine.id}/smoke/start`,
+      headers: who.headers,
+    });
+    expect(ran.statusCode).toBe(202);
+    for (let i = 0; i < 200; i++) {
+      const s = (
+        await diag.inject({
+          method: 'GET',
+          url: `/api/interactions/${fine.id}/smoke`,
+          headers: who.headers,
+        })
+      ).json();
+      if (s.run && s.run.state !== 'running') break;
+      await new Promise((x) => setTimeout(x, 25));
+    }
+    const none = await explain(who.headers, fine.id);
+    expect(none.statusCode).toBe(409);
+    expect(none.json().error.code).toBe('nothing_to_explain');
   });
 });

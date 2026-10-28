@@ -18,6 +18,7 @@ import {
   interruptionMetricsSchema,
   meSchema,
   mainPreviewSchema,
+  smokeDiagnosisSchema,
   previewSchema,
   securitySchema,
   smokeSchema,
@@ -168,6 +169,16 @@ export const overrideSmoke = (interactionId: string, reason: string) =>
     z.object({ id: z.string(), state: z.string() }),
     { method: 'POST', body: { reason } },
   );
+
+export const diagnoseSmoke = (interactionId: string) =>
+  call(`/api/interactions/${interactionId}/smoke/diagnose`, smokeDiagnosisSchema, {
+    method: 'POST',
+  });
+
+export const sendSmokeBack = (interactionId: string) =>
+  call(`/api/interactions/${interactionId}/smoke/send-back`, z.object({ sent: z.number() }), {
+    method: 'POST',
+  });
 
 export const getSecurity = (id: string): Promise<SecurityDto> =>
   call(`/api/interactions/${id}/security`, securitySchema);

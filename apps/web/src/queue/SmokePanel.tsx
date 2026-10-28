@@ -7,7 +7,7 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import { getSmoke, overrideSmoke, startSmoke } from '../api';
+import { diagnoseSmoke, getSmoke, overrideSmoke, sendSmokeBack, startSmoke } from '../api';
 import { CheckPanel } from './shared';
 
 const SMOKE_WORDS: Record<NonNullable<SmokeDto['run']>['state'], string> = {
@@ -27,6 +27,94 @@ const COLOR = {
   none: 'default',
 } as const;
 
+const VERDICT: Record<
+  NonNullable<NonNullable<SmokeDto['run']>['diagnosis']>['verdict'],
+  { label: string; color: 'error' | 'warning' | 'info' | 'default'; action: string | null }
+> = {
+  code: {
+    label: 'Likely a bug in the code',
+    color: 'error',
+    action: 'Ask the engineer to fix the code',
+  },
+  checks: {
+    label: 'Likely out-of-date smoke checks',
+    color: 'warning',
+    action: 'Ask the engineer to update the smoke checks',
+  },
+  environment: {
+    label: 'Likely a problem with the preview, not the code',
+    color: 'info',
+    action: null,
+  },
+  unclear: { label: 'Not clear from what the platform can see', color: 'default', action: null },
+};
+
+/** An AI's reading of why the smoke test failed, and the one next step it suggests. It advises. A person decides. */
+function Diagnosis({
+  diagnosis,
+  busy,
+  sendBackBlocked,
+  onExplain,
+  onSendBack,
+}: {
+  diagnosis: NonNullable<SmokeDto['run']>['diagnosis'] | null;
+  busy: boolean;
+  sendBackBlocked: boolean;
+  onExplain: () => void;
+  onSendBack: () => void;
+}) {
+  if (!diagnosis)
+    return (
+      <Box>
+        <Button size="small" variant="outlined" disabled={busy} onClick={onExplain}>
+          Explain why it failed
+        </Button>
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+          An AI reads the failure and says what to do. It costs a few cents.
+        </Typography>
+      </Box>
+    );
+  const v = VERDICT[diagnosis.verdict];
+  return (
+    <Alert
+      severity="info"
+      variant="outlined"
+      icon={false}
+      data-testid="smoke-diagnosis"
+      data-verdict={diagnosis.verdict}
+      sx={{ '& .MuiAlert-message': { width: '100%' } }}
+    >
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mb: 0.5 }}>
+        <Typography variant="overline" color="text.secondary">
+          AI reading, not verified
+        </Typography>
+        <Chip size="small" color={v.color} label={v.label} />
+      </Stack>
+      <Typography variant="body2">{diagnosis.summary}</Typography>
+      <Typography variant="body2" sx={{ mt: 0.75 }}>
+        <b>Suggested next step:</b> {diagnosis.recommendation}
+      </Typography>
+      {v.action && (
+        <Box sx={{ mt: 1 }}>
+          <Button
+            size="small"
+            variant="contained"
+            disabled={busy || sendBackBlocked}
+            onClick={onSendBack}
+          >
+            {v.action}
+          </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            {diagnosis.verdict === 'checks'
+              ? 'The engineer redoes the task and edits .sdlc/preview.yaml. You are asked to allow that protected file before anything is pushed.'
+              : 'This is the same as Request changes, with the failed checks and the reading in the message.'}
+          </Typography>
+        </Box>
+      )}
+    </Alert>
+  );
+}
+
 /**
  * The smoke test of the commit under review. The repository lists the checks; a person starts them; the review cannot be
  * approved until they pass or a person overrides them with a reason that stays with the pull request.
@@ -35,11 +123,17 @@ export function SmokePanel({
   id,
   onData,
   required = false,
+  onSentBack,
+  sendBackBlocked = false,
 }: {
   id: string;
   onData?: (s: SmokeDto | null) => void;
   /** Approving waits for this test. */
   required?: boolean;
+  /** Called after the failure was sent to the engineer as a change request. */
+  onSentBack?: (note: string) => void;
+  /** This person may not decide this review (their own work), so they cannot send it back either. */
+  sendBackBlocked?: boolean;
 }) {
   const [s, setS] = useState<SmokeDto | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -168,6 +262,20 @@ export function SmokePanel({
             </Typography>
           )}
         </Stack>
+        {run && (run.state === 'failed' || run.state === 'error') && (
+          <Diagnosis
+            diagnosis={run.diagnosis ?? null}
+            busy={busy}
+            sendBackBlocked={sendBackBlocked}
+            onExplain={() => void act(() => diagnoseSmoke(id))}
+            onSendBack={() =>
+              void act(async () => {
+                await sendSmokeBack(id);
+                onSentBack?.('Sent the smoke test failure to the engineer.');
+              })
+            }
+          />
+        )}
         {overriding && (
           <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <TextField

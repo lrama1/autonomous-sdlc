@@ -346,6 +346,16 @@ export const smokeResultSchema = z.object({
   detail: z.string(),
   ms: z.number(),
 });
+export const smokeDiagnosisSchema = z.object({
+  verdict: z.enum(['code', 'checks', 'environment', 'unclear']),
+  summary: z.string(),
+  recommendation: z.string(),
+  // What to tell the engineer, for a code or checks verdict.
+  instruction: z.string(),
+  at: z.string(),
+});
+export type SmokeDiagnosisDto = z.infer<typeof smokeDiagnosisSchema>;
+
 export const smokeSchema = z.object({
   // False when this platform cannot run previews, so it cannot run smoke tests and does not ask for them.
   available: z.boolean(),
@@ -360,6 +370,8 @@ export const smokeSchema = z.object({
       results: z.array(smokeResultSchema),
       // The reason, for an override; what went wrong, for an error.
       detail: z.string().nullable(),
+      // An AI's reading of why it failed, once someone asked for it. It advises; it lets nothing through.
+      diagnosis: smokeDiagnosisSchema.nullable().optional(),
       by: z.string().nullable(),
       startedAt: z.string(),
       finishedAt: z.string().nullable(),
