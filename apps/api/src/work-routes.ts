@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { agentRun, githubApp, initiative, repositoryEntry, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { initiativeCreateSchema, repositoryCreateSchema, runCreateSchema } from '@sdlc/schemas';
+import { suggestKind } from '@sdlc/core';
 import { recordActivity } from './activity.js';
 import { planSpecStart } from './stages.js';
 import type { LoadedAgent } from './agents.js';
@@ -16,6 +17,15 @@ const id = z.object({ id: z.string().uuid() });
 const RETRY_ROLES = ['product_owner', 'architect', 'platform_admin'];
 const RETRY_STEP_ROLES = ['product', 'architect'];
 const FAILED_RUN_STATES = ['failed', 'cancelled', 'budget_exceeded', 'timed_out'];
+/** Whether anyone has started work on this repository before. Then a new initiative is adding to something. */
+async function repositoryHasWork(db: Db, repositoryId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: initiative.id })
+    .from(initiative)
+    .where(eq(initiative.repositoryId, repositoryId))
+    .limit(1);
+  return Boolean(row);
+}
 const notFound = (what: string) => ({ error: { code: 'not_found', message: `No such ${what}.` } });
 
 export const repoDto = (r: typeof repositoryEntry.$inferSelect) => ({
@@ -36,6 +46,7 @@ const initiativeDto = (i: typeof initiative.$inferSelect) => ({
   goal: i.goal,
   repositoryId: i.repositoryId,
   autonomyMode: i.autonomyMode,
+  kind: i.kind,
   autoStages: i.autoStages,
   referenceLinks: i.referenceLinks,
   state: i.state,
@@ -176,6 +187,7 @@ export function registerWorkRoutes(
         goal: body.goal,
         repositoryId: repo.id,
         autonomyMode: body.autonomyMode,
+        kind: body.kind ?? suggestKind(await repositoryHasWork(db, repo.id)),
         autoStages: body.autoStages,
         referenceLinks: [...new Set(body.referenceLinks)],
         createdBy: me.id,
@@ -187,7 +199,7 @@ export function registerWorkRoutes(
       actorId: me.id,
       initiativeId: row!.id,
       action: 'initiative.created',
-      detail: { title: body.title, repository: repo.fullName },
+      detail: { title: body.title, repository: repo.fullName, kind: row!.kind },
     });
     await planSpecStart(db, agents, row!, me.id);
     return reply.code(201).send(initiativeDto(row!));

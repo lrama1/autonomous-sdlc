@@ -30,6 +30,7 @@ export function registerMapRoutes(
         goal: init.goal,
         referenceLinks: init.referenceLinks,
         autonomyMode: init.autonomyMode,
+        kind: init.kind,
       },
       stages: (await loadStages(db, init)).stages,
     };

@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { BuildPlanDto, MainPreviewDto, Me, StageStartDto } from '@sdlc/schemas';
+import { KIND_HELP, KIND_LABEL } from '@sdlc/schemas';
+import type {
+  BuildPlanDto,
+  InitiativeKindDto,
+  MainPreviewDto,
+  Me,
+  StageStartDto,
+} from '@sdlc/schemas';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -29,6 +36,7 @@ import {
   getStageStarts,
   prepareRelease,
   retryRun,
+  setInitiativeKind,
   retryBuildTask,
   sendBackBuildPlan,
   skipStageStep,
@@ -225,10 +233,28 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
     goal: '',
     repositoryId: '',
     autonomyMode: 'balanced' as 'guided' | 'balanced' | 'autopilot',
+    kind: 'new_app' as InitiativeKindDto,
     autoStages: true,
     referenceLinks: '',
   });
+  // Repositories that already have work in them: a new initiative there is most likely a feature.
+  const [worked, setWorked] = useState<Set<string>>(new Set());
+  const [kindTouched, setKindTouched] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => {
+    getInitiatives().then(
+      (all) =>
+        setWorked(
+          new Set(all.map((i) => String((i as { repositoryId?: unknown }).repositoryId ?? ''))),
+        ),
+      () => {},
+    );
+  }, []);
+  useEffect(() => {
+    if (kindTouched || !f.repositoryId) return;
+    setF((x) => ({ ...x, kind: worked.has(x.repositoryId) ? 'feature' : 'new_app' }));
+  }, [worked, f.repositoryId, kindTouched]);
 
   useEffect(() => {
     getRepositories().then(
@@ -291,6 +317,23 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
                 A Platform Admin adds one on the <a href="#/repositories">Repositories</a> page.
               </Typography>
             )}
+            <TextField
+              select
+              label="Type"
+              value={f.kind}
+              onChange={(e) => {
+                setKindTouched(true);
+                setF({ ...f, kind: e.target.value as InitiativeKindDto });
+              }}
+              helperText={KIND_HELP[f.kind]}
+              slotProps={{ select: { native: true } }}
+            >
+              {(Object.keys(KIND_LABEL) as InitiativeKindDto[]).map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABEL[k]}
+                </option>
+              ))}
+            </TextField>
             <TextField
               select
               label="How much runs on its own"
@@ -520,13 +563,39 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
       {map ? (
         <>
           <Box sx={{ mb: 1.5 }}>
-            <Typography
-              component="p"
-              sx={{ display: 'flex', alignItems: 'center', gap: 1, m: 0, fontSize: '1.05rem' }}
-            >
-              <b>{map.initiative.title}</b>
-              <Chip component="span" variant="outlined" label={map.initiative.autonomyMode} />
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Typography
+                component="p"
+                sx={{ display: 'flex', alignItems: 'center', gap: 1, m: 0, fontSize: '1.05rem' }}
+              >
+                <b>{map.initiative.title}</b>
+                <Chip component="span" variant="outlined" label={map.initiative.autonomyMode} />
+              </Typography>
+              <TextField
+                select
+                size="small"
+                value={map.initiative.kind ?? ''}
+                disabled={!mayControlBuild}
+                onChange={(e) =>
+                  void act(
+                    () => setInitiativeKind(map.initiative.id, e.target.value as InitiativeKindDto),
+                    'The type is saved. Steps that start from now on are written for it.',
+                  )
+                }
+                slotProps={{
+                  select: { native: true },
+                  htmlInput: { 'aria-label': 'Type of initiative' },
+                }}
+                sx={{ minWidth: 150 }}
+              >
+                {map.initiative.kind === null && <option value="">Type not set</option>}
+                {(Object.keys(KIND_LABEL) as InitiativeKindDto[]).map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABEL[k]}
+                  </option>
+                ))}
+              </TextField>
+            </Box>
             <Typography color="text.secondary">{map.initiative.goal}</Typography>
             {map.initiative.referenceLinks.length > 0 && (
               <Typography variant="body2" color="text.secondary">

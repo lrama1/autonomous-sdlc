@@ -48,6 +48,7 @@ import type {
   Me,
   MonthlyBudgetDto,
   AssistantAsk,
+  InitiativeKindDto,
   AssistantConversationDto,
   AssistantMessageDto,
   AssistantReplyDto,
@@ -238,6 +239,12 @@ export const getInterruptions = (days: number): Promise<InterruptionMetricsDto> 
 
 export const getAutopilot = (): Promise<AutopilotDto> => call('/api/autopilot', autopilotSchema);
 
+export const setInitiativeKind = (id: string, kind: InitiativeKindDto) =>
+  call(`/api/initiatives/${id}`, z.object({ id: z.string() }).passthrough(), {
+    method: 'PATCH',
+    body: { kind },
+  });
+
 export const setAutonomyMode = (id: string, autonomyMode: 'guided' | 'balanced' | 'autopilot') =>
   call(`/api/initiatives/${id}`, ok, { method: 'PATCH', body: { autonomyMode } });
 
@@ -290,6 +297,7 @@ const mapSchema = z.object({
     goal: z.string(),
     referenceLinks: z.array(z.string()).default([]),
     autonomyMode: z.string(),
+    kind: z.string().nullable().default(null),
   }),
   stages: z.array(stageSchema),
 });
@@ -350,6 +358,7 @@ export const createInitiative = (body: {
   goal: string;
   repositoryId: string;
   autonomyMode: 'guided' | 'balanced' | 'autopilot';
+  kind?: InitiativeKindDto;
   autoStages: boolean;
   referenceLinks?: string[];
 }) =>

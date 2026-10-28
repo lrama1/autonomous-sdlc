@@ -551,6 +551,7 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
           task.detail?.startsWith(REWORK) ? task.detail.slice(REWORK.length) : undefined,
           task.history.slice(-3),
           task.guidance ?? undefined,
+          init.kind,
         ),
         sponsorPersonId: sponsor,
       });

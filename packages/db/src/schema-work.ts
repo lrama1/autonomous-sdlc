@@ -58,6 +58,8 @@ export const initiative = pgTable('initiative', {
     .notNull()
     .references(() => repositoryEntry.id),
   autonomyMode: text('autonomy_mode').notNull().default('balanced'), // guided | balanced | autopilot
+  // What kind of work this is: new_app | feature | change. Null for work made before the kind existed.
+  kind: text('kind'),
   state: text('state').notNull().default('draft'), // draft | active | paused | done | cancelled
   createdBy: uuid('created_by')
     .notNull()
