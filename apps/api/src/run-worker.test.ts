@@ -273,3 +273,109 @@ describe('stopping', () => {
     expect(l.kill).toHaveBeenCalled();
   });
 });
+
+describe('a live run that no runner is behind', () => {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
+  const sweeper = (staleMs = 10 * 60_000) =>
+    createRunWorker({
+      db,
+      adapter: new FakeAdapter(),
+      apiUrl: 'http://127.0.0.1:8080',
+      maxConcurrent: 5,
+      staleMs,
+      log: () => {},
+    });
+
+  it('is closed once it has been silent too long, so a person can run it again', async () => {
+    const f = await createRunFixture(db, { state: 'running' });
+    await db
+      .update(agentRun)
+      .set({ updatedAt: hoursAgo(1) })
+      .where(eq(agentRun.id, f.runId));
+    await sweeper().tick();
+    expect(await stateOf(f.runId)).toMatchObject({ state: 'failed', exitReason: 'error' });
+    expect(await authenticateRunToken(db, f.token)).toBeNull();
+    const events = await db.select().from(runEvent).where(eq(runEvent.runId, f.runId));
+    expect(events.at(-1)).toMatchObject({ type: 'run.finished', payload: { exitReason: 'error' } });
+  });
+
+  it('is parked, not failed, when it was waiting on a person', async () => {
+    const f = await createRunFixture(db, { state: 'running' });
+    await db
+      .update(agentRun)
+      .set({ updatedAt: hoursAgo(1) })
+      .where(eq(agentRun.id, f.runId));
+    const [q] = await db
+      .insert(interaction)
+      .values({
+        initiativeId: f.initiativeId,
+        runId: f.runId,
+        type: 'question',
+        title: 'Which?',
+        roleNeeded: 'backend_engineer',
+        blocks: [{ runId: f.runId }],
+      })
+      .returning();
+    await sweeper().tick();
+    expect(await stateOf(f.runId)).toMatchObject({ state: 'parked', parkReason: q!.id });
+  });
+
+  it('is left alone while it still reports, however old the run is', async () => {
+    const f = await createRunFixture(db, { state: 'running' });
+    await db
+      .update(agentRun)
+      .set({ updatedAt: hoursAgo(3) })
+      .where(eq(agentRun.id, f.runId));
+    await db.insert(runEvent).values({ runId: f.runId, seq: 1, type: 'message', payload: {} });
+    await sweeper().tick();
+    expect((await stateOf(f.runId)).state).toBe('running');
+  });
+
+  it('is left alone when it is recent', async () => {
+    const f = await createRunFixture(db, { state: 'starting' });
+    await sweeper().tick();
+    expect((await stateOf(f.runId)).state).toBe('starting');
+  });
+
+  it('is left alone when this worker has its runner, even a quiet one', async () => {
+    const f = await createRunFixture(db, { state: 'queued' });
+    const a = new FakeAdapter();
+    const w = createRunWorker({
+      db,
+      adapter: a,
+      apiUrl: 'http://127.0.0.1:8080',
+      maxConcurrent: 5,
+      staleMs: 1,
+      log: () => {},
+    });
+    await w.tick();
+    await new Promise((r) => setTimeout(r, 20));
+    await w.tick();
+    expect(launchedFor(a, f.runId)).toHaveLength(1);
+    expect(['starting', 'running']).toContain((await stateOf(f.runId)).state);
+  });
+});
+
+describe('shutting the worker down', () => {
+  it('stops its runners and closes their runs instead of leaving them live', async () => {
+    const f = await createRunFixture(db, { state: 'queued' });
+    const a = new FakeAdapter();
+    const w = worker(a);
+    await w.tick();
+    const l = launchedFor(a, f.runId)[0]!;
+    await db.update(agentRun).set({ state: 'running' }).where(eq(agentRun.id, f.runId));
+    await w.shutdown();
+    expect(l.kill).toHaveBeenCalled();
+    expect(await stateOf(f.runId)).toMatchObject({ state: 'failed', exitReason: 'error' });
+  });
+
+  it('takes no new work once it is shutting down', async () => {
+    const f = await createRunFixture(db, { state: 'queued' });
+    const a = new FakeAdapter();
+    const w = worker(a);
+    await w.shutdown();
+    await w.tick();
+    expect(launchedFor(a, f.runId)).toHaveLength(0);
+    expect((await stateOf(f.runId)).state).toBe('queued');
+  });
+});
