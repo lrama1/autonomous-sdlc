@@ -601,6 +601,7 @@ Not proven, or not built:
 - The digest is built but was proven only with tests and a fixed clock, not over a real day.
 - Escalation timing is shared by every ask. There are no per-type or per-hard-stop timings yet.
 - Rejecting an assumption raises a question for the person who started the run. It does not restart the run or edit a story.
+- **What a decision does.** An assumption never holds anything up: approving a review does not depend on it. A review card shows the undecided assumptions of the run behind it, with Accept and Reject, and a note under Approve counts the undecided ones (it never blocks). Every later run on the same initiative is told, in its task text, which assumptions people accepted (to be treated as requirements) and which they rejected (not to be assumed again), up to 20 of each, newest first, and its agent's prompt says to follow them.
 - The assumptions list has no "risk" column (the agent does not rate it) and no story link, since stories are not built.
 - A single worker process does all of this. Running two API processes would double notifications (the updates are guarded, so asks are not handed out twice, but a message could be sent twice).
 **Step 3, map and checkpoints (2026-10-18): built in part.** The spec says "G1, G3, G6, pre-approved change types, Integration Register, previews". Built and proven live (real agent, Docker sandbox, real GitHub) except where noted:

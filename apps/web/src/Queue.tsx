@@ -40,8 +40,8 @@ function AssumptionRow({ a, onChanged }: { a: AssumptionDto; onChanged: () => vo
           </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
-          {a.initiativeTitle}. Accepting turns it into a requirement. Rejecting asks the person who
-          started the run what to redo.
+          {a.initiativeTitle}. Accepting records that you agree, and later runs on this initiative
+          are told. Rejecting asks the person who started the run what to redo.
         </Typography>
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="outlined" disabled={busy} onClick={() => decide('accept')}>
@@ -137,6 +137,7 @@ export function Queue({ openId }: { openId: string | null }) {
               rank={n + 1}
               now={now}
               highlight={openId === i.id}
+              assumptions={assumptions}
               onChanged={load}
               onAnswered={(note) => {
                 setSettled((s) => [...s, { i, note }]);

@@ -457,6 +457,58 @@ test('the menu shows how many asks wait on the person, in red when one is a hard
   if (before === 0) await expect(badge).toHaveCount(0);
   else await expect(badge).toHaveText(String(before));
 });
+test('a review shows the assumptions behind it, and approving does not decide them', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review with assumptions ${randomUUID().slice(0, 6)}`;
+  await db.insert(interaction).values({
+    initiativeId: f.initiativeId,
+    runId: f.runId,
+    type: 'checkpoint',
+    checkpointId: 'G1',
+    title,
+    contextCard: { summary: 'A spec.' },
+    options: [{ id: 'A', label: 'Yes', impact: '' }],
+    blocks: [{ runId: f.runId }],
+    roleNeeded: 'backend_engineer',
+  });
+  const mk = (text: string) =>
+    db.insert(assumption).values({ initiativeId: f.initiativeId, runId: f.runId, text });
+  await mk('Money is stored in cents');
+  await mk('Sign-in is by email');
+  // An assumption from another run does not belong on this review.
+  const other = await createRunFixture(db);
+  await db
+    .insert(assumption)
+    .values({ initiativeId: other.initiativeId, runId: other.runId, text: 'Unrelated call' });
+
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+  const block = ask.getByTestId('review-assumptions');
+  await expect(block).toContainText('2 undecided');
+  await expect(block).toContainText('Money is stored in cents');
+  await expect(block).not.toContainText('Unrelated call');
+  await expect(ask.getByTestId('undecided-note')).toContainText('2 assumptions');
+  await expect(ask.getByTestId('undecided-note')).toContainText('Approving does not accept them');
+
+  await block
+    .getByTestId('review-assumption')
+    .filter({ hasText: 'Money is stored in cents' })
+    .getByRole('button', { name: 'Accept' })
+    .click();
+  await expect(ask.getByTestId('undecided-note')).toContainText('1 assumption ');
+  await expect(block).not.toContainText('Money is stored in cents');
+  // The note never blocks: Approve is still there.
+  await expect(ask.getByRole('button', { name: 'Approve' })).toBeEnabled();
+  const [row] = await db
+    .select()
+    .from(assumption)
+    .where(eq(assumption.text, 'Money is stored in cents'));
+  expect(row!.state).toBe('accepted');
+});
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,
 }) => {

@@ -248,8 +248,8 @@ export function Assumptions() {
             </Alert>
           )}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-            Accepting records the call. Rejecting asks the person who started the run what to redo,
-            so nothing is forgotten.
+            Accepting records that you agree, and later runs on this initiative are told. Rejecting
+            asks the person who started the run what to redo, so nothing is forgotten.
           </Typography>
         </>
       )}
