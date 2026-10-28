@@ -96,6 +96,11 @@ export const apiConfigSchema = z.object({
     .transform((v) => v === 'true'),
   // Whether a pull request needs a security review before it can be approved (mvp-contract section 16). On by default.
   SECURITY_REVIEW: z.enum(['on', 'off']).default('on'),
+  // The assistant chat. The alias is the model it uses (Settings picks the model behind it), and the cap is what one person
+  // may spend on it in a day, in dollars.
+  ASSISTANT: z.enum(['on', 'off']).default('on'),
+  ASSISTANT_ALIAS: z.string().default('agent-fast'),
+  ASSISTANT_DAILY_CAP_USD: z.coerce.number().positive().default(4),
 });
 export type ApiConfig = z.infer<typeof apiConfigSchema>;
 

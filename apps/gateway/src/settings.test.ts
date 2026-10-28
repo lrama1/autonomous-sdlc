@@ -182,3 +182,67 @@ describe('the model test', () => {
     expect(body.error).toContain('No endpoints');
   });
 });
+
+describe('the assistant route', () => {
+  const chat = (body: Record<string, unknown>, key?: string) =>
+    fetch(`${gw}/internal/assistant`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(key ? { 'x-sdlc-internal': key } : {}) },
+      body: JSON.stringify(body),
+    });
+
+  it('answers only the platform, with the tools and the alias’s model, and says what it cost', async () => {
+    const key = internalKey(devDb.url);
+    expect((await chat({ alias: 'agent-fast', messages: [] })).status).toBe(401);
+    expect((await chat({ alias: 'agent-fast', messages: [] }, 'wrong')).status).toBe(401);
+    expect((await chat({ alias: 'nonsense', messages: [] }, key)).status).toBe(400);
+
+    respond = (res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'platform_api',
+              input: { path: '/api/initiatives' },
+            },
+          ],
+          stop_reason: 'tool_use',
+          usage: { input_tokens: 1000, output_tokens: 100 },
+        }),
+      );
+    };
+    const tools = [{ name: 'platform_api', description: 'x', input_schema: { type: 'object' } }];
+    const res = await chat(
+      {
+        alias: 'agent-fast',
+        system: 'be brief',
+        max_tokens: 99_999,
+        messages: [{ role: 'user', content: 'hi' }],
+        tools,
+      },
+      key,
+    );
+    const body = (await res.json()) as { content: unknown[]; costMicros: number };
+    expect(body).toMatchObject({ ok: true, stopReason: 'tool_use' });
+    expect(body.content[0]).toMatchObject({ type: 'tool_use', name: 'platform_api' });
+    expect(body.costMicros).toBeGreaterThan(0);
+    const sent = received.at(-1)!.body;
+    expect(sent.tools).toEqual(tools);
+    expect(sent.system).toBe('be brief');
+    // A caller cannot ask for more than the gateway allows.
+    expect(sent.max_tokens).toBeLessThanOrEqual(4000);
+  });
+
+  it('reports what the provider refused, without throwing', async () => {
+    respond = (res) => {
+      res.statusCode = 400;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: { message: 'no tools for this model' } }));
+    };
+    const res = await chat({ alias: 'agent-fast', messages: [] }, internalKey(devDb.url));
+    expect(await res.json()).toMatchObject({ ok: false, error: 'no tools for this model' });
+  });
+});

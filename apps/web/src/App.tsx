@@ -47,6 +47,7 @@ import { Interruptions } from './Interruptions';
 import { Queue } from './Queue';
 import { Repositories } from './Repositories';
 import { Settings } from './Settings';
+import { AssistantPanel } from './assistant/AssistantPanel';
 import { getHealth, getMe, getReady, signOut } from './api';
 import { useAttention } from './useAttention';
 import { AgentFlow } from './flow/AgentFlow';
@@ -372,6 +373,7 @@ export function App() {
           )}
         </Container>
       </Box>
+      {state.phase === 'ready' && state.me && <AssistantPanel />}
     </Box>
   );
 }

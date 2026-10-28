@@ -613,3 +613,60 @@ export const portfolioSchema = z.object({
   ),
 });
 export type PortfolioDto = z.infer<typeof portfolioSchema>;
+
+// The assistant chat (mvp-contract, assistant).
+export const assistantProposalSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['retry_task', 'start_preview', 'file_bug', 'open_screen']),
+  label: z.string(),
+  why: z.string(),
+  params: z.record(z.string(), z.unknown()),
+  state: z.enum(['proposed', 'done', 'dismissed']),
+});
+export type AssistantProposalDto = z.infer<typeof assistantProposalSchema>;
+
+export const assistantMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  steps: z.array(z.object({ tool: z.string(), summary: z.string() })),
+  proposals: z.array(assistantProposalSchema),
+  createdAt: z.string(),
+});
+export type AssistantMessageDto = z.infer<typeof assistantMessageSchema>;
+
+export const assistantConversationSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  updatedAt: z.string(),
+});
+export type AssistantConversationDto = z.infer<typeof assistantConversationSchema>;
+
+export const assistantUsageSchema = z.object({
+  available: z.boolean(),
+  spentMicros: z.number(),
+  capMicros: z.number(),
+});
+export type AssistantUsageDto = z.infer<typeof assistantUsageSchema>;
+
+export const assistantAskSchema = z.object({
+  text: z.string().trim().min(1).max(4000),
+  context: z
+    .object({
+      page: z.string().max(40).optional(),
+      hash: z.string().max(300).optional(),
+      initiativeId: z.string().uuid().optional(),
+      interactionId: z.string().uuid().optional(),
+      pageText: z.string().max(12000).optional(),
+    })
+    .default({}),
+});
+export type AssistantAsk = z.infer<typeof assistantAskSchema>;
+
+export const assistantReplySchema = z.object({
+  conversation: assistantConversationSchema,
+  user: assistantMessageSchema,
+  assistant: assistantMessageSchema,
+  usage: assistantUsageSchema,
+});
+export type AssistantReplyDto = z.infer<typeof assistantReplySchema>;

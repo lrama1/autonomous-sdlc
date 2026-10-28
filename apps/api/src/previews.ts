@@ -62,6 +62,20 @@ export class PreviewService {
     this.deps.log?.(line);
   }
 
+  /** What a running preview's program printed, newest lines. Empty when the host cannot say. */
+  async logs(id: string, lines = 120): Promise<string> {
+    return (await this.deps.host.logs?.(id, lines)) ?? '';
+  }
+
+  /** Runs one command inside a running preview's sandbox. Null when the host cannot. */
+  async exec(
+    id: string,
+    command: string,
+    timeoutMs: number,
+  ): Promise<{ exitCode: number; output: string } | null> {
+    return (await this.deps.host.exec?.(id, command, timeoutMs)) ?? null;
+  }
+
   /** Whether another preview can start now. A person's own request is never held back by this, but an automatic one is. */
   async hasFreeSlot(): Promise<boolean> {
     const active = await this.deps.db

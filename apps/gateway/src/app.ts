@@ -157,6 +157,76 @@ export function createGatewayServer(deps: GatewayDeps): http.Server {
       });
     }
   }
+  // The assistant chat. Only the API calls it, with the same internal key as the Test button. One request to one alias,
+  // with the conversation and the tools the API offers, and the answer comes back as the model gave it with its cost. The
+  // API runs the tools and calls again. The cost is the API's to record: this call belongs to no run.
+  async function assistantMessages(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const reply = (status: number, body: unknown) => {
+      res.statusCode = status;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(body));
+    };
+    const given = req.headers['x-sdlc-internal'];
+    if (!internalKeyMatches(typeof given === 'string' ? given : undefined, config.DATABASE_URL))
+      return reply(401, { ok: false, error: 'not allowed' });
+    const raw = await readBody(req, 2 * 1024 * 1024);
+    if (!raw) return reply(413, { ok: false, error: 'the request is too large' });
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return reply(400, { ok: false, error: 'body is not valid JSON' });
+    }
+    const alias = typeof body.alias === 'string' ? body.alias : '';
+    const model = (await liveAliases())[alias];
+    const price = model ? settings.prices[model] : undefined;
+    if (!model || !price)
+      return reply(400, { ok: false, error: `${alias || 'no alias'} has no model or price here` });
+    try {
+      const up = await doFetch(config.UPSTREAM_URL + '/v1/messages', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.OPENROUTER_KEY_AGENTS}`,
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: Math.min(Number(body.max_tokens) || 2000, 4000),
+          system: body.system,
+          messages: body.messages,
+          ...(Array.isArray(body.tools) && body.tools.length > 0 ? { tools: body.tools } : {}),
+          provider: settings.provider,
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      const text = await up.text();
+      if (!up.ok) {
+        let message = text;
+        try {
+          message = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? text;
+        } catch {
+          // keep the raw text
+        }
+        return reply(200, { ok: false, status: up.status, error: message.slice(0, 400) });
+      }
+      const parsed = JSON.parse(text) as {
+        content?: unknown;
+        stop_reason?: string;
+      };
+      return reply(200, {
+        ok: true,
+        content: parsed.content ?? [],
+        stopReason: parsed.stop_reason ?? null,
+        costMicros: costMicros(price, usageFromJson(text).usage, model),
+      });
+    } catch (e) {
+      return reply(200, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
   async function overBudget(run: RunContext): Promise<boolean> {
     if (run.costMicros < run.budgetMicros) return false;
     // Only move a live run. A run that already finished keeps its state.
@@ -229,6 +299,7 @@ export function createGatewayServer(deps: GatewayDeps): http.Server {
       return;
     }
     if (method === 'POST' && path === '/internal/model-test') return testModel(req, res);
+    if (method === 'POST' && path === '/internal/assistant') return assistantMessages(req, res);
     // Claude Code probes HEAD / at start-up.
     if (path === '/' && (method === 'HEAD' || method === 'GET')) {
       res.statusCode = 200;
