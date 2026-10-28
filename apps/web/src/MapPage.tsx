@@ -423,6 +423,13 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
       );
     else if (a.kind === 'skip_step')
       void act(() => skipStageStep(a.targetId), 'Skipped. You can still start that run by hand.');
+    else if (a.kind === 'retry_task')
+      void act(() => retryBuildTask(a.targetId, a.taskKey!), `${a.taskKey} will run again.`);
+    else if (a.kind === 'skip_task')
+      void act(
+        () => skipBuildTask(a.targetId, a.taskKey!),
+        `${a.taskKey} is skipped. What waits for it can start.`,
+      );
     else if (a.kind === 'retry_run')
       void act(
         () => retryRun(a.targetId),

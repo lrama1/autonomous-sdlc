@@ -1,11 +1,14 @@
 // What a person can do at each stage of the Map, worked out from where the stage is. Pure.
 
-export type StageActionKind = 'start_step' | 'skip_step' | 'retry_run' | 'start_plan';
+export type StageActionKind =
+  'start_step' | 'skip_step' | 'retry_run' | 'start_plan' | 'retry_task' | 'skip_task';
 
 export interface StageAction {
   kind: StageActionKind;
   /** The step, run or build plan the button acts on. */
   targetId: string;
+  /** For a build task: the task's key within the plan named by 	argetId. */
+  taskKey?: string;
   label: string;
   primary: boolean;
 }
@@ -28,7 +31,11 @@ const STEP_WORD: Record<string, string> = { spec: 'spec', design: 'design' };
 export function stageActions(
   stages: StageIn[],
   steps: Array<{ id: string; stage: string; state: string; title: string; detail: string | null }>,
-  plan: { id: string; state: string } | null,
+  plan: {
+    id: string;
+    state: string;
+    tasks?: Array<{ key: string; title: string; state: string; detail?: string | null }>;
+  } | null,
   mayControl: boolean,
 ): Record<string, { actions: StageAction[]; notes: string[] }> {
   const out: Record<string, { actions: StageAction[]; notes: string[] }> = {};
@@ -77,5 +84,27 @@ export function stageActions(
       label: 'Start the build',
       primary: true,
     });
+  // A failed build task stops what depends on it. Say which one and why, and put Retry and Skip where the person is looking.
+  if (build && plan && ['active', 'awaiting_start'].includes(plan.state)) {
+    for (const t of (plan.tasks ?? []).filter((x) => x.state === 'failed')) {
+      build.notes.push(`${t.key} failed${t.detail ? `: ${t.detail}` : '.'}`);
+      if (mayControl) {
+        build.actions.push({
+          kind: 'retry_task',
+          targetId: plan.id,
+          taskKey: t.key,
+          label: `Retry ${t.key}`,
+          primary: true,
+        });
+        build.actions.push({
+          kind: 'skip_task',
+          targetId: plan.id,
+          taskKey: t.key,
+          label: `Skip ${t.key}`,
+          primary: false,
+        });
+      }
+    }
+  }
   return out;
 }

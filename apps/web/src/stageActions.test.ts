@@ -95,4 +95,35 @@ describe('what a person can do at each stage', () => {
     expect(a['build']!.actions).toEqual([]);
     expect(a['spec']!.notes).toEqual(['Why not.']);
   });
+
+  it('puts Retry and Skip for a failed build task on the build stage, with why it failed', () => {
+    const plan = {
+      id: 'plan-1',
+      state: 'active',
+      tasks: [
+        { key: 'T1', title: 'Scaffold', state: 'merged' },
+        { key: 'T9', title: 'Wire pages', state: 'failed', detail: 'verify did not pass' },
+      ],
+    };
+    const a = stageActions(stages(), [], plan, true);
+    expect(a['build']!.notes).toEqual(['T9 failed: verify did not pass']);
+    expect(a['build']!.actions).toEqual([
+      { kind: 'retry_task', targetId: 'plan-1', taskKey: 'T9', label: 'Retry T9', primary: true },
+      { kind: 'skip_task', targetId: 'plan-1', taskKey: 'T9', label: 'Skip T9', primary: false },
+    ]);
+  });
+
+  it('says which task failed to a person who may not retry it, without buttons', () => {
+    const plan = { id: 'p', state: 'active', tasks: [{ key: 'T2', title: 'x', state: 'failed' }] };
+    const a = stageActions(stages(), [], plan, false);
+    expect(a['build']!.notes).toEqual(['T2 failed.']);
+    expect(a['build']!.actions).toEqual([]);
+  });
+
+  it('offers nothing for a failed task once the plan is cancelled or done', () => {
+    const tasks = [{ key: 'T2', title: 'x', state: 'failed' }];
+    expect(
+      stageActions(stages(), [], { id: 'p', state: 'cancelled', tasks }, true)['build']!.actions,
+    ).toEqual([]);
+  });
 });
