@@ -197,11 +197,27 @@ export function Ask({
               ],
             ] as Array<[string, React.ReactNode]>)
           : []),
+        ...(c.kind === 'task_failed'
+          ? ([
+              [
+                'Why it failed',
+                <Stack key="f" component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
+                  {(c.failures ?? []).map((f) => (
+                    <li key={f.attempt}>
+                      <b>Attempt {f.attempt}:</b> {f.why}
+                    </li>
+                  ))}
+                </Stack>,
+              ],
+            ] as Array<[string, React.ReactNode]>)
+          : []),
         [
           'What is waiting',
           i.blocks.length > 0
             ? `${i.blocks.length} run${i.blocks.length === 1 ? ' is' : 's are'} waiting for this.`
-            : 'Nothing. The agent continues without it.',
+            : c.kind === 'task_failed'
+              ? 'The task, and every task that needs it.'
+              : 'Nothing. The agent continues without it.',
         ],
       ];
 
@@ -454,6 +470,17 @@ export function Ask({
                 sx={{ mb: 1 }}
               />
             )}
+            {c.kind === 'task_failed' && picked === 'retry' && (
+              <TextField
+                multiline
+                minRows={2}
+                label="What the next attempt should do differently (optional)"
+                slotProps={{ htmlInput: { 'aria-label': 'Guidance for the next attempt' } }}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                sx={{ mb: 1 }}
+              />
+            )}
             <Stack
               direction="row"
               spacing={1.5}
@@ -467,7 +494,10 @@ export function Ask({
                     options.length > 0
                       ? {
                           optionId: picked,
-                          ...(c.kind === 'integration_proposal' ? { answer: text } : {}),
+                          ...(c.kind === 'integration_proposal' ||
+                          (c.kind === 'task_failed' && picked === 'retry')
+                            ? { answer: text }
+                            : {}),
                           makeStanding: standing,
                           standingScope: scope,
                         }

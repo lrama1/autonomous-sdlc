@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agentRun, buildPlan, buildTask, initiative, interaction, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import {
@@ -13,6 +13,7 @@ import type { DesignTask, TaskState } from '@sdlc/core';
 import { recordActivity } from './activity.js';
 import type { LoadedAgent } from './agents.js';
 import type { GitHubService } from './github-service.js';
+import { createInteraction } from './interactions.js';
 import { RunError, cancelRun, createRun } from './runs.js';
 
 // The build plan (mvp-contract section 16, step 4): when a design is approved and merged, its task list becomes a plan.
@@ -37,6 +38,8 @@ const RUN_FAILED = new Set(['failed', 'cancelled', 'budget_exceeded', 'timed_out
 const GATE_STOPPED = new Set(['ci_failed', 'failed', 'stale', 'closed', 'timed_out']);
 /** How many times a task is redone on the current main after its pull request conflicted. */
 const MAX_REDO = 2;
+/** A task whose run failed is tried again by itself until it has had this many attempts. Then a person decides. */
+const AUTO_ATTEMPTS = 2;
 const NO_PR = 'The run finished without opening a pull request.';
 /** A reviewer asked for changes: the task is done again, with their words in its prompt. */
 const REWORK = 'Reworking: the reviewer asked for changes. ';
@@ -182,12 +185,18 @@ function settle(
   task: TaskRow,
   run: typeof agentRun.$inferSelect | undefined,
   review: typeof interaction.$inferSelect | undefined,
+  /** What the run said about its own failure. */
+  why = '',
 ): { state: TaskState; detail: string | null; redo?: boolean } | null {
   if (!run) return { state: 'failed', detail: 'The run for this task is missing.' };
   if (RUN_FAILED.has(run.state)) {
     return {
       state: 'failed',
-      detail: `The run ended as ${run.state}${run.exitReason ? ` (${run.exitReason})` : ''}.`,
+      detail:
+        `The run ended as ${run.state}${run.exitReason ? ` (${run.exitReason})` : ''}.${why ? ` ${why}` : ''}`.slice(
+          0,
+          900,
+        ),
     };
   }
   if (run.state !== 'succeeded')
@@ -237,6 +246,121 @@ async function spentMicros(db: Db, initiativeId: string): Promise<number> {
   return Number(r?.s ?? 0);
 }
 
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/** What a run that did not finish says about why: its own words, else what the platform noted when it ended. */
+async function whyRunFailed(db: Db, runId: string): Promise<string> {
+  const rows = await db
+    .select({ type: runEvent.type, payload: runEvent.payload })
+    .from(runEvent)
+    .where(
+      and(
+        eq(runEvent.runId, runId),
+        inArray(runEvent.type, ['run.summary', 'run.finished', 'engine.error']),
+      ),
+    )
+    .orderBy(desc(runEvent.seq))
+    .limit(8);
+  const find = (type: string) =>
+    rows.find((r) => r.type === type)?.payload as Record<string, unknown> | undefined;
+  const said = String(find('run.summary')?.text ?? '');
+  if (said.trim()) return squash(said).slice(0, 500);
+  const finished = String(find('run.finished')?.detail ?? '');
+  if (finished.trim()) return squash(finished).slice(0, 500);
+  const engine = find('engine.error');
+  if (engine)
+    return squash(`The engine stopped (${engine.subtype}). ${engine.stderr ?? ''}`).slice(0, 500);
+  return '';
+}
+
+/** A task that needs a person: what failed, and what the choices are. */
+async function askAboutFailedTask(
+  db: Db,
+  plan: PlanRow,
+  task: TaskRow,
+  runCancelled: boolean,
+): Promise<void> {
+  if (task.askId || runCancelled) return;
+  const failures = task.history.some((h) => h.attempt === task.attempt)
+    ? task.history
+    : [...task.history, { attempt: task.attempt, why: task.detail ?? 'It failed.' }];
+  const { interaction: row } = await createInteraction(db, {
+    initiativeId: plan.initiativeId,
+    runId: null,
+    type: 'decision',
+    title: `${task.key} did not work after ${task.attempt} ${task.attempt === 1 ? 'attempt' : 'attempts'}: ${task.title}`,
+    contextCard: {
+      kind: 'task_failed',
+      planId: plan.id,
+      task: task.key,
+      taskTitle: task.title,
+      attempts: task.attempt,
+      failures: failures.slice(-4),
+      lastRunId: task.runId,
+    },
+    options: [
+      {
+        id: 'retry',
+        label: 'Try again',
+        impact:
+          'Starts a new attempt. It is told why the earlier ones failed, and what you write below.',
+      },
+      { id: 'skip', label: 'Skip it', impact: 'Drops this task so the ones behind it can start.' },
+    ],
+    recommendation: 'retry',
+    blocks: [],
+    topicKey: `task_failed:${plan.id}:${task.key}`,
+    // Whoever runs the platform decides what happens to a stuck build, as on the Map.
+    roleNeeded: 'platform_admin',
+    hardStop: true,
+  });
+  await db.update(buildTask).set({ askId: row.id }).where(eq(buildTask.id, task.id));
+  task.askId = row.id;
+}
+
+/** A person answered the ask about a failed task. Tries it again with their words, or drops it. */
+async function applyFailedTaskAnswer(db: Db, plan: PlanRow, task: TaskRow): Promise<void> {
+  if (!task.askId) return;
+  const [ask] = await db.select().from(interaction).where(eq(interaction.id, task.askId));
+  if (!ask || ask.state === 'open') return;
+  const answer = ask.answer as { text?: string; choice?: string | null } | null;
+  if (ask.state !== 'answered' || !answer?.choice) {
+    await db.update(buildTask).set({ askId: null }).where(eq(buildTask.id, task.id));
+    task.askId = null;
+    return;
+  }
+  if (answer.choice === 'skip') {
+    await db
+      .update(buildTask)
+      .set({ state: 'skipped', detail: 'Skipped by a person.', askId: null })
+      .where(eq(buildTask.id, task.id));
+    task.state = 'skipped';
+  } else {
+    // With no words of their own, the answer is just the option's label.
+    const said = String(answer.text ?? '').trim();
+    const guidance = said && !/^retry:/i.test(said) ? said.slice(0, 2000) : null;
+    await db
+      .update(buildTask)
+      .set({
+        state: 'waiting',
+        detail: null,
+        askId: null,
+        ...(guidance ? { guidance } : {}),
+      })
+      .where(eq(buildTask.id, task.id));
+    task.state = 'waiting';
+    if (guidance) task.guidance = guidance;
+  }
+  task.askId = null;
+  await recordActivity(db, {
+    actorType: 'person',
+    actorId: ask.answeredBy,
+    initiativeId: plan.initiativeId,
+    action: answer.choice === 'skip' ? 'build_task.skipped' : 'build_task.retried',
+    detail: { planId: plan.id, task: task.key, viaAsk: ask.id },
+  });
+}
+
 async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
   const { db } = deps;
   const tasks = await db
@@ -259,7 +383,9 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
           .orderBy(sql`${interaction.createdAt} desc`)
           .limit(1)
       : [];
-    const next = settle(task, run, review);
+    const why =
+      run && task.runId && RUN_FAILED.has(run.state) ? await whyRunFailed(db, task.runId) : '';
+    const next = settle(task, run, review, why);
     if (!next) continue;
     await db
       .update(buildTask)
@@ -284,6 +410,32 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
         await db.update(buildTask).set({ detail: task.detail }).where(eq(buildTask.id, task.id));
       }
     }
+    let retrying = false;
+    if (next.state === 'failed') {
+      task.history = [
+        ...task.history,
+        { attempt: task.attempt, why: (task.detail ?? '').slice(0, 900) },
+      ];
+      // A run that failed gets one more go by itself, now that it is told why the last one failed.
+      retrying = run?.state === 'failed' && task.attempt < AUTO_ATTEMPTS;
+      task.state = retrying ? 'waiting' : 'failed';
+      task.detail = retrying
+        ? `Trying again: ${task.detail ?? 'the last attempt failed.'}`.slice(0, 900)
+        : task.detail;
+      await db
+        .update(buildTask)
+        .set({ history: task.history, state: task.state, detail: task.detail })
+        .where(eq(buildTask.id, task.id));
+      if (retrying) {
+        await recordActivity(db, {
+          actorType: 'system',
+          initiativeId: plan.initiativeId,
+          runId: task.runId,
+          action: 'build_task.auto_retry',
+          detail: { planId: plan.id, task: task.key, attempt: task.attempt },
+        });
+      }
+    }
     if (next.redo) {
       const pr = review?.contextCard as { repository?: string; prNumber?: number } | undefined;
       if (pr?.repository && pr.prNumber) {
@@ -306,7 +458,7 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
         detail: { planId: plan.id, task: task.key, attempt: task.attempt },
       });
     }
-    if (next.state === 'merged' || next.state === 'failed') {
+    if (next.state === 'merged' || (next.state === 'failed' && !retrying)) {
       await recordActivity(db, {
         actorType: 'system',
         initiativeId: plan.initiativeId,
@@ -315,6 +467,17 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
         detail: { planId: plan.id, task: task.key, detail: next.detail },
       });
     }
+  }
+
+  // 1b. A task that failed for good waits for a person, who is asked once what to do.
+  for (const task of tasks) {
+    if (task.state !== 'failed') continue;
+    await applyFailedTaskAnswer(db, plan, task);
+    if (task.state !== 'failed') continue;
+    const [last] = task.runId
+      ? await db.select({ state: agentRun.state }).from(agentRun).where(eq(agentRun.id, task.runId))
+      : [];
+    await askAboutFailedTask(db, plan, task, last?.state === 'cancelled');
   }
 
   // 2. Is it over?
@@ -386,6 +549,8 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
             : undefined,
           plan.smoke as DesignSmoke | null,
           task.detail?.startsWith(REWORK) ? task.detail.slice(REWORK.length) : undefined,
+          task.history.slice(-3),
+          task.guidance ?? undefined,
         ),
         sponsorPersonId: sponsor,
       });
@@ -450,6 +615,16 @@ export async function startPlan(db: Db, planId: string, by: string): Promise<Pla
   return plan ?? null;
 }
 
+/** The ask about a failed task is moot once a person acts on the Map instead. */
+async function withdrawAsk(db: Db, planId: string, key: string): Promise<void> {
+  await db
+    .update(interaction)
+    .set({ state: 'withdrawn' })
+    .where(
+      and(eq(interaction.topicKey, `task_failed:${planId}:${key}`), eq(interaction.state, 'open')),
+    );
+}
+
 /** Puts a failed task back in line. It gets a new run when its dependencies allow. */
 export async function retryTask(
   db: Db,
@@ -461,10 +636,11 @@ export async function retryTask(
   if (!plan || plan.state !== 'active') return null;
   const [task] = await db
     .update(buildTask)
-    .set({ state: 'waiting', detail: null })
+    .set({ state: 'waiting', detail: null, askId: null })
     .where(and(eq(buildTask.planId, planId), eq(buildTask.key, key), eq(buildTask.state, 'failed')))
     .returning();
   if (task) {
+    await withdrawAsk(db, planId, key);
     await recordActivity(db, {
       actorType: 'person',
       actorId: by,
@@ -487,7 +663,7 @@ export async function skipTask(
   if (!plan || (plan.state !== 'active' && plan.state !== 'awaiting_start')) return null;
   const [task] = await db
     .update(buildTask)
-    .set({ state: 'skipped', detail: 'Skipped by a person.' })
+    .set({ state: 'skipped', detail: 'Skipped by a person.', askId: null })
     .where(
       and(
         eq(buildTask.planId, planId),
@@ -497,6 +673,7 @@ export async function skipTask(
     )
     .returning();
   if (task) {
+    await withdrawAsk(db, planId, key);
     await recordActivity(db, {
       actorType: 'person',
       actorId: by,
@@ -532,6 +709,7 @@ export async function cancelPlan(
     )
     .returning();
   for (const t of open) if (t.runId) await cancelRun(db, t.runId, by).catch(() => null);
+  for (const t of open) await withdrawAsk(db, planId, t.key);
   await recordActivity(db, {
     actorType: 'person',
     actorId: by,
