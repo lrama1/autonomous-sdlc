@@ -155,6 +155,28 @@ interface AnswerShape {
 }
 
 /** What the engine is told when a parked run resumes. */
+/**
+ * What to recommend when a run edited a protected path. A path the task itself names was asked for, by the design or by a
+ * person who sent the work back, so the edit is what was wanted and a person only has to look at it. A path nobody
+ * mentioned is the agent going beyond its task, and the safe default is to throw that edit away.
+ */
+export function protectedPathAdvice(
+  task: string,
+  paths: string[],
+): { recommend: 'allow' | 'discard'; reason: string } {
+  const asked = paths.length > 0 && paths.every((p) => task.includes(p));
+  return asked
+    ? {
+        recommend: 'allow',
+        reason: `The task asks for a change to ${paths.length === 1 ? 'this file' : 'these files'}, so this edit is what was wanted. Read the change below, then allow it.`,
+      }
+    : {
+        recommend: 'discard',
+        reason:
+          'Nothing in the task mentions this file, so the agent went beyond what it was asked to do. Allow it only if you want the change.',
+      };
+}
+
 export function buildResumeMessage(row: typeof interaction.$inferSelect): string {
   const a = (row.answer ?? {}) as AnswerShape;
   const kind = (row.contextCard as { kind?: string }).kind;
@@ -376,6 +398,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
     const body = runnerTriggerSchema.parse(request.body);
     const [run] = await db.select().from(agentRun).where(eq(agentRun.id, ctx.runId));
     const protectedPath = body.kind === 'protected_path';
+    const advice = protectedPath ? protectedPathAdvice(run!.task, body.paths) : null;
     const { interaction: row } = await createInteraction(db, {
       initiativeId: ctx.initiativeId,
       runId: ctx.runId,
@@ -383,14 +406,27 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
       title: protectedPath
         ? `Protected path changed: ${body.paths.join(', ')}`
         : `Verification keeps failing: ${body.summary.slice(0, 120)}`,
-      contextCard: { kind: body.kind, summary: body.summary, paths: body.paths },
+      contextCard: {
+        kind: body.kind,
+        summary: body.summary,
+        paths: body.paths,
+        ...(advice ? { whyNow: advice.reason } : {}),
+      },
       options: protectedPath
         ? [
-            { id: 'allow', label: 'Allow this change to the protected path' },
-            { id: 'discard', label: 'Discard the edits to protected paths' },
+            {
+              id: 'allow',
+              label: 'Allow this change to the protected path',
+              impact: 'Keeps the edit. The run continues and the change goes to review.',
+            },
+            {
+              id: 'discard',
+              label: 'Discard the edits to protected paths',
+              impact: 'Throws the edit away. The run continues without it.',
+            },
           ]
         : undefined,
-      recommendation: protectedPath ? 'discard' : undefined,
+      recommendation: advice?.recommend,
       blocks: [{ runId: ctx.runId }],
       roleNeeded: defaultRoleForAgent(run!.agentRole),
       hardStop: protectedPath,

@@ -99,7 +99,7 @@ export const runnerPullRequestSchema = z.object({
 
 export const runnerTriggerSchema = z.object({
   kind: z.enum(['protected_path', 'verify_failed']),
-  summary: z.string().min(1).max(2000),
+  summary: z.string().min(1).max(6000),
   paths: z.array(z.string()).default([]),
 });
 
