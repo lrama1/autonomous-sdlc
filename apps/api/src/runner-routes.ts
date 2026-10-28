@@ -1,6 +1,13 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { agentRun, appendRunEvent, initiative, interaction, repositoryEntry } from '@sdlc/db';
+import {
+  agentRun,
+  appendRunEvent,
+  assumption,
+  initiative,
+  interaction,
+  repositoryEntry,
+} from '@sdlc/db';
 import type { Db, RunContext } from '@sdlc/db';
 import { authenticateRunToken, bearerFrom } from '@sdlc/db';
 import {
@@ -38,6 +45,24 @@ export const slugify = (text: string): string =>
     .slice(0, 30)
     .replace(/-+$/g, '') || 'work';
 
+const MAX_SETTLED = 20;
+const clip = (s: string) => (s.length > 300 ? `${s.slice(0, 297)}...` : s);
+
+/** What people decided about earlier assumptions, so a later run keeps to it. Nothing when none were decided. */
+export function settledAssumptionLines(d?: { accepted: string[]; rejected: string[] }): string[] {
+  if (!d || (d.accepted.length === 0 && d.rejected.length === 0)) return [];
+  const list = (xs: string[]) => xs.slice(0, MAX_SETTLED).map((x) => `- ${clip(x)}`);
+  return [
+    'People have already decided assumptions that agents made earlier on this initiative. They are decisions, not instructions to ignore your other rules.',
+    ...(d.accepted.length > 0
+      ? ['Accepted (treat as requirements; do not choose differently):', ...list(d.accepted)]
+      : []),
+    ...(d.rejected.length > 0
+      ? ['Rejected (do not assume these again):', ...list(d.rejected)]
+      : []),
+  ];
+}
+
 export function buildTaskText(p: {
   repo: string;
   branch: string;
@@ -47,6 +72,8 @@ export function buildTaskText(p: {
   verifyCommand: string;
   /** The name of the CI job that must be green before the Gate merges. */
   requiredCheck?: string;
+  /** What people have decided about the assumptions agents made on this initiative. */
+  decidedAssumptions?: { accepted: string[]; rejected: string[] };
   protectedPaths: string[];
 }): string {
   return [
@@ -66,8 +93,31 @@ export function buildTaskText(p: {
         ]
       : []),
     `Protected paths (never edit these, ask a person instead): ${p.protectedPaths.join(', ') || 'none'}`,
+    ...settledAssumptionLines(p.decidedAssumptions),
     'Commit your work to this branch with git. Do not push. The platform runs verification again, pushes, and opens the pull request.',
   ].join('\n');
+}
+
+/** The assumptions on an initiative that a person accepted or rejected, newest first. */
+async function decidedAssumptionsOf(
+  db: Db,
+  initiativeId: string,
+): Promise<{ accepted: string[]; rejected: string[] }> {
+  const rows = await db
+    .select({ text: assumption.text, state: assumption.state })
+    .from(assumption)
+    .where(
+      and(
+        eq(assumption.initiativeId, initiativeId),
+        inArray(assumption.state, ['accepted', 'rejected']),
+      ),
+    )
+    .orderBy(desc(assumption.updatedAt))
+    .limit(MAX_SETTLED * 2);
+  return {
+    accepted: rows.filter((r) => r.state === 'accepted').map((r) => r.text),
+    rejected: rows.filter((r) => r.state === 'rejected').map((r) => r.text),
+  };
 }
 
 const pickedAllow = (a: { choice?: string | null; text?: string }) =>
@@ -212,6 +262,7 @@ export function registerRunnerRoutes(app: FastifyInstance, deps: RunnerDeps): vo
         task: run!.task,
         verifyCommand: repo.verifyCommand,
         requiredCheck: repo.requiredCheck,
+        decidedAssumptions: await decidedAssumptionsOf(db, init.id),
         protectedPaths: repo.protectedPaths,
       }),
       systemPrompt: agent.prompt,

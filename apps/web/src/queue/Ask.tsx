@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { InteractionDto, SecurityDto, SmokeDto } from '@sdlc/schemas';
+import type { AssumptionDto, InteractionDto, SecurityDto, SmokeDto } from '@sdlc/schemas';
 import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -18,6 +18,7 @@ import Typography from '@mui/material/Typography';
 import { ApiProblem, answerInteraction, didntNeedToAsk, snoozeInteraction } from '../api';
 import { TYPE_LABEL, formatSpan, roleLabel } from '../labels';
 import { PreviewPanel } from './PreviewPanel';
+import { ReviewAssumptions, undecidedNote } from './ReviewAssumptions';
 import { ReviewFlow } from './ReviewFlow';
 import { SecurityPanel } from './SecurityPanel';
 import { SmokePanel } from './SmokePanel';
@@ -54,6 +55,7 @@ export function Ask({
   rank,
   now,
   highlight,
+  assumptions = [],
   onChanged,
   onAnswered,
 }: {
@@ -61,6 +63,8 @@ export function Ask({
   rank: number;
   now: number;
   highlight: boolean;
+  /** Every undecided assumption. The ones the run behind this ask made are shown with it. */
+  assumptions?: AssumptionDto[];
   onChanged: () => void;
   onAnswered: (note: string) => void;
 }) {
@@ -108,6 +112,7 @@ export function Ask({
   };
 
   const isDecision = i.type === 'review' || i.type === 'checkpoint';
+  const mine = isDecision && i.runId ? assumptions.filter((a) => a.runId === i.runId) : [];
   const recommended = options.find((o) => o.id === i.recommendation);
   const snoozeButton = !i.hardStop && (
     <Button disabled={busy} onClick={() => snooze()} sx={{ ml: 'auto' }}>
@@ -257,6 +262,7 @@ export function Ask({
               </Typography>
             </Box>
           ))}
+          {mine.length > 0 && <ReviewAssumptions assumptions={mine} onChanged={onChanged} />}
           {isDecision && c.prUrl && (
             <>
               <ReviewFlow verified={checksPassed(c.verify)} smoke={smoke} security={security} />
@@ -317,6 +323,16 @@ export function Ask({
               </Button>
               {snoozeButton}
             </Stack>
+            {undecidedNote(mine.length) && (
+              <Typography
+                variant="caption"
+                color="warning.main"
+                data-testid="undecided-note"
+                sx={{ display: 'block', mt: 0.75 }}
+              >
+                {undecidedNote(mine.length)}
+              </Typography>
+            )}
           </>
         ) : (
           <>

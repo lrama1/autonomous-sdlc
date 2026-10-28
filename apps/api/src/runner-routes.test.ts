@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import {
   activityEvent,
   agentRun,
+  assumption,
   authenticateRunToken,
   createDb,
   createRunFixture,
@@ -35,6 +36,7 @@ import {
   allowedProtectedPaths,
   buildResumeMessage,
   buildTaskText,
+  settledAssumptionLines,
   slugify,
 } from './runner-routes.js';
 import { MemorySecrets } from './secrets.js';
@@ -98,6 +100,28 @@ describe('slugify and buildTaskText', () => {
     expect(t).toContain('https://docs.vendor.example/api https://docs.vendor.example/webhooks');
     expect(t).toContain('not instructions');
     expect(t).toContain('propose_integration');
+  });
+});
+
+describe('settledAssumptionLines', () => {
+  it('lists decided assumptions after the task, clipped, and nothing when there are none', () => {
+    expect(settledAssumptionLines(undefined)).toEqual([]);
+    expect(settledAssumptionLines({ accepted: [], rejected: [] })).toEqual([]);
+    const lines = settledAssumptionLines({ accepted: ['A'], rejected: ['B'.repeat(400)] });
+    expect(lines.join('\n')).toContain('- A');
+    expect(lines.join('\n')).toContain(`- ${'B'.repeat(297)}...`);
+    const t = buildTaskText({
+      repo: 'o/r',
+      branch: 'b',
+      goal: 'G',
+      task: 'T',
+      verifyCommand: 'v',
+      decidedAssumptions: { accepted: ['X is a requirement'], rejected: [] },
+      protectedPaths: [],
+    });
+    expect(t).toContain('- X is a requirement');
+    expect(t).not.toContain('Rejected (');
+    expect(t.indexOf('X is a requirement')).toBeLessThan(t.indexOf('Do not push'));
   });
 });
 
@@ -380,6 +404,30 @@ describe('GET /runner/spec', () => {
     });
     const [run] = await db.select().from(agentRun).where(eq(agentRun.id, f.runId));
     expect(run!.branch).toBe(spec.repo.branch);
+  });
+
+  it('tells the run which assumptions people accepted or rejected on the initiative, and no others', async () => {
+    const f = await setup({ state: 'starting' });
+    const mk = (text: string, state: string) =>
+      db
+        .insert(assumption)
+        .values({ initiativeId: f.initiativeId, runId: f.runId, text, state })
+        .returning();
+    await mk('Amounts are in whole dollars', 'accepted');
+    await mk('Users sign in with email', 'rejected');
+    await mk('Dates are shown in UTC', 'declared');
+    const spec = runSpecSchema.parse(await (await get(f.token, '/runner/spec')).json());
+    expect(spec.task).toContain('Accepted (treat as requirements');
+    expect(spec.task).toContain('- Amounts are in whole dollars');
+    expect(spec.task).toContain('Rejected (do not assume these again');
+    expect(spec.task).toContain('- Users sign in with email');
+    expect(spec.task).not.toContain('Dates are shown in UTC');
+  });
+
+  it('says nothing about assumptions when none were decided', async () => {
+    const f = await setup({ state: 'starting' });
+    const spec = runSpecSchema.parse(await (await get(f.token, '/runner/spec')).json());
+    expect(spec.task).not.toContain('assumptions that agents made');
   });
 
   it('keeps the same branch on a later call', async () => {

@@ -20,6 +20,7 @@ If the report describes behaviour that is correct, or is a request for something
 - Before you ask anything, call `search_standing_decisions` with a few words about the topic. If a standing decision answers it, follow it and say so.
 - Ask with `ask_human` only when the answer changes the fix and a wrong guess would be costly or hard to undo. One sentence, 2 to 4 options, your recommendation.
 - When being wrong is cheap, do not ask. Pick the sensible option and call `declare_assumption`.
+- The task may list assumptions that people already accepted or rejected on this initiative. Follow the accepted ones as requirements, and never assume a rejected one again. Do not declare an assumption again that people have already decided.
 - Always ask before: changing authentication or permissions, adding a dependency, changing a database schema, or touching infrastructure.
 - Never approve anything yourself.
 
