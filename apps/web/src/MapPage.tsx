@@ -39,6 +39,7 @@ import {
 import type { InitiativeMap } from './api';
 import { PipelineFlow } from './flow/PipelineFlow';
 import { StageActionContext } from './flow/StageNode';
+import { pickInitiative } from './pickInitiative';
 import { stageActions } from './stageActions';
 import type { StageAction } from './stageActions';
 import { PlanGraph } from './flow/PlanGraph';
@@ -56,6 +57,8 @@ const RUN_ROLES: Array<{ id: string; label: string }> = [
 ];
 
 type Act = (fn: () => Promise<unknown>, done: string) => Promise<void>;
+
+const LAST_VIEWED = 'sdlc.map.initiative';
 
 const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; tone: Tone }> = {
   waiting: { label: 'Waiting', tone: 'none' },
@@ -329,7 +332,8 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
 }
 
 export function MapPage({ initiativeId, me }: { initiativeId: string | null; me: Me }) {
-  const [list, setList] = useState<Array<{ id: string; title: string }>>([]);
+  const [list, setList] = useState<Array<{ id: string; title: string; state: string }>>([]);
+  const [listed, setListed] = useState(false);
   const [map, setMap] = useState<InitiativeMap | null>(null);
   const [releases, setReleases] = useState<Awaited<ReturnType<typeof getReleases>>>([]);
   const [error, setError] = useState<string | null>(null);
@@ -342,7 +346,14 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
 
   const loadList = useCallback(async () => {
     try {
-      setList((await getInitiatives()).map((i) => ({ id: i.id, title: i.title })));
+      setList(
+        (await getInitiatives()).map((i) => ({
+          id: i.id,
+          title: i.title,
+          state: String((i as { state?: unknown }).state ?? ''),
+        })),
+      );
+      setListed(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -370,6 +381,16 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   useEffect(() => {
     void loadList();
   }, [loadList]);
+
+  // Landing on the Map with nothing chosen opens the initiative that is in progress, or the one last looked at.
+  useEffect(() => {
+    if (initiativeId || !listed) return;
+    const pick = pickInitiative(list, sessionStorage.getItem(LAST_VIEWED));
+    if (pick) window.location.replace(`#/map/${pick}`);
+  }, [initiativeId, listed, list]);
+  useEffect(() => {
+    if (initiativeId) sessionStorage.setItem(LAST_VIEWED, initiativeId);
+  }, [initiativeId]);
   useEffect(() => {
     void loadMap();
     const poll = setInterval(() => void loadMap(), 5000);
@@ -433,7 +454,7 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
             sx={{ minWidth: 260, maxWidth: 360 }}
             slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
           >
-            <option value="">Choose an initiative</option>
+            {list.length === 0 && <option value="">No initiatives yet</option>}
             {list.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.title}

@@ -351,7 +351,7 @@ test('an approved design waits for a person to start the build, then its first t
 
   await signInAs(page, /Alice Park/);
   await page.getByTestId('nav-map').click();
-  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
   const panel = page.getByTestId('build-plan');
   await expect(panel).toHaveAttribute('data-state', 'awaiting_start');
   await expect(page.getByTestId('stage-build')).toHaveAttribute('data-status', 'waiting_human');
@@ -379,7 +379,7 @@ test('a step before the build waits for a person to start it', async ({ page }) 
   });
   await signInAs(page, /Alice Park/);
   await page.getByTestId('nav-map').click();
-  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
   const spec = page.getByTestId('stage-spec');
   await expect(spec).toHaveAttribute('data-status', 'waiting_human');
   await expect(spec).toContainText('A person starts the spec.');
@@ -408,7 +408,7 @@ test('a failed spec run is run again from the stage itself', async ({ page }) =>
   });
   await signInAs(page, /Alice Park/);
   await page.getByTestId('nav-map').click();
-  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
   const spec = page.getByTestId('stage-spec');
   await expect(spec).toContainText('product run: failed');
   // There is no separate "Start a run" card to hunt for: the button is on the stage.
@@ -508,6 +508,31 @@ test('a review shows the assumptions behind it, and approving does not decide th
     .from(assumption)
     .where(eq(assumption.text, 'Money is stored in cents'));
   expect(row!.state).toBe('accepted');
+});
+test('the Map opens on an initiative in progress, and goes back to the one last looked at', async ({
+  page,
+}) => {
+  const a = await createRunFixture(db);
+  const b = await createRunFixture(db);
+  await db.update(initiative).set({ state: 'active' }).where(eq(initiative.id, a.initiativeId));
+  await db.update(initiative).set({ state: 'active' }).where(eq(initiative.id, b.initiativeId));
+  await signInAs(page, /Alice Park/);
+
+  // Nothing chosen yet: the Map picks an initiative that is in progress, with no clicking.
+  await page.getByTestId('nav-map').click();
+  await expect(page).toHaveURL(/#\/map\/[0-9a-f-]{36}$/);
+  const first = page.url().split('/').pop()!;
+  const [opened] = await db.select().from(initiative).where(eq(initiative.id, first));
+  expect(opened!.state).toBe('active');
+  await expect(page.getByTestId('stage-spec')).toBeVisible();
+
+  // Choose another one, leave, and come back: the Map reopens on that one.
+  const other = first === a.initiativeId ? b.initiativeId : a.initiativeId;
+  await page.getByLabel('Initiative', { exact: true }).selectOption(other);
+  await expect(page).toHaveURL(new RegExp(`#/map/${other}$`));
+  await page.getByTestId('nav-queue').click();
+  await page.getByTestId('nav-map').click();
+  await expect(page).toHaveURL(new RegExp(`#/map/${other}$`));
 });
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,
@@ -784,7 +809,7 @@ test('the map shows each stage, who it waits on, and links to the ask', async ({
 
   await signInAs(page, /Alice Park/);
   await page.getByTestId('nav-map').click();
-  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
   await expect(page.getByTestId('flow')).toBeVisible();
   await expect(page.locator('p b', { hasText: init.title })).toBeVisible();
   const spec = page.getByTestId('stage-spec');

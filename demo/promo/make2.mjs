@@ -235,7 +235,7 @@ async function main() {
         '-i',
         await record(browser, b.id, D + 1.5, async (p) => {
           await p.goto(BASE + v.live);
-          const sel = p.getByLabel('Initiative');
+          const sel = p.getByLabel('Initiative', { exact: true });
           await sel.waitFor({ timeout: 30000 });
           await sel.selectOption({ label: TITLE });
           await sleep(1200);
