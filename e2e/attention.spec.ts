@@ -420,6 +420,43 @@ test('a failed spec run is run again from the stage itself', async ({ page }) =>
   const runs = await db.select().from(agentRun).where(eq(agentRun.initiativeId, f.initiativeId));
   expect(runs.filter((r) => r.agentRole === 'product')).toHaveLength(2);
 });
+test('the menu shows how many asks wait on the person, in red when one is a hard stop', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  await signInAs(page, /Bob Lindqvist/);
+  const badge = page.getByTestId('queue-badge');
+  const refresh = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const count = async () => ((await badge.count()) ? Number(await badge.innerText()) : 0);
+  await refresh();
+  await page.waitForTimeout(800);
+  const before = await count();
+
+  const [ask] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'decision',
+      title: `Badge ${randomUUID().slice(0, 8)}`,
+      contextCard: { context: 'c', whyNow: 'w' },
+      options: [{ id: 'A', label: 'Yes', impact: '' }],
+      hardStop: true,
+      blocks: [{ runId: f.runId }],
+      roleNeeded: 'backend_engineer',
+    })
+    .returning();
+  await refresh();
+  await expect(badge).toHaveText(String(before + 1));
+  await expect(badge).toHaveAttribute('data-urgent', 'true');
+  await expect(badge).toHaveAccessibleName(/waiting on you, including a hard stop/);
+  await expect(page).toHaveTitle(`(${before + 1}) Autonomous SDLC`);
+
+  await db.update(interaction).set({ state: 'answered' }).where(eq(interaction.id, ask!.id));
+  await refresh();
+  if (before === 0) await expect(badge).toHaveCount(0);
+  else await expect(badge).toHaveText(String(before));
+});
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,
 }) => {

@@ -16,6 +16,7 @@ import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
 import Alert from '@mui/material/Alert';
 import AppBar from '@mui/material/AppBar';
+import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
@@ -47,6 +48,7 @@ import { Queue } from './Queue';
 import { Repositories } from './Repositories';
 import { Settings } from './Settings';
 import { getHealth, getMe, getReady, signOut } from './api';
+import { useAttention } from './useAttention';
 import { AgentFlow } from './flow/AgentFlow';
 import { ROLE_LABEL } from './labels';
 
@@ -157,6 +159,13 @@ export function App() {
   const signedIn = state.phase === 'ready' && state.me !== null;
   const me = state.phase === 'ready' ? state.me : null;
   const atHome = !signedIn || route.page === 'home';
+  const attention = useAttention(signedIn);
+
+  // The browser tab says it too, for someone working in another window.
+  useEffect(() => {
+    document.title =
+      attention.count > 0 ? `(${attention.count}) Autonomous SDLC` : 'Autonomous SDLC';
+  }, [attention.count]);
 
   const nav = (
     <List component="nav" aria-label="Main" sx={{ px: 1, py: 1.5 }}>
@@ -172,6 +181,17 @@ export function App() {
         >
           <ListItemIcon sx={{ minWidth: 38 }}>{n.icon}</ListItemIcon>
           <ListItemText primary={n.label} slotProps={{ primary: { variant: 'body2' } }} />
+          {n.page === 'queue' && attention.count > 0 && (
+            <Chip
+              size="small"
+              color={attention.urgent ? 'error' : 'warning'}
+              label={attention.count}
+              aria-label={`${attention.count} waiting on you${attention.urgent ? ', including a hard stop' : ''}`}
+              data-testid="queue-badge"
+              data-urgent={attention.urgent}
+              sx={{ ml: 1, fontWeight: 700 }}
+            />
+          )}{' '}
         </ListItemButton>
       ))}
     </List>
@@ -192,7 +212,14 @@ export function App() {
         <Toolbar sx={{ gap: 1 }}>
           {signedIn && !desktop && (
             <IconButton edge="start" aria-label="Open the menu" onClick={() => setMenuOpen(true)}>
-              <MenuIcon />
+              <Badge
+                variant="dot"
+                invisible={attention.count === 0}
+                color={attention.urgent ? 'error' : 'warning'}
+                data-testid="menu-badge"
+              >
+                <MenuIcon />
+              </Badge>
             </IconButton>
           )}
           <Typography component="div" variant="h3" sx={{ flexGrow: 1 }}>
