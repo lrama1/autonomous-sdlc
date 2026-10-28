@@ -15,7 +15,7 @@ export const GOAL =
 /** Say something while an action happens, and wait for both. */
 export const act = (h, text, fn) => Promise.all([h.say(text), fn()]);
 export const pickInitiative = async (h) => {
-  const sel = h.page.getByLabel('Initiative');
+  const sel = h.page.getByLabel('Initiative', { exact: true });
   await sel.waitFor({ timeout: 30000 });
   await sel.selectOption({ label: TITLE });
 };

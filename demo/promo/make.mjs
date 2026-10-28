@@ -160,7 +160,7 @@ async function liveClip(browser, state, b, seconds) {
       if (b.visual.act === 'home') {
         await scrollSlowly(page, 520, Math.max(2000, seconds * 700));
       } else if (b.visual.act === 'map') {
-        const sel = page.getByLabel('Initiative');
+        const sel = page.getByLabel('Initiative', { exact: true });
         await sel.waitFor({ timeout: 30000 });
         await sel.selectOption({ label: TITLE });
         await sleep(1500);
