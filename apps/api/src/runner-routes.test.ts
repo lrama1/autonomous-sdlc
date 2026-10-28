@@ -13,6 +13,8 @@ import {
   agentRun,
   assumption,
   authenticateRunToken,
+  buildPlan,
+  buildTask,
   createDb,
   createRunFixture,
   githubApp,
@@ -212,6 +214,8 @@ describe('buildResumeMessage', () => {
 let github: http.Server;
 let githubUrl: string;
 let calls: Array<{ method: string; url: string; body: Record<string, unknown> }> = [];
+// The approved design the fake GitHub serves for any file read, or null for a 404.
+let designFile: string | null = null;
 
 let devDb: DevDb;
 let dataDir: string;
@@ -292,6 +296,8 @@ beforeAll(async () => {
         base: { ref: body.base },
       });
     }
+    if (req.method === 'GET' && (req.url ?? '').includes('/contents/') && designFile !== null)
+      return json(200, { encoding: 'base64', content: Buffer.from(designFile).toString('base64') });
     return json(404, { message: 'Not Found' });
   });
   await new Promise<void>((r) => github.listen(0, '127.0.0.1', r));
@@ -337,6 +343,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   calls = [];
+  designFile = null;
 });
 
 describe('the rules file', () => {
@@ -596,6 +603,38 @@ describe('triggers', () => {
     });
   });
 
+  it('allows .sdlc/preview.yaml at once when the task names it, except in guided mode', async () => {
+    const run = async (mode: string, task: string, paths: string[]) => {
+      const f = await setup({ state: 'running' });
+      await db
+        .update(initiative)
+        .set({ autonomyMode: mode })
+        .where(eq(initiative.id, f.initiativeId));
+      await db.update(agentRun).set({ task }).where(eq(agentRun.id, f.runId));
+      const res = await post(f.token, '/runner/trigger', {
+        kind: 'protected_path',
+        summary: 'Edited protected paths',
+        paths,
+      });
+      const [row] = await db
+        .select()
+        .from(interaction)
+        .where(eq(interaction.id, (await j(res)).interactionId));
+      return row!;
+    };
+    const task = 'Fix the smoke checks in .sdlc/preview.yaml.';
+    const auto = await run('balanced', task, ['.sdlc/preview.yaml']);
+    expect(auto).toMatchObject({ state: 'answered', answeredVia: 'auto' });
+    expect(auto.answer).toMatchObject({ choice: 'allow', source: 'policy', rule: 'smoke-config' });
+    expect((await run('autopilot', task, ['.sdlc/preview.yaml'])).state).toBe('answered');
+    expect((await run('guided', task, ['.sdlc/preview.yaml'])).state).toBe('open');
+    // The task does not name it, or it is another protected path: a person still decides.
+    expect((await run('autopilot', 'Add a health check.', ['.sdlc/preview.yaml'])).state).toBe(
+      'open',
+    );
+    expect((await run('autopilot', 'Edit scripts/x.sh', ['scripts/x.sh'])).state).toBe('open');
+  });
+
   it('wants every path named before it recommends allowing', () => {
     const task = 'Edit .sdlc/preview.yaml.';
     expect(protectedPathAdvice(task, ['.sdlc/preview.yaml']).recommend).toBe('allow');
@@ -816,6 +855,97 @@ describe('POST /runner/pull-request', () => {
       'auth-code',
       'new-dependency',
     ]);
+  });
+
+  it('does not ask about a new dependency or a large diff on a new app, but does on a feature', async () => {
+    const run = async (kind: string | null) => {
+      const f = await setup({ state: 'running' });
+      await db.update(initiative).set({ kind }).where(eq(initiative.id, f.initiativeId));
+      await db
+        .update(agentRun)
+        .set({ branch: `agent/${f.runId}/x` })
+        .where(eq(agentRun.id, f.runId));
+      const res = await post(
+        f.token,
+        '/runner/pull-request',
+        pr(diff({ dependencyAdded: true, dependenciesAdded: ['express'], linesChanged: 5000 })),
+      );
+      return (await j(res)).triggers.map((t: { id: string }) => t.id).sort();
+    };
+    expect(await run('new_app')).toEqual([]);
+    expect(await run('feature')).toEqual(['large-diff', 'new-dependency']);
+    expect(await run(null)).toEqual(['large-diff', 'new-dependency']);
+  });
+
+  it('does not ask about a dependency the approved design names, and still asks about one it does not', async () => {
+    const run = async (design: string | null, added: string[]) => {
+      const f = await setup({ state: 'running' });
+      await db.update(initiative).set({ kind: 'feature' }).where(eq(initiative.id, f.initiativeId));
+      await db
+        .update(agentRun)
+        .set({ branch: `agent/${f.runId}/x` })
+        .where(eq(agentRun.id, f.runId));
+      const [dInt] = await db
+        .insert(interaction)
+        .values({
+          initiativeId: f.initiativeId,
+          runId: f.runId,
+          type: 'review',
+          checkpointId: 'G1',
+          state: 'answered',
+          title: 'Design',
+          roleNeeded: 'architect',
+          contextCard: { kind: 'pull_request', prNumber: 1 },
+        })
+        .returning();
+      const [plan] = await db
+        .insert(buildPlan)
+        .values({
+          initiativeId: f.initiativeId,
+          designInteractionId: dInt!.id,
+          designPath: 'docs/design/x.md',
+          designSha: 'abc',
+          state: 'active',
+          startedBy: f.personId,
+        })
+        .returning();
+      await db.insert(buildTask).values({
+        planId: plan!.id,
+        key: 'T1',
+        position: 0,
+        title: 'One',
+        role: 'backend_engineer',
+        state: 'running',
+        runId: f.runId,
+      });
+      designFile = design;
+      const res = await post(
+        f.token,
+        '/runner/pull-request',
+        pr(diff({ dependencyAdded: true, dependenciesAdded: added })),
+      );
+      const body = await j(res);
+      const [review] = await db
+        .select()
+        .from(interaction)
+        .where(eq(interaction.id, body.interactionId));
+      return {
+        ids: body.triggers.map((t: { id: string }) => t.id),
+        card: review!.contextCard as any,
+      };
+    };
+    const design = 'We use express for the API and zod for validation.';
+    const named = await run(design, ['express', 'zod']);
+    expect(named.ids).toEqual([]);
+    expect(named.card.dependencies).toMatchObject({
+      added: ['express', 'zod'],
+      namedInDesign: ['express', 'zod'],
+    });
+    const stray = await run(design, ['express', 'left-pad']);
+    expect(stray.ids).toEqual(['new-dependency']);
+    expect(stray.card.dependencies).toMatchObject({ namedInDesign: ['express'] });
+    // A design that cannot be read waives nothing.
+    expect((await run(null, ['express'])).ids).toEqual(['new-dependency']);
   });
 
   it('refuses a hard stop and opens no PR', async () => {

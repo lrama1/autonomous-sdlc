@@ -100,6 +100,60 @@ test('a person answers a decision from the queue and makes it a standing decisio
   await expect(card(page, title)).toHaveCount(0);
 });
 
+test('the third identical answer to the same question offers to make it standing', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const topic = `provider-${randomUUID().slice(0, 8)}`;
+  const make = (title: string, answered: boolean) =>
+    db
+      .insert(interaction)
+      .values({
+        initiativeId: f.initiativeId,
+        runId: f.runId,
+        type: 'decision',
+        title,
+        contextCard: { context: 'Picking a provider.' },
+        options: [
+          { id: 'A', label: 'Free tier', impact: '$0' },
+          { id: 'B', label: 'Paid tier', impact: '$29 a month' },
+        ],
+        blocks: [{ runId: f.runId }],
+        topicKey: topic,
+        roleNeeded: 'backend_engineer',
+        ...(answered
+          ? {
+              state: 'answered',
+              answeredVia: 'workspace',
+              answeredAt: new Date(),
+              answer: { text: 'B: Paid tier', decision: null, choice: 'B' },
+            }
+          : {}),
+      })
+      .returning();
+  await make('Earlier one', true);
+  await make('Earlier two', true);
+  const title = `Which provider again? ${randomUUID().slice(0, 8)}`;
+  const [row] = await make(title, false);
+
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await ask.getByLabel(/B . Paid tier/).check();
+  await ask.getByRole('button', { name: 'Answer' }).click();
+
+  const settled = page.getByTestId('settled').filter({ hasText: title });
+  const offer = settled.getByTestId('standing-offer');
+  await expect(offer).toContainText('3 times');
+  await offer.getByRole('button', { name: 'Make it standing' }).click();
+  await expect(settled.getByTestId('standing-saved')).toBeVisible();
+
+  const [sd] = await db
+    .select()
+    .from(standingDecision)
+    .where(eq(standingDecision.createdFromInteractionId, row!.id));
+  expect(sd).toMatchObject({ scope: 'repository', topic, active: true });
+});
 test('a reviewer sees why a review needs them and approves it', async ({ page }) => {
   const f = await createRunFixture(db);
   const title = `Review PR ${randomUUID().slice(0, 8)}`;

@@ -373,3 +373,98 @@ describe('defaults', () => {
     expect(res.statusCode).toBe(409);
   });
 });
+
+describe('offering to make a repeated answer standing', () => {
+  const answer = (cookie: string, id: string, text: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/interactions/${id}/answer`,
+      headers: as(cookie),
+      payload: { answer: text },
+    });
+
+  it('offers after the third identical answer to the same topic, and remembers it for the repository', async () => {
+    const f = await createRunFixture(db);
+    const bob = await newPerson(['backend_engineer']);
+    const seen: Array<unknown> = [];
+    let last = '';
+    for (let k = 0; k < 3; k++) {
+      const q = await ask(f, { topicKey: 'Validation-Library' });
+      last = q.id;
+      const res = await answer(bob.cookie, q.id, 'Use zod');
+      expect(res.statusCode).toBe(200);
+      seen.push(res.json().suggestStanding);
+    }
+    expect(seen[0]).toBeNull();
+    expect(seen[1]).toBeNull();
+    expect(seen[2]).toMatchObject({ count: 3, topic: 'Validation-Library', answer: 'Use zod' });
+
+    const made = await app.inject({
+      method: 'POST',
+      url: `/api/interactions/${last}/standing`,
+      headers: as(bob.cookie),
+      payload: { scope: 'repository' },
+    });
+    expect(made.statusCode).toBe(200);
+    const [sd] = await db
+      .select()
+      .from(standingDecision)
+      .where(eq(standingDecision.createdFromInteractionId, last));
+    expect(sd).toMatchObject({
+      scope: 'repository',
+      scopeId: f.repositoryId,
+      text: 'Use zod',
+      active: true,
+    });
+    // Once it is standing there is nothing more to offer.
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/interactions/${last}/standing`,
+      headers: as(bob.cookie),
+      payload: {},
+    });
+    expect(again.statusCode).toBe(409);
+  });
+
+  it('does not count a different answer, a different topic, or a hard stop', async () => {
+    const f = await createRunFixture(db);
+    const bob = await newPerson(['backend_engineer']);
+    for (const text of ['Use zod', 'Use zod', 'Use joi']) {
+      const q = await ask(f, { topicKey: 'schema-lib' });
+      const res = await answer(bob.cookie, q.id, text);
+      expect(res.json().suggestStanding).toBeNull();
+    }
+    for (let k = 0; k < 3; k++) {
+      const q = await ask(f, { topicKey: 'protected-edit', hardStop: true });
+      expect((await answer(bob.cookie, q.id, 'Allow')).json().suggestStanding).toBeNull();
+    }
+    for (let k = 0; k < 3; k++) {
+      const q = await ask(f);
+      expect((await answer(bob.cookie, q.id, 'Use zod')).json().suggestStanding).toBeNull();
+    }
+  });
+
+  it('is only for someone who may answer that ask, and only when it was offered', async () => {
+    const f = await createRunFixture(db);
+    const bob = await newPerson(['backend_engineer']);
+    const alice = await newPerson(['product_owner']);
+    let last = '';
+    for (let k = 0; k < 3; k++) {
+      const q = await ask(f, { topicKey: 'orm' });
+      last = q.id;
+      await answer(bob.cookie, q.id, 'Use drizzle');
+    }
+    const post = (cookie: string, id: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/interactions/${id}/standing`,
+        headers: as(cookie),
+        payload: {},
+      });
+    expect((await post(alice.cookie, last)).statusCode).toBe(403);
+    const early = await ask(f, { topicKey: 'other-topic' });
+    await answer(bob.cookie, early.id, 'x');
+    expect((await post(bob.cookie, early.id)).statusCode).toBe(409);
+    expect((await post(bob.cookie, last)).statusCode).toBe(200);
+  });
+});

@@ -80,6 +80,11 @@ export const interactionSchema = z.object({
   agentRole: z.string().nullable().optional(),
   assignedToName: z.string().nullable().optional(),
   chatAnswerable: z.boolean().optional(),
+  // Set after a person has given the same answer to the same question several times: offer to make it standing.
+  suggestStanding: z
+    .object({ count: z.number(), topic: z.string(), answer: z.string() })
+    .nullable()
+    .optional(),
   // Why the person asking may not decide this one (they started or steered the run), or null.
   youMayNotDecide: z.string().nullable().optional(),
 });

@@ -10,8 +10,10 @@ import { z } from 'zod';
 import { recordActivity } from './activity.js';
 import { REASONS, answerAsPerson } from './answering.js';
 import type { Gate } from './gate.js';
-import { getInteraction, markDidntNeedToAsk } from './interactions.js';
+import { getInteraction, markDidntNeedToAsk, saveStandingDecision } from './interactions.js';
 import type { InteractionRow } from './interactions.js';
+import { standingSuggestion } from './standing-suggestions.js';
+import type { StandingSuggestion } from './standing-suggestions.js';
 import { requirePerson } from './people.js';
 
 export const isTriggered = (r: InteractionRow): boolean => {
@@ -27,6 +29,7 @@ export function toDto(
     agentRole?: string | null;
     assignedToName?: string | null;
     youMayNotDecide?: string | null;
+    suggestStanding?: StandingSuggestion | null;
   } = {},
 ): InteractionDto {
   return interactionSchema.parse({
@@ -60,6 +63,7 @@ export function toDto(
     agentRole: extra.agentRole,
     assignedToName: extra.assignedToName,
     youMayNotDecide: extra.youMayNotDecide,
+    suggestStanding: extra.suggestStanding ?? null,
     chatAnswerable: extra.policy
       ? chatAnswerable(
           { type: r.type, hardStop: r.hardStop, triggered: isTriggered(r) },
@@ -181,7 +185,40 @@ export function registerInteractionRoutes(
     );
     if (!out.ok)
       return reply.code(out.status).send({ error: { code: out.code, message: out.message } });
-    return toDto(out.row, { policy });
+    return toDto(out.row, { policy, suggestStanding: await standingSuggestion(db, out.row) });
+  });
+
+  // Remembers an answer a person already gave, so agents stop asking. Whoever may answer this ask, or an admin, may do it.
+  app.post('/api/interactions/:id/standing', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { scope } = z
+      .object({ scope: z.enum(['initiative', 'repository', 'global']).default('repository') })
+      .parse(request.body ?? {});
+    const row = await getInteraction(db, id);
+    if (!row)
+      return reply
+        .code(404)
+        .send({ error: { code: 'not_found', message: 'No such interaction.' } });
+    if (!me.roles.includes(row.roleNeeded as never) && !me.roles.includes('platform_admin'))
+      return reply.code(403).send({
+        error: {
+          code: 'wrong_role',
+          message: 'Only a person who may answer this can make it standing.',
+        },
+      });
+    const suggestion = await standingSuggestion(db, row);
+    if (!suggestion)
+      return reply.code(409).send({
+        error: {
+          code: 'not_suggested',
+          message:
+            'This answer is not one to remember: it is not a repeated answer to a question with a topic.',
+        },
+      });
+    const saved = await saveStandingDecision(db, row, suggestion.answer, me.id, scope);
+    return toDto(saved, { policy });
   });
 
   // "Not now": the ask stays open and nobody is reminded until the time is up. A hard stop cannot be snoozed.

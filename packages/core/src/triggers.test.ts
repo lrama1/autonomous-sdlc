@@ -2,9 +2,12 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import {
+  dependenciesNamedIn,
   dependencyAddedInPackageJson,
+  dependencyNamesAdded,
   evaluateTriggers,
   matchPreApproved,
+  matchPreApprovedPaths,
   matchingPaths,
   strongestAction,
   testsDeletedOrSkipped,
@@ -229,5 +232,82 @@ describe('the shipped rules', () => {
   it('leave an ordinary change alone, and a runner that does not say', () => {
     expect(evaluateTriggers(shipped, diff({ unsafeHtml: false }))).toEqual([]);
     expect(evaluateTriggers(shipped, diff())).toEqual([]);
+  });
+});
+
+describe('rules that do not apply to some kinds of initiative', () => {
+  const kinded: RuleSet = {
+    ...rules,
+    triggers: [
+      {
+        id: 'new-dependency',
+        when: { dependency_added: true },
+        action: 'require_review',
+        except_kinds: ['new_app'],
+      },
+      { id: 'tests-removed', when: { tests_deleted_or_skipped: true }, action: 'require_review' },
+    ],
+  };
+  const d = diff({ dependencyAdded: true, testsDeletedOrSkipped: true });
+
+  it('skips a rule for the kinds it excepts, and keeps the others', () => {
+    const ids = (kind?: string | null) => evaluateTriggers(kinded, d, { kind }).map((t) => t.id);
+    expect(ids('new_app')).toEqual(['tests-removed']);
+    expect(ids('feature')).toEqual(['new-dependency', 'tests-removed']);
+    expect(ids(null)).toEqual(['new-dependency', 'tests-removed']);
+    expect(evaluateTriggers(kinded, d).map((t) => t.id)).toEqual([
+      'new-dependency',
+      'tests-removed',
+    ]);
+  });
+});
+
+describe('dependency names', () => {
+  const pkg = (deps: Record<string, string>, dev: Record<string, string> = {}) =>
+    JSON.stringify({ dependencies: deps, devDependencies: dev });
+
+  it('names what was added, and nothing for a version bump or a removal', () => {
+    const before = pkg({ react: '18' }, { vitest: '1' });
+    const after = pkg({ react: '19', zod: '3' }, { vitest: '1', tsx: '4' });
+    expect(dependencyNamesAdded(before, after).sort()).toEqual(['tsx', 'zod']);
+    expect(dependencyNamesAdded(after, before)).toEqual([]);
+    expect(dependencyNamesAdded(null, pkg({ express: '4' }))).toEqual(['express']);
+    expect(dependencyNamesAdded(before, 'not json')).toEqual([]);
+  });
+
+  it('finds a name in a design only as a whole word', () => {
+    const design = 'We use react-dom for rendering, @mui/material for the UI and express.';
+    expect(dependenciesNamedIn(design, ['react-dom', '@mui/material', 'express'])).toEqual({
+      named: ['react-dom', '@mui/material', 'express'],
+      unnamed: [],
+    });
+    // react is not named by react-dom, nor material by @mui/material, nor mui by @mui/material.
+    expect(dependenciesNamedIn(design, ['react', 'material', 'zod'])).toEqual({
+      named: [],
+      unnamed: ['react', 'material', 'zod'],
+    });
+    expect(dependenciesNamedIn('Validate with `zod`.', ['zod']).named).toEqual(['zod']);
+  });
+});
+
+describe('pre-approved protected paths', () => {
+  const withPaths: RuleSet = {
+    ...rules,
+    pre_approved_protected_paths: [
+      { id: 'smoke-config', paths: ['.sdlc/preview.yaml'], review_by: '2027-01-15' },
+    ],
+  };
+
+  it('covers a change only when every path is pre-approved and the review date has not passed', () => {
+    const now = new Date('2026-10-01');
+    expect(matchPreApprovedPaths(withPaths, ['.sdlc/preview.yaml'], now)?.id).toBe('smoke-config');
+    expect(
+      matchPreApprovedPaths(withPaths, ['.sdlc/preview.yaml', 'scripts/x.sh'], now),
+    ).toBeNull();
+    expect(matchPreApprovedPaths(withPaths, [], now)).toBeNull();
+    expect(
+      matchPreApprovedPaths(withPaths, ['.sdlc/preview.yaml'], new Date('2027-02-01')),
+    ).toBeNull();
+    expect(matchPreApprovedPaths(rules, ['.sdlc/preview.yaml'], now)).toBeNull();
   });
 });

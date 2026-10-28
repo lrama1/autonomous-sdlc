@@ -13,9 +13,11 @@ triggers:
     when: { paths_any: ['**/migrations/**', '**/*.sql'] }
     action: require_review
   - id: new-dependency
-    description: A dependency was added
+    description: A dependency was added that the approved design does not name
     when: { dependency_added: true }
     action: require_review
+    # A first build adds its own set of packages, and the design names them.
+    except_kinds: [new_app]
   - id: tests-removed
     description: A test was deleted or skipped
     when: { tests_deleted_or_skipped: true }
@@ -28,6 +30,8 @@ triggers:
     description: More than 800 lines changed
     when: { lines_changed_over: 800 }
     action: require_review
+    # A first build starts from nothing, so its tasks are large.
+    except_kinds: [new_app]
   - id: infra-change
     description: Infrastructure change
     when: { paths_any: ['infra/**', '**/*.tf'] }
@@ -37,3 +41,9 @@ pre_approved_change_types:
     owner: team-lead
     review_by: 2027-01-15
     when: { paths_all: ['**/*.md', 'docs/**'] }
+pre_approved_protected_paths:
+  - id: smoke-config
+    description: The smoke checks file, when the task itself names it
+    owner: team-lead
+    review_by: 2027-01-15
+    paths: ['.sdlc/preview.yaml']

@@ -9,7 +9,7 @@ import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import { decideAssumption, getAssumptions, getProfile, getQueue } from './api';
+import { decideAssumption, getAssumptions, getProfile, getQueue, makeStanding } from './api';
 import { formatSpan, roleLabel } from './labels';
 import { Ask } from './queue/Ask';
 import { PageHeader } from './ui';
@@ -56,6 +56,53 @@ function AssumptionRow({ a, onChanged }: { a: AssumptionDto; onChanged: () => vo
   );
 }
 
+function StandingOffer({
+  id,
+  suggest,
+}: {
+  id: string;
+  suggest: NonNullable<InteractionDto['suggestStanding']>;
+}) {
+  const [state, setState] = useState<'offer' | 'saved' | 'dismissed' | 'failed'>('offer');
+  if (state === 'dismissed') return null;
+  if (state === 'saved')
+    return (
+      <Alert severity="success" sx={{ mt: 1 }} data-testid="standing-saved">
+        Saved. Agents will use this answer for this repository without asking. You can review or end
+        it on the Assumptions page.
+      </Alert>
+    );
+  return (
+    <Alert
+      severity="info"
+      sx={{ mt: 1 }}
+      data-testid="standing-offer"
+      action={
+        <Stack direction="row" spacing={1}>
+          <Button
+            size="small"
+            onClick={() =>
+              void makeStanding(id).then(
+                () => setState('saved'),
+                () => setState('failed'),
+              )
+            }
+          >
+            Make it standing
+          </Button>
+          <Button size="small" color="inherit" onClick={() => setState('dismissed')}>
+            No
+          </Button>
+        </Stack>
+      }
+    >
+      You have given this answer {suggest.count} times to the same question ({suggest.topic}). Make
+      it a standing decision for this repository?
+      {state === 'failed' && ' That did not save. Try again.'}
+    </Alert>
+  );
+}
+
 export function Queue({ openId }: { openId: string | null }) {
   const [items, setItems] = useState<InteractionDto[] | null>(null);
   const [assumptions, setAssumptions] = useState<AssumptionDto[]>([]);
@@ -63,7 +110,9 @@ export function Queue({ openId }: { openId: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   // An answered ask leaves the open list at once. Keep what the person was told, until they leave the page.
-  const [settled, setSettled] = useState<Array<{ i: InteractionDto; note: string }>>([]);
+  const [settled, setSettled] = useState<
+    Array<{ i: InteractionDto; note: string; suggest?: InteractionDto['suggestStanding'] }>
+  >([]);
 
   const load = useCallback(async () => {
     try {
@@ -139,8 +188,8 @@ export function Queue({ openId }: { openId: string | null }) {
               highlight={openId === i.id}
               assumptions={assumptions}
               onChanged={load}
-              onAnswered={(note) => {
-                setSettled((s) => [...s, { i, note }]);
+              onAnswered={(note, suggest) => {
+                setSettled((s) => [...s, { i, note, suggest }]);
                 void load();
               }}
             />
@@ -156,6 +205,7 @@ export function Queue({ openId }: { openId: string | null }) {
                   <Alert severity="success" data-testid="answered">
                     <b>Done.</b> {s.note}
                   </Alert>
+                  {s.suggest && <StandingOffer id={s.i.id} suggest={s.suggest} />}
                 </CardContent>
               </Card>
             ))}
