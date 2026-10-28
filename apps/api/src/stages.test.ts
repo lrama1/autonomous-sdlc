@@ -1,3 +1,5 @@
+import { INITIATIVE_KINDS as CORE_KINDS } from '@sdlc/core';
+import { INITIATIVE_KINDS as WEB_KINDS, KIND_LABEL } from '@sdlc/schemas';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,6 +26,7 @@ import { loadConfig } from './config.js';
 import { MemorySecrets } from './secrets.js';
 import {
   designTask,
+  specTask,
   ensureDesignStarts,
   ensureRevisions,
   planSpecStart,
@@ -447,5 +450,25 @@ describe('what a person can do', () => {
     expect(await startsOf(off.id)).toHaveLength(0);
     const guided = (await create({ autonomyMode: 'guided' })).json();
     expect((await startsOf(guided.id))[0]!.state).toBe('awaiting_start');
+  });
+});
+
+describe('what the agents are told about the kind of work', () => {
+  it('tells the product agent and the architect, and leaves older initiatives as they were', () => {
+    const goal = { title: 'Login', goal: 'Add a simulated login' };
+    expect(specTask({ ...goal, kind: 'feature' })).toContain('The spec covers only this feature');
+    expect(specTask({ ...goal, kind: 'new_app' })).toContain('covers the whole app');
+    expect(specTask({ ...goal, kind: null })).toBe(specTask(goal));
+    expect(designTask('docs/spec/login.md', 'feature')).toContain('Do not restructure');
+    expect(designTask('docs/spec/login.md', 'change')).toContain('smallest change');
+    expect(designTask('docs/spec/login.md')).toBe(designTask('docs/spec/login.md', null));
+    expect(designTask('docs/spec/login.md', null).split('\n')).toHaveLength(3);
+  });
+});
+
+describe('the kinds of work', () => {
+  it('are the same list in the web app and for the agents, and each has a label', () => {
+    expect([...WEB_KINDS]).toEqual([...CORE_KINDS]);
+    for (const k of WEB_KINDS) expect(KIND_LABEL[k]).toBeTruthy();
   });
 });

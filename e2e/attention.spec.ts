@@ -766,6 +766,41 @@ test('a spec review has no preview to start, and says why', async ({ page }) => 
   await expect(preview.getByRole('button')).toHaveCount(0);
 });
 
+test('an initiative has a type: set on the Map, shown and filtered in the Portfolio', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  await db.update(initiative).set({ kind: null }).where(eq(initiative.id, f.initiativeId));
+  await signInAs(page, /Dev Admin/);
+  await page.goto(`/#/map/${f.initiativeId}`);
+  const type = page.getByLabel('Type of initiative');
+  await expect(type).toHaveValue('');
+  await type.selectOption('feature');
+  await expect(page.getByTestId('note')).toContainText('The type is saved');
+  await expect(type).toHaveValue('feature');
+
+  await page.getByTestId('nav-portfolio').click();
+  const row = page.getByTestId(`row-${f.initiativeId}`);
+  await expect(row.getByTestId('kind-chip')).toHaveText('Feature');
+  await page.getByTestId('kind-filter').getByRole('combobox').selectOption('new_app');
+  await expect(row).toHaveCount(0);
+  await page.getByTestId('kind-filter').getByRole('combobox').selectOption('feature');
+  await expect(row).toBeVisible();
+});
+
+test('the new initiative form suggests a type from the repository, and the person can change it', async ({
+  page,
+}) => {
+  await signInAs(page, /Dev Admin/);
+  await page.goto('/#/map');
+  const type = page.getByLabel('Type', { exact: true });
+  await expect(type).toBeVisible();
+  // Whatever it suggests is one of the three, and choosing another sticks.
+  await type.selectOption('change');
+  await expect(type).toHaveValue('change');
+  await expect(page.getByText('Changes or fixes behaviour that already exists')).toBeVisible();
+});
+
 test('a person who started the run is told up front that they may not decide it', async ({
   page,
 }) => {

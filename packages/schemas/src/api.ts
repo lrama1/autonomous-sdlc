@@ -581,6 +581,8 @@ export const portfolioSchema = z.object({
       title: z.string(),
       repository: z.string(),
       autonomyMode: z.string(),
+      // New app, feature or change. Null for work made before the kind existed.
+      kind: z.string().nullable().default(null),
       state: z.string(),
       // The first stage that is not done. Null when every stage is done.
       stage: z

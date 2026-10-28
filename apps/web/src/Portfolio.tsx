@@ -13,6 +13,10 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
+import { KIND_LABEL } from '@sdlc/schemas';
+import type { InitiativeKindDto } from '@sdlc/schemas';
+import TextField from '@mui/material/TextField';
+import Chip from '@mui/material/Chip';
 import { getPortfolio } from './api';
 import { formatSpan, roleLabel } from './labels';
 import { PageHeader, StatusChip } from './ui';
@@ -54,6 +58,7 @@ function Tile({ n, label, testId }: { n: React.ReactNode; label: string; testId?
 export function Portfolio() {
   const [p, setP] = useState<PortfolioDto | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [kind, setKind] = useState<'all' | InitiativeKindDto | 'unset'>('all');
 
   useEffect(() => {
     let stop = false;
@@ -74,6 +79,9 @@ export function Portfolio() {
   if (problem) return <Alert severity="warning">{problem}</Alert>;
   if (!p) return <Typography color="text.secondary">Loading.</Typography>;
 
+  const shown = p.initiatives.filter((i) =>
+    kind === 'all' ? true : kind === 'unset' ? i.kind === null : i.kind === kind,
+  );
   const waiting = p.initiatives.filter(
     (i) => i.stage?.status === 'waiting_human' || i.stage?.status === 'blocked',
   ).length;
@@ -96,6 +104,24 @@ export function Portfolio() {
         <Tile n={p.initiatives.reduce((s, i) => s + i.openBugs, 0)} label="open bugs" />
       </Box>
 
+      <TextField
+        select
+        size="small"
+        label="Type"
+        value={kind}
+        onChange={(e) => setKind(e.target.value as typeof kind)}
+        sx={{ maxWidth: 220 }}
+        slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+        data-testid="kind-filter"
+      >
+        <option value="all">All types</option>
+        {(Object.keys(KIND_LABEL) as InitiativeKindDto[]).map((k) => (
+          <option key={k} value={k}>
+            {KIND_LABEL[k]}
+          </option>
+        ))}
+        <option value="unset">Not set</option>
+      </TextField>
       <Card data-testid="initiatives">
         <TableContainer>
           <Table size="small">
@@ -111,10 +137,18 @@ export function Portfolio() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {p.initiatives.map((i) => (
+              {shown.map((i) => (
                 <TableRow key={i.id} data-testid={`row-${i.id}`} hover>
                   <TableCell>
-                    <Link href={`#/map/${i.id}`}>{i.title}</Link>
+                    <Link href={`#/map/${i.id}`}>{i.title}</Link>{' '}
+                    {i.kind && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={KIND_LABEL[i.kind as InitiativeKindDto] ?? i.kind}
+                        data-testid="kind-chip"
+                      />
+                    )}
                     <Typography variant="body2" color="text.secondary">
                       {i.repository}, {i.autonomyMode}
                     </Typography>

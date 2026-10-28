@@ -168,7 +168,11 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       el('Tile "open bugs"', 'Total reported bugs not yet fixed across all initiatives.'),
       el(
         'Initiative column',
-        'The initiative title (a link that opens it on the Map) with a line under it: its repository and its autonomy mode (guided, balanced or autopilot).',
+        'The initiative title (a link that opens it on the Map) with a line under it: its repository and its autonomy mode (guided, balanced or autopilot). Next to the title, a chip says its type (New app, Feature, or Change or fix) when one is set.',
+      ),
+      el(
+        'Type filter (above the table)',
+        'Narrows the list to one type: All types, New app, Feature, Change or fix, or Not set (older initiatives made before types existed). A new app is a first build; a feature adds to an app that exists; a change or fix alters existing behaviour as little as it can.',
       ),
       el(
         'Where it is column',
@@ -220,7 +224,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'Initiative summary',
-        'Below the picker: the initiative title, its autonomy mode in a chip (guided, balanced or autopilot), its goal, and any "Reference links" it was given.',
+        'Below the picker: the initiative title, its autonomy mode in a chip (guided, balanced or autopilot), a Type menu (New app, Feature, Change or fix; Product Owners, Architects and Platform Admins can change it, and steps and tasks that start afterwards are written for the new type; older initiatives show Type not set), its goal, and any "Reference links" it was given.',
       ),
       el(
         'Stage diagram (three stage cards)',
@@ -325,7 +329,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'New initiative form (bottom of the page)',
-        'Starts a new initiative: Title; Repository (from the registered list; "No repository is registered" with a note to ask a Platform Admin to add one on the Repositories page when empty); "How much runs on its own" (Guided: a person reviews every PR; Balanced: pre-approved types merge; Autopilot: no trigger, no review); a checkbox "Draft the spec now, then design and build after each approval (guided mode waits for a click)"; Goal, in a few sentences; and optional Reference links (documentation for any outside system the work must call, one https link per line - agents ask for it if it is missing). Create is disabled until a repository exists. Afterwards the Map opens the new initiative.',
+        'Starts a new initiative: Title; Repository (from the registered list; "No repository is registered" with a note to ask a Platform Admin to add one on the Repositories page when empty); Type (New app, Feature, or Change or fix; it starts as Feature when the repository already has an initiative and New app when it does not, and the agents are told which, so a feature is designed on top of the existing app and not as a fresh one); "How much runs on its own" (Guided: a person reviews every PR; Balanced: pre-approved types merge; Autopilot: no trigger, no review); a checkbox "Draft the spec now, then design and build after each approval (guided mode waits for a click)"; Goal, in a few sentences; and optional Reference links (documentation for any outside system the work must call, one https link per line - agents ask for it if it is missing). Create is disabled until a repository exists. Afterwards the Map opens the new initiative.',
       ),
     ],
     roles:

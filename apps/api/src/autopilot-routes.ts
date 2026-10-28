@@ -96,28 +96,56 @@ export function registerAutopilotRoutes(app: FastifyInstance, db: Db, rules: Rul
       return reply.code(403).send({
         error: {
           code: 'wrong_role',
-          message: 'Only a Product Owner or a Platform Admin can change the autonomy mode.',
+          message:
+            'Only a Product Owner or a Platform Admin can change the autonomy mode or the kind.',
         },
       });
     }
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const { autonomyMode } = z
-      .object({ autonomyMode: autonomyModeSchema })
-      .parse(request.body ?? {});
+    const body = z
+      .object({
+        autonomyMode: autonomyModeSchema.optional(),
+        kind: z.enum(['new_app', 'feature', 'change']).optional(),
+      })
+      .refine((b) => b.autonomyMode !== undefined || b.kind !== undefined, {
+        message: 'Say what to change: autonomyMode or kind.',
+      })
+      .safeParse(request.body ?? {});
+    if (!body.success)
+      return reply.code(400).send({
+        error: { code: 'bad_request', message: body.error.issues[0]?.message ?? 'Bad request.' },
+      });
     const [before] = await db
-      .select({ mode: initiative.autonomyMode })
+      .select({ mode: initiative.autonomyMode, kind: initiative.kind })
       .from(initiative)
       .where(eq(initiative.id, id));
     if (!before)
       return reply.code(404).send({ error: { code: 'not_found', message: 'No such initiative.' } });
-    await db.update(initiative).set({ autonomyMode }).where(eq(initiative.id, id));
-    await recordActivity(db, {
-      actorType: 'person',
-      actorId: me.id,
-      initiativeId: id,
-      action: 'initiative.autonomy_changed',
-      detail: { from: before.mode, to: autonomyMode },
-    });
-    return { id, autonomyMode };
+    const { autonomyMode, kind } = body.data;
+    await db
+      .update(initiative)
+      .set({
+        ...(autonomyMode ? { autonomyMode } : {}),
+        ...(kind ? { kind } : {}),
+      })
+      .where(eq(initiative.id, id));
+    if (autonomyMode)
+      await recordActivity(db, {
+        actorType: 'person',
+        actorId: me.id,
+        initiativeId: id,
+        action: 'initiative.autonomy_changed',
+        detail: { from: before.mode, to: autonomyMode },
+      });
+    // Steps and tasks already written keep the words they were given. Later ones use the new kind.
+    if (kind)
+      await recordActivity(db, {
+        actorType: 'person',
+        actorId: me.id,
+        initiativeId: id,
+        action: 'initiative.kind_changed',
+        detail: { from: before.kind, to: kind },
+      });
+    return { id, autonomyMode: autonomyMode ?? before.mode, kind: kind ?? before.kind };
   });
 }

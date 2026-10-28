@@ -1,0 +1,1 @@
+ALTER TABLE "initiative" ADD COLUMN "kind" text;

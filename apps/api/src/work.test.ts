@@ -242,6 +242,55 @@ describe('initiatives', () => {
     expect(got.json()).toMatchObject({ title: 'Health endpoint', runs: [] });
   });
 
+  it('says what kind of work it is: a new app on a repository with no work yet, a feature after that', async () => {
+    const po = await login(['product_owner']);
+    const repo = await registered();
+    const make = (extra: Record<string, unknown> = {}) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/initiatives',
+        headers: as(po.cookie),
+        payload: { title: 'Thing', goal: 'A thing', repositoryId: repo.id, ...extra },
+      });
+    expect((await make()).json().kind).toBe('new_app');
+    expect((await make()).json().kind).toBe('feature');
+    // What a person picks wins over the suggestion.
+    expect((await make({ kind: 'change' })).json().kind).toBe('change');
+    expect((await make({ kind: 'epic' })).statusCode).toBe(400);
+  });
+
+  it('lets a Product Owner or Platform Admin change the kind, and nobody else', async () => {
+    const po = await login(['product_owner']);
+    const dev = await login(['backend_engineer']);
+    const repo = await registered();
+    const made = await app.inject({
+      method: 'POST',
+      url: '/api/initiatives',
+      headers: as(po.cookie),
+      payload: { title: 'Old', goal: 'g', repositoryId: repo.id },
+    });
+    const id = made.json().id as string;
+    const patch = (cookie: string, body: Record<string, unknown>) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/initiatives/${id}`,
+        headers: as(cookie),
+        payload: body,
+      });
+    expect((await patch(dev.cookie, { kind: 'feature' })).statusCode).toBe(403);
+    expect((await patch(po.cookie, { kind: 'nonsense' })).statusCode).toBe(400);
+    expect((await patch(po.cookie, {})).statusCode).toBe(400);
+    const ok = await patch(po.cookie, { kind: 'feature' });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ kind: 'feature', autonomyMode: 'balanced' });
+    const got = await app.inject({ url: `/api/initiatives/${id}`, headers: as(po.cookie) });
+    expect(got.json().kind).toBe('feature');
+    // The mode still changes on its own, and leaves the kind alone.
+    const mode = await patch(po.cookie, { autonomyMode: 'guided' });
+    expect(mode.json()).toMatchObject({ kind: 'feature', autonomyMode: 'guided' });
+    const map = await app.inject({ url: `/api/initiatives/${id}/map`, headers: as(po.cookie) });
+    expect(map.json().initiative.kind).toBe('feature');
+  });
   it('keeps the reference links, and refuses a link that is not https', async () => {
     const po = await login(['product_owner']);
     const repo = await registered();

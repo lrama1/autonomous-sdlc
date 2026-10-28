@@ -86,6 +86,7 @@ export async function portfolio(db: Db): Promise<PortfolioDto> {
       title: i.title,
       repository: repo,
       autonomyMode: i.autonomyMode,
+      kind: i.kind,
       state: i.state,
       stage: current
         ? {

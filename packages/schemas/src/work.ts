@@ -147,11 +147,27 @@ export const modelTestSchema = z.object({
 });
 export type ModelTestDto = z.infer<typeof modelTestSchema>;
 
+/** What kind of work an initiative is. The agents are told (packages/core/src/initiative-kind.ts keeps the same list). */
+export const INITIATIVE_KINDS = ['new_app', 'feature', 'change'] as const;
+export type InitiativeKindDto = (typeof INITIATIVE_KINDS)[number];
+export const KIND_LABEL: Record<InitiativeKindDto, string> = {
+  new_app: 'New app',
+  feature: 'Feature',
+  change: 'Change or fix',
+};
+export const KIND_HELP: Record<InitiativeKindDto, string> = {
+  new_app: 'A first build: the repository is empty or holds only scaffolding.',
+  feature: 'Adds something to an app that already exists.',
+  change: 'Changes or fixes behaviour that already exists, as small as it can be.',
+};
+
 export const initiativeCreateSchema = z.object({
   title: z.string().min(1).max(200),
   goal: z.string().min(1).max(4000),
   repositoryId: z.string().uuid(),
   autonomyMode: z.enum(['guided', 'balanced', 'autopilot']).default('balanced'),
+  // New app, feature, or change or fix. Left out, the platform suggests one from the repository.
+  kind: z.enum(INITIATIVE_KINDS).optional(),
   // Start the spec from the goal now, and the design and build after each approval. False: a person starts every run.
   autoStages: z.boolean().default(true),
   // Documentation for outside systems the work must call, or other background. Agents pass them on when they propose an integration.

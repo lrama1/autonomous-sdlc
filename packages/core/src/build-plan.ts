@@ -1,4 +1,5 @@
 import { describeSmokeCheck } from './design.js';
+import { kindGuidance } from './initiative-kind.js';
 import type { DesignSmoke, DesignTask } from './design.js';
 
 // The build plan: the approved design's task list, built one run at a time (spec 8.2, "start the next stage"). Pure.
@@ -111,6 +112,8 @@ export function taskPrompt(
   earlier?: Array<{ attempt: number; why: string }>,
   /** What a person wrote after those failures. */
   guidance?: string,
+  /** What kind of work the initiative is (new_app, feature, change). Older initiatives have none. */
+  kind?: string | null,
 ): string {
   const lines = [
     `${task.id}: ${task.title}`,
@@ -123,6 +126,8 @@ export function taskPrompt(
     'It is done when:',
     ...task.doneWhen.map((d) => `- ${d}`),
   ];
+  const kindNote = kindGuidance(kind, 'engineer');
+  if (kindNote) lines.push('', kindNote);
   if (redo) {
     lines.push(
       '',

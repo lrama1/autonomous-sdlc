@@ -186,3 +186,45 @@ describe('taskPrompt', () => {
     expect(p).toContain('Do not do their work: T3 (Unrelated)');
   });
 });
+
+describe('taskPrompt and the kind of work', () => {
+  it('tells the engineer how to treat the app, and says nothing for an older initiative', () => {
+    const a = {
+      id: 'T1',
+      title: 'Add the route',
+      role: 'backend_engineer',
+      stories: [],
+      dependsOn: [],
+      paths: ['src/a.ts'],
+      doneWhen: ['it answers'],
+    } as never;
+    const feature = taskPrompt(
+      { path: 'docs/design/x.md' },
+      a,
+      [a],
+      undefined,
+      null,
+      undefined,
+      undefined,
+      undefined,
+      'feature',
+    );
+    expect(feature).toContain('Kind of work: Feature.');
+    expect(feature).toContain('Follow its conventions');
+    const plain = taskPrompt({ path: 'docs/design/x.md' }, a, [a]);
+    expect(plain).not.toContain('Kind of work');
+    expect(
+      taskPrompt(
+        { path: 'docs/design/x.md' },
+        a,
+        [a],
+        undefined,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        null,
+      ),
+    ).toBe(plain);
+  });
+});
