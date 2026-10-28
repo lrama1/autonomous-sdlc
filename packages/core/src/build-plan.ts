@@ -107,6 +107,10 @@ export function taskPrompt(
   smoke?: DesignSmoke | null,
   /** Set when a reviewer read an earlier attempt and asked for changes: what they said. */
   rework?: string,
+  /** Why each earlier attempt failed. The agent is told, so it takes a different route. */
+  earlier?: Array<{ attempt: number; why: string }>,
+  /** What a person wrote after those failures. */
+  guidance?: string,
 ): string {
   const lines = [
     `${task.id}: ${task.title}`,
@@ -130,6 +134,20 @@ export function taskPrompt(
       '',
       `This is a new attempt. A reviewer read an earlier attempt's pull request and asked for changes. That pull request was closed, so none of its changes are on the main branch. Start from the current main branch, do this task again, and make every change the reviewer asked for. The reviewer wrote:`,
       rework,
+    );
+  }
+  if (earlier && earlier.length > 0) {
+    lines.push(
+      '',
+      'This task was tried before and failed. Here is why. Do not repeat the approach that failed. Find the cause first; if the same step cannot work, take a different route. If the task cannot be done as written, say so plainly in your final message (or ask) rather than forcing it.',
+      ...earlier.map((e) => `- Attempt ${e.attempt}: ${e.why}`),
+    );
+  }
+  if (guidance) {
+    lines.push(
+      '',
+      'A person read those failures and wrote this for the next attempt. Follow it:',
+      guidance,
     );
   }
   if (smoke?.kind === 'checks') {

@@ -22,6 +22,7 @@ import type { Db } from '@sdlc/db';
 import { startDevDb } from '@sdlc/dev-db';
 import type { DevDb } from '@sdlc/dev-db';
 import { buildApp } from './app.js';
+import { settleWithAnswer } from './interactions.js';
 import { startDueStages } from './stages.js';
 import { buildTick, cancelPlan, ensurePlans, retryTask, skipTask, startPlan } from './build.js';
 import type { BuildDeps } from './build.js';
@@ -278,7 +279,7 @@ describe('making a plan from an approved design', () => {
       T3: 'waiting',
     });
 
-    const starter = await newPerson(['architect']);
+    const starter = await newPerson(['platform_admin']);
     const plan = (await planOf(f.initiativeId)).plan!;
     expect(await startPlan(db, plan.id, starter.id)).toMatchObject({
       state: 'active',
@@ -611,7 +612,6 @@ describe('tasks that touch the same files', () => {
 
 describe('when a task goes wrong', () => {
   const failures: Array<['run_failed' | 'no_pr' | 'declined' | 'ci_failed', string]> = [
-    ['run_failed', 'The run ended as failed'],
     ['no_pr', 'without opening a pull request'],
     ['declined', 'The reviewer chose'],
     ['ci_failed', 'The merge stopped (ci_failed: tests)'],
@@ -656,15 +656,18 @@ describe('when a task goes wrong', () => {
     const by = await newPerson(['product_owner']);
     await buildTick(deps());
     const plan = (await planOf(f.initiativeId)).plan!;
-    const firstRun = (await planOf(f.initiativeId)).tasks[0]!.runId;
     await finishTask(plan.id, 'T1', 'run_failed');
     await buildTick(deps());
+    await finishTask(plan.id, 'T1', 'run_failed');
+    await buildTick(deps());
+    expect((await planOf(f.initiativeId)).state).toMatchObject({ T1: 'failed' });
+    const secondRun = (await planOf(f.initiativeId)).tasks[0]!.runId;
 
     expect(await retryTask(db, plan.id, 'T1', by.id)).toMatchObject({ state: 'waiting' });
     await buildTick(deps());
     const retried = (await planOf(f.initiativeId)).tasks[0]!;
-    expect(retried).toMatchObject({ state: 'running', attempt: 2 });
-    expect(retried.runId).not.toBe(firstRun);
+    expect(retried).toMatchObject({ state: 'running', attempt: 3 });
+    expect(retried.runId).not.toBe(secondRun);
 
     await finishTask(plan.id, 'T1', 'run_failed');
     await buildTick(deps());
@@ -674,6 +677,125 @@ describe('when a task goes wrong', () => {
     // A running task cannot be skipped or retried.
     expect(await skipTask(db, plan.id, 'T2', by.id)).toBeNull();
     expect(await retryTask(db, plan.id, 'T2', by.id)).toBeNull();
+  });
+
+  describe('a run that failed', () => {
+    const runOf = async (id: string) =>
+      (await db.select().from(agentRun).where(eq(agentRun.id, id)))[0]!;
+    const taskAsk = async (initiativeId: string) =>
+      (await db.select().from(interaction).where(eq(interaction.initiativeId, initiativeId))).find(
+        (i) => (i.contextCard as { kind?: string }).kind === 'task_failed',
+      );
+
+    it('is tried once more by itself, and the new attempt is told why the first one failed', async () => {
+      designText = THREE;
+      const f = await approvedDesign();
+      await buildTick(deps());
+      const plan = (await planOf(f.initiativeId)).plan!;
+      const first = (await planOf(f.initiativeId)).tasks[0]!.runId!;
+      await appendRunEvent(db, first, 'run.summary', {
+        text: 'The engine could not install tsx: the registry refused the request.',
+      });
+      await finishTask(plan.id, 'T1', 'run_failed');
+      await buildTick(deps());
+      const t1 = (await planOf(f.initiativeId)).tasks[0]!;
+      expect(t1).toMatchObject({ state: 'running', attempt: 2 });
+      expect(t1.history).toHaveLength(1);
+      expect(t1.history[0]!.why).toContain('could not install tsx');
+      const prompt = (await runOf(t1.runId!)).task;
+      expect(prompt).toContain('This task was tried before and failed');
+      expect(prompt).toContain(
+        'Attempt 1: The run ended as failed (error). The engine could not install tsx',
+      );
+      expect(await taskAsk(f.initiativeId)).toBeUndefined();
+    });
+
+    it('stops after the second failure and asks a person, whose words go into the next attempt', async () => {
+      designText = THREE;
+      const f = await approvedDesign();
+      const by = await newPerson(['platform_admin']);
+      await buildTick(deps());
+      const plan = (await planOf(f.initiativeId)).plan!;
+      await finishTask(plan.id, 'T1', 'run_failed');
+      await buildTick(deps());
+      const second = (await planOf(f.initiativeId)).tasks[0]!.runId!;
+      await appendRunEvent(db, second, 'run.summary', { text: 'The same install failed again.' });
+      await finishTask(plan.id, 'T1', 'run_failed');
+      await buildTick(deps());
+      await buildTick(deps());
+
+      const failed = (await planOf(f.initiativeId)).tasks[0]!;
+      expect(failed.state).toBe('failed');
+      const ask = (await taskAsk(f.initiativeId))!;
+      expect(ask).toMatchObject({ state: 'open', hardStop: true, type: 'decision' });
+      expect(ask.title).toContain('T1 did not work after 2 attempts');
+      expect(failed.askId).toBe(ask.id);
+      expect((ask.contextCard as { failures: unknown[] }).failures).toHaveLength(2);
+
+      await settleWithAnswer(db, ask.id, {
+        answer: 'Use the built-in http module instead of installing anything.',
+        optionId: 'retry',
+        by: by.id,
+        via: 'workspace',
+      });
+      await buildTick(deps());
+      const again = (await planOf(f.initiativeId)).tasks[0]!;
+      expect(again).toMatchObject({ state: 'running', attempt: 3, askId: null });
+      const prompt = (await runOf(again.runId!)).task;
+      expect(prompt).toContain('Attempt 1:');
+      expect(prompt).toContain('Attempt 2: The run ended as failed (error). The same install');
+      expect(prompt).toContain('Use the built-in http module');
+    });
+
+    it('is dropped when the person says skip, and the ask is withdrawn when they use the Map instead', async () => {
+      designText = THREE;
+      const f = await approvedDesign();
+      const by = await newPerson(['platform_admin']);
+      await buildTick(deps());
+      const plan = (await planOf(f.initiativeId)).plan!;
+      for (let i = 0; i < 2; i++) {
+        await finishTask(plan.id, 'T1', 'run_failed');
+        await buildTick(deps());
+      }
+      await buildTick(deps());
+      const ask = (await taskAsk(f.initiativeId))!;
+      await settleWithAnswer(db, ask.id, {
+        answer: 'skip: Skip it',
+        optionId: 'skip',
+        by: by.id,
+        via: 'workspace',
+      });
+      await buildTick(deps());
+      expect((await planOf(f.initiativeId)).state).toMatchObject({ T1: 'skipped', T2: 'running' });
+
+      // The same ask is withdrawn when the task is retried from the Map.
+      const g = await approvedDesign();
+      await buildTick(deps());
+      const plan2 = (await planOf(g.initiativeId)).plan!;
+      for (let i = 0; i < 2; i++) {
+        await finishTask(plan2.id, 'T1', 'run_failed');
+        await buildTick(deps());
+      }
+      await buildTick(deps());
+      const open = (await taskAsk(g.initiativeId))!;
+      expect(open.state).toBe('open');
+      await retryTask(db, plan2.id, 'T1', by.id);
+      expect((await taskAsk(g.initiativeId))!.state).toBe('withdrawn');
+    });
+
+    it('does not ask when a person cancelled the run', async () => {
+      designText = block(task('T1'));
+      const f = await approvedDesign();
+      await buildTick(deps());
+      const plan = (await planOf(f.initiativeId)).plan!;
+      const runId = (await planOf(f.initiativeId)).tasks[0]!.runId!;
+      await db.update(agentRun).set({ state: 'cancelled' }).where(eq(agentRun.id, runId));
+      await buildTick(deps());
+      await buildTick(deps());
+      expect((await planOf(f.initiativeId)).tasks[0]!.state).toBe('failed');
+      expect(await taskAsk(f.initiativeId)).toBeUndefined();
+      expect(plan.id).toBeTruthy();
+    });
   });
 
   it('cancels the plan, its unfinished tasks, and the runs still going', async () => {
@@ -699,8 +821,10 @@ describe('the build routes', () => {
     const f = await approvedDesign();
     await buildTick(deps());
     const plan = (await planOf(f.initiativeId)).plan!;
-    await finishTask(plan.id, 'T1', 'run_failed');
-    await buildTick(deps());
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await finishTask(plan.id, 'T1', 'run_failed');
+      await buildTick(deps());
+    }
     const who = await newPerson(['backend_engineer']);
     expect(
       (await app.inject({ method: 'GET', url: `/api/initiatives/${f.initiativeId}/plan` }))
@@ -773,7 +897,7 @@ describe('a design the platform cannot build', () => {
     const plan = (await planOf(f.initiativeId)).plan!;
     expect(plan.state).toBe('invalid');
     const engineer = await newPerson(['backend_engineer']);
-    const architect = await newPerson(['architect']);
+    const architect = await newPerson(['platform_admin']);
     const post = (who: { headers: Record<string, string> }) =>
       app.inject({ method: 'POST', url: `/api/plans/${plan.id}/send-back`, headers: who.headers });
 
@@ -810,7 +934,7 @@ describe('a design the platform cannot build', () => {
     const f = await approvedDesign({ mode: 'guided' });
     await buildTick(deps());
     const plan = (await planOf(f.initiativeId)).plan!;
-    const architect = await newPerson(['architect']);
+    const architect = await newPerson(['platform_admin']);
     await app.inject({
       method: 'POST',
       url: `/api/plans/${plan.id}/send-back`,

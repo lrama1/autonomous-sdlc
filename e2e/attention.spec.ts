@@ -706,6 +706,55 @@ test('a failed build task is named on the build stage, with Retry and Skip right
   await build.getByRole('button', { name: 'Retry T1' }).click();
   await expect(page.getByTestId('note')).toContainText('T1 will run again');
 });
+test('a task that failed twice asks a person why it failed and takes their words for the next attempt', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `T1 did not work after 2 attempts: Add the route ${randomUUID().slice(0, 6)}`;
+  const [ask] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: null,
+      type: 'decision',
+      title,
+      hardStop: true,
+      contextCard: {
+        kind: 'task_failed',
+        task: 'T1',
+        attempts: 2,
+        failures: [
+          {
+            attempt: 1,
+            why: 'The run ended as failed (error). npm install could not reach the registry.',
+          },
+          { attempt: 2, why: 'The run ended as failed (error). The same install failed again.' },
+        ],
+      },
+      options: [
+        { id: 'retry', label: 'Try again' },
+        { id: 'skip', label: 'Skip it' },
+      ],
+      recommendation: 'retry',
+      blocks: [],
+      roleNeeded: 'platform_admin',
+    })
+    .returning();
+  await signInAs(page, /Dev Admin/);
+  await page.getByTestId('nav-queue').click();
+  const card1 = card(page, title);
+  await expect(card1).toContainText(
+    'Attempt 1: The run ended as failed (error). npm install could not',
+  );
+  await expect(card1).toContainText('Attempt 2:');
+  await card1.getByLabel('Guidance for the next attempt').fill('Use the built-in http module.');
+  await card1.getByRole('button', { name: 'Answer' }).click();
+  await expect(
+    page.getByTestId('settled').filter({ hasText: title }).getByTestId('answered'),
+  ).toBeVisible();
+  const [saved] = await db.select().from(interaction).where(eq(interaction.id, ask!.id));
+  expect(saved!.answer).toMatchObject({ choice: 'retry', text: 'Use the built-in http module.' });
+});
 test('a running build task says when its agent last reported, and flags one that went quiet', async ({
   page,
 }) => {

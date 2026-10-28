@@ -27,6 +27,8 @@ export const card = (i: InteractionDto) =>
     summary?: string;
     kind?: string;
     docs?: string[];
+    failures?: Array<{ attempt: number; why: string }>;
+    attempts?: number;
     docsUnknown?: boolean;
     prUrl?: string;
     prNumber?: number;

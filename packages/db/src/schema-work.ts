@@ -390,6 +390,15 @@ export const buildTask = pgTable(
     runId: uuid('run_id').references(() => agentRun.id),
     attempt: integer('attempt').notNull().default(0),
     detail: text('detail'),
+    // Why each earlier attempt failed. The next attempt is told, so it does not repeat the same mistake.
+    history: jsonb('history')
+      .$type<Array<{ attempt: number; why: string }>>()
+      .notNull()
+      .default([]),
+    // What a person wrote when asked what to do after repeated failures. The next attempt follows it.
+    guidance: text('guidance'),
+    // The open ask that waits for that person.
+    askId: uuid('ask_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

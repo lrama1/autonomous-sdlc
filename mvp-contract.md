@@ -970,3 +970,5 @@ Preview install (2026-10-22): when a repository's preview file has no install li
 Smoke and documents (2026-10-23): a pull request that changes only documents (a spec or a design) is not held for a smoke test, even in a repository that has smoke checks.
 
 Engineer prompts (2026-10-23): engineers are told the npm registry is reachable and to install packages (npm ci) when node_modules is missing, before running the verification command.
+
+Failed tasks (2026-10-28): a task whose run failed is tried once more by itself, and every new attempt is told why the earlier ones failed (the run's own words, kept on the task) and not to repeat the approach. After the second failed attempt, or on any failure that is not a failed run (no pull request, a reviewer's refusal, a stopped merge), the task stays failed and a hard-stop ask goes to the platform admin: why each attempt failed, then Try again (with words for the next attempt) or Skip it. Retry or Skip on the Map withdraws the ask. A run a person cancelled raises no ask. Sending a half-built plan back to the Architect is not offered: the new design would be a second plan that rebuilds what already merged.
