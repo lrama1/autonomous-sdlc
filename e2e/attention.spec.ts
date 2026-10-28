@@ -14,6 +14,7 @@ import {
   initiative,
   integrationEntry,
   interaction,
+  runEvent,
   person,
   stageStart,
   standingDecision,
@@ -704,6 +705,63 @@ test('a failed build task is named on the build stage, with Retry and Skip right
   await expect(build.getByRole('button', { name: 'Skip T1' })).toBeVisible();
   await build.getByRole('button', { name: 'Retry T1' }).click();
   await expect(page.getByTestId('note')).toContainText('T1 will run again');
+});
+test('a running build task says when its agent last reported, and flags one that went quiet', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [design] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G1',
+      state: 'answered',
+      title: `Review PR #91: design ${randomUUID().slice(0, 6)}`,
+      roleNeeded: 'architect',
+      contextCard: { kind: 'pull_request', prNumber: 91 },
+    })
+    .returning();
+  const [plan] = await db
+    .insert(buildPlan)
+    .values({
+      initiativeId: f.initiativeId,
+      designInteractionId: design!.id,
+      designPath: 'docs/design/quiet.md',
+      designSha: 'abc123',
+      state: 'active',
+      detail: 'Building.',
+      startedBy: f.personId,
+    })
+    .returning();
+  await db.insert(buildTask).values({
+    planId: plan!.id,
+    key: 'T1',
+    position: 0,
+    title: 'Add the route',
+    role: 'backend_engineer',
+    paths: ['src/server.js'],
+    doneWhen: ['it answers'],
+    state: 'running',
+    runId: f.runId,
+  });
+  // The run was last heard from 6 minutes ago: quiet, not yet old enough for the platform to close it.
+  await db
+    .update(agentRun)
+    .set({ updatedAt: new Date(Date.now() - 6 * 60_000) })
+    .where(eq(agentRun.id, f.runId));
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
+  const note = page.getByTestId('activity-T1');
+  await expect(note).toContainText('Quiet for 6 minutes');
+  await expect(note).toHaveAttribute('data-tone', 'quiet');
+
+  // An event from the agent, and it is working again.
+  await db.insert(runEvent).values({ runId: f.runId, seq: 1, type: 'message', payload: {} });
+  await expect(note).toContainText('Working. Last heard from the agent', { timeout: 15_000 });
+  await expect(note).toHaveAttribute('data-tone', 'ok');
 });
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,

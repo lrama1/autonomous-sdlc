@@ -1,7 +1,7 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { asc, desc, eq, inArray, max } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { agentRun, buildPlan, buildTask } from '@sdlc/db';
+import { agentRun, buildPlan, buildTask, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { stuckBehind } from '@sdlc/core';
 import type { TaskState } from '@sdlc/core';
@@ -27,6 +27,28 @@ export async function planDto(db: Db, plan: PlanRow): Promise<BuildPlanDto> {
   const runs = runIds.length
     ? await db.select().from(agentRun).where(inArray(agentRun.id, runIds))
     : [];
+  // When a running task's agent last reported anything, so a person can tell working from stuck.
+  const liveRuns = runs.filter((r) => ['starting', 'running', 'resuming'].includes(r.state));
+  const heard = new Map<string, Date>();
+  if (liveRuns.length) {
+    const rows = await db
+      .select({ runId: runEvent.runId, at: max(runEvent.ts) })
+      .from(runEvent)
+      .where(
+        inArray(
+          runEvent.runId,
+          liveRuns.map((r) => r.id),
+        ),
+      )
+      .groupBy(runEvent.runId);
+    for (const r of rows) if (r.at) heard.set(r.runId, new Date(r.at));
+  }
+  const lastHeard = (runId: string | null): string | null => {
+    const run = liveRuns.find((r) => r.id === runId);
+    if (!run) return null;
+    const at = heard.get(run.id);
+    return (at && at > run.updatedAt ? at : run.updatedAt).toISOString();
+  };
   const behind = stuckBehind(
     tasks.map((t) => ({ key: t.key, state: t.state as TaskState, dependsOn: t.dependsOn })),
   );
@@ -51,6 +73,7 @@ export async function planDto(db: Db, plan: PlanRow): Promise<BuildPlanDto> {
       prNumber: runs.find((r) => r.id === t.runId)?.prNumber ?? null,
       attempt: t.attempt,
       detail: t.detail,
+      lastActivityAt: lastHeard(t.runId),
       stuckBehind: behind[t.key] ?? [],
     })),
   });

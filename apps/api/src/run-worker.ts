@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { agentRun, appendRunEvent, interaction } from '@sdlc/db';
+import { and, asc, eq, inArray, max, sql } from 'drizzle-orm';
+import { agentRun, appendRunEvent, interaction, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
 import type { Launched, RunnerAdapter } from './launcher.js';
@@ -16,6 +16,11 @@ export interface RunWorkerOptions {
   /** How long a run's token lives. Covers the run, not the human wait: a parked run gets a fresh one on resume. */
   tokenTtlMs?: number;
   log?: (line: string) => void;
+  /**
+   * How long a live run may be silent, with no runner of this process behind it, before it is treated as lost. A run's own
+   * runner reports every few seconds while it works. Default 10 minutes.
+   */
+  staleMs?: number;
 }
 
 /** Starts queued runs, resumes parked runs whose question was settled, and cleans up after runners that die. */
@@ -24,6 +29,9 @@ export function createRunWorker(opts: RunWorkerOptions) {
   const ttl = opts.tokenTtlMs ?? 2 * 3600_000;
   const log = opts.log ?? ((l) => console.log(l));
   const children = new Map<string, Launched>();
+  const staleMs = opts.staleMs ?? 10 * 60_000;
+  let lastSweep = 0;
+  let closing = false;
 
   /**
    * A runner ended, or an earlier API process left a run live. If a person is being asked, park the run on that
@@ -138,7 +146,41 @@ export function createRunWorker(opts: RunWorkerOptions) {
     }
   }
 
+  /**
+   * A live run that no runner of this process is behind, and that has been silent for a long time, is lost: its runner was
+   * stopped (a deploy that restarted the API takes the runners it started with it) or died without telling anyone. Close
+   * it, so a person sees it failed and can run it again, instead of "in progress" forever. A run another API process is
+   * running keeps reporting, so it is left alone.
+   */
+  async function sweepLost(): Promise<void> {
+    const live = await db
+      .select({ id: agentRun.id, updatedAt: agentRun.updatedAt })
+      .from(agentRun)
+      .where(inArray(agentRun.state, LIVE));
+    for (const run of live) {
+      if (children.has(run.id)) continue;
+      const [last] = await db
+        .select({ at: max(runEvent.ts) })
+        .from(runEvent)
+        .where(eq(runEvent.runId, run.id));
+      const quietSince = Math.max(
+        run.updatedAt.getTime(),
+        last?.at ? new Date(last.at).getTime() : 0,
+      );
+      if (Date.now() - quietSince < staleMs) continue;
+      log(
+        `[worker] run ${run.id} has been silent for over ${Math.round(staleMs / 60_000)} min with no runner; closing it`,
+      );
+      await handleLost(run, null);
+    }
+  }
+
   async function tick(): Promise<void> {
+    if (closing) return;
+    if (Date.now() - lastSweep >= 30_000) {
+      lastSweep = Date.now();
+      await sweepLost();
+    }
     // Stop processes whose run was cancelled or ran out of budget.
     for (const [runId, child] of children) {
       const [r] = await db
@@ -221,6 +263,17 @@ export function createRunWorker(opts: RunWorkerOptions) {
     stop() {
       clearInterval(timer);
       for (const c of children.values()) c.kill();
+    },
+    /**
+     * The API is going away (a deploy, a restart). Stop taking work, stop the runners this process started, and close their
+     * runs, so nothing is left live with no runner behind it. A run waiting on a person is parked and resumes on the answer.
+     */
+    async shutdown() {
+      closing = true;
+      clearInterval(timer);
+      const mine = [...children.entries()];
+      for (const [, c] of mine) c.kill();
+      for (const [id] of mine) await handleLost({ id }, null).catch(() => {});
     },
     running: () => [...children.keys()],
   };

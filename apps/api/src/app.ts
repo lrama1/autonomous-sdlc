@@ -507,7 +507,7 @@ export async function buildApp({
     });
     app.addHook('onReady', async () => worker.start());
     app.addHook('onClose', async () => {
-      worker.stop();
+      await worker.shutdown();
       await adapter.close?.();
     });
   }

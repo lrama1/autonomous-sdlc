@@ -39,6 +39,7 @@ import {
 import type { InitiativeMap } from './api';
 import { PipelineFlow } from './flow/PipelineFlow';
 import { StageActionContext } from './flow/StageNode';
+import { activityNote } from './activity';
 import { pickInitiative } from './pickInitiative';
 import { stageActions } from './stageActions';
 import type { StageAction } from './stageActions';
@@ -131,6 +132,22 @@ function BuildPlan({
               {t.detail && (
                 <Typography variant="body2" color="text.secondary">
                   {t.detail}
+                </Typography>
+              )}
+              {t.state === 'running' && activityNote(t.lastActivityAt) && (
+                <Typography
+                  variant="body2"
+                  data-testid={`activity-${t.key}`}
+                  data-tone={activityNote(t.lastActivityAt)!.tone}
+                  color={
+                    activityNote(t.lastActivityAt)!.tone === 'ok'
+                      ? 'text.secondary'
+                      : activityNote(t.lastActivityAt)!.tone === 'quiet'
+                        ? 'warning.main'
+                        : 'error.main'
+                  }
+                >
+                  {activityNote(t.lastActivityAt)!.text}
                 </Typography>
               )}
               {t.stuckBehind.length > 0 && (

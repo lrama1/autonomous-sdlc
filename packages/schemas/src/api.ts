@@ -419,6 +419,8 @@ export const buildTaskSchema = z.object({
   prNumber: z.number().nullable(),
   attempt: z.number(),
   detail: z.string().nullable(),
+  /** When the agent running this task last reported anything, or null when no run is live. */
+  lastActivityAt: z.string().nullable().optional(),
   /** The failed tasks this one is stuck behind. */
   stuckBehind: z.array(z.string()),
 });
