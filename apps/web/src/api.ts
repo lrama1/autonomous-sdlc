@@ -17,6 +17,10 @@ import {
   interactionSchema,
   interruptionMetricsSchema,
   meSchema,
+  assistantConversationSchema,
+  assistantMessageSchema,
+  assistantReplySchema,
+  assistantUsageSchema,
   mainPreviewSchema,
   smokeDiagnosisSchema,
   previewSchema,
@@ -43,6 +47,11 @@ import type {
   InterruptionMetricsDto,
   Me,
   MonthlyBudgetDto,
+  AssistantAsk,
+  AssistantConversationDto,
+  AssistantMessageDto,
+  AssistantReplyDto,
+  AssistantUsageDto,
   MainPreviewDto,
   PreviewDto,
   SecurityDto,
@@ -387,3 +396,45 @@ export const getCosts = (days: number, initiativeId: string | null): Promise<Cos
 export const getPortfolio = (): Promise<PortfolioDto> => call('/api/portfolio', portfolioSchema);
 export const getBudget = (): Promise<MonthlyBudgetDto> =>
   call('/api/costs/budget', monthlyBudgetSchema);
+
+export const getAssistantUsage = (): Promise<AssistantUsageDto> =>
+  call('/api/assistant/usage', assistantUsageSchema);
+export const listAssistantConversations = (): Promise<AssistantConversationDto[]> =>
+  call('/api/assistant/conversations', z.array(assistantConversationSchema));
+export const createAssistantConversation = (): Promise<AssistantConversationDto> =>
+  call('/api/assistant/conversations', assistantConversationSchema, { method: 'POST' });
+export const getAssistantConversation = (
+  id: string,
+): Promise<{ conversation: AssistantConversationDto; messages: AssistantMessageDto[] }> =>
+  call(
+    `/api/assistant/conversations/${id}`,
+    z.object({
+      conversation: assistantConversationSchema,
+      messages: z.array(assistantMessageSchema),
+    }),
+  );
+export const deleteAssistantConversation = (id: string) =>
+  call(`/api/assistant/conversations/${id}`, z.object({ deleted: z.boolean() }), {
+    method: 'DELETE',
+  });
+export const askAssistant = (
+  id: string,
+  body: Pick<AssistantAsk, 'text' | 'context'>,
+): Promise<AssistantReplyDto> =>
+  call(`/api/assistant/conversations/${id}/messages`, assistantReplySchema, {
+    method: 'POST',
+    body,
+  });
+export const setAssistantProposal = (
+  messageId: string,
+  proposalId: string,
+  state: 'done' | 'dismissed',
+) =>
+  call(
+    `/api/assistant/messages/${messageId}/proposals/${proposalId}`,
+    z.object({ ok: z.boolean() }),
+    {
+      method: 'POST',
+      body: { state },
+    },
+  );

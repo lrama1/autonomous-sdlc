@@ -7,6 +7,7 @@
 - **Humans in the loop by design.** Agents stop at hard stops: a new outside system, a protected file, a risky change. Only a person can let them through, and every answer is recorded with who and why.
 - **Review goes beyond the diff.** A security review reads the change, a smoke test starts the real app, the design's own checks must pass, and one click runs the pull request as a live, isolated copy of the app (with its own database table) before you approve it.
 - **Features compound.** A new initiative on the same repository builds on the code that already merged.
+- **A helper on every page.** An assistant knows which screen you are on and what it shows, explains each element, answers about the platform and any initiative you can see, and can look at the app a build produced (its output, its pages, its code). It only reads: when an action would help it suggests a button and you decide. It uses the cheap model with a daily limit for each person.
 - **Yours.** It runs in your AWS account with invite-only sign-in. The agents use your OpenRouter key.
 
 **Status: a working prototype.** Two apps were built on it end to end (a habit tracker, and a support ticket tracker on DynamoDB built in two stages). Those runs found real platform bugs, which were fixed. It is not a hardened product: read [Costs and caveats](#costs-and-caveats) before you put sensitive code through it.

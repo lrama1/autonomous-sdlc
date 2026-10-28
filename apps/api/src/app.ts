@@ -21,6 +21,9 @@ import { registerSmokeRoutes } from './smoke-routes.js';
 import { SmokeService } from './smoke-service.js';
 import { SmokeDiagnosisService } from './smoke-diagnosis.js';
 import { AutoChecks } from './auto-checks.js';
+import { registerAssistantRoutes } from './assistant/routes.js';
+import { GatewayAssistantModel } from './assistant/model.js';
+import type { AssistantModel } from './assistant/model.js';
 import { GatewayModel } from './inline-model.js';
 import type { InlineModel } from './inline-model.js';
 import { registerSecurityRoutes } from './security-routes.js';
@@ -91,6 +94,8 @@ export interface BuildOptions {
   previewHost?: PreviewHost;
   /** What the Security agent asks. Tests replace it; otherwise it asks the model gateway. */
   securityModel?: InlineModel;
+  /** The model the assistant chat asks. Tests pass a fake. Otherwise the gateway is used, unless the assistant is off. */
+  assistantModel?: AssistantModel;
 }
 
 export async function buildApp({
@@ -107,6 +112,7 @@ export async function buildApp({
   docFetcher,
   previewHost,
   securityModel,
+  assistantModel,
 }: BuildOptions) {
   const app = Fastify({ logger });
   const { db, pool } = deps ?? createDb(config.DATABASE_URL, { caFile: config.DATABASE_CA_FILE });
@@ -310,6 +316,17 @@ export async function buildApp({
   if (previewHost) await useHost(previewHost);
   registerPreviewRoutes(app, db, ghService, () => previews, {
     ttlMinutes: config.PREVIEW_TTL_MIN,
+  });
+  registerAssistantRoutes(app, db, {
+    model:
+      assistantModel ??
+      (config.ASSISTANT === 'on'
+        ? new GatewayAssistantModel(config.GATEWAY_URL, config.DATABASE_URL)
+        : null),
+    alias: config.ASSISTANT_ALIAS,
+    dailyCapUsd: config.ASSISTANT_DAILY_CAP_USD,
+    github: ghService,
+    previews: () => previews,
   });
   registerSmokeRoutes(
     app,

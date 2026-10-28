@@ -26,6 +26,8 @@ export interface PreviewHost {
     command: string,
     timeoutMs: number,
   ): Promise<{ exitCode: number; output: string }>;
+  /** What a running preview's program printed, newest lines. Left out by a host that cannot. */
+  logs?(id: string, lines?: number): Promise<string>;
   /** Removes everything one preview created. Safe to call twice. */
   stop(id: string): Promise<void>;
   /** Removes previews left by an earlier API process. */
@@ -57,9 +59,9 @@ export interface DockerPreviewOptions {
 const run = promisify(execFile);
 
 /** What a container printed, both streams (a program's error output is on stderr, which `docker()` does not return). */
-async function logsOf(container: string): Promise<string> {
+async function logsOf(container: string, lines = 40): Promise<string> {
   try {
-    const { stdout, stderr } = await run('docker', ['logs', '--tail', '40', container], {
+    const { stdout, stderr } = await run('docker', ['logs', '--tail', String(lines), container], {
       maxBuffer: 4 * 1024 * 1024,
     });
     return `${stdout}\n${stderr}`;
@@ -351,6 +353,11 @@ export class DockerPreviewHost implements PreviewHost {
       await this.stop(spec.id);
       throw e;
     }
+  }
+
+  /** What the preview's program printed, newest lines. */
+  async logs(id: string, lines = 120): Promise<string> {
+    return logsOf(previewNames(id).container, lines);
   }
 
   async exec(

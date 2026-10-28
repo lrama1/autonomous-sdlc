@@ -559,3 +559,51 @@ export const bugReport = pgTable(
   },
   (t) => [index('bug_report_initiative_idx').on(t.initiativeId)],
 );
+
+// The assistant chat (mvp-contract, assistant). A conversation belongs to one person and is shown only to them.
+export const assistantConversation = pgTable(
+  'assistant_conversation',
+  {
+    id: id(),
+    personId: uuid('person_id')
+      .notNull()
+      .references(() => person.id),
+    title: text('title').notNull().default('New chat'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('assistant_conversation_person_idx').on(t.personId, t.updatedAt)],
+);
+
+export const assistantMessage = pgTable(
+  'assistant_message',
+  {
+    id: id(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => assistantConversation.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // user | assistant
+    content: text('content').notNull(),
+    // What the assistant looked at to answer: one entry per tool it used.
+    steps: jsonb('steps').$type<Array<{ tool: string; summary: string }>>().notNull().default([]),
+    // Actions it suggests. Nothing happens until the person confirms one.
+    proposals: jsonb('proposals')
+      .$type<
+        Array<{
+          id: string;
+          kind: string;
+          label: string;
+          why: string;
+          params: Record<string, unknown>;
+          state: 'proposed' | 'done' | 'dismissed';
+        }>
+      >()
+      .notNull()
+      .default([]),
+    // Where the person was when they asked: the screen and what it showed.
+    context: jsonb('context').$type<Record<string, unknown> | null>(),
+    costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index('assistant_message_conversation_idx').on(t.conversationId, t.createdAt)],
+);

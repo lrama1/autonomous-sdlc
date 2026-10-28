@@ -52,7 +52,7 @@ export class S3CodeStore implements CodeStore {
 
 /** What a task printed, newest lines, for the message when it does not come up. */
 export interface TaskLogs {
-  tail(taskId: string): Promise<string>;
+  tail(taskId: string, lines?: number): Promise<string>;
 }
 
 export class CloudWatchTaskLogs implements TaskLogs {
@@ -62,13 +62,13 @@ export class CloudWatchTaskLogs implements TaskLogs {
     private readonly client: CloudWatchLogsClient = new CloudWatchLogsClient({}),
   ) {}
 
-  async tail(taskId: string) {
+  async tail(taskId: string, lines = 40) {
     try {
       const r = await this.client.send(
         new GetLogEventsCommand({
           logGroupName: this.group,
           logStreamName: `${this.prefix}/${taskId}`,
-          limit: 40,
+          limit: lines,
         }),
       );
       return (r.events ?? []).map((e) => e.message ?? '').join('\n');
@@ -263,6 +263,13 @@ export class FargatePreviewHost implements PreviewHost {
       await this.stop(spec.id);
       throw e;
     }
+  }
+
+  /** What the preview's program printed, newest lines. */
+  async logs(id: string, lines = 120): Promise<string> {
+    const arn = this.tasks.get(id);
+    if (!arn || !this.opts.logs) return '';
+    return this.opts.logs.tail(arn.split('/').pop()!, lines);
   }
 
   /** Runs a smoke test's command inside the preview's task, through its control server. */

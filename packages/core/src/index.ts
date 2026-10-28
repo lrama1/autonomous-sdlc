@@ -15,3 +15,4 @@ export * from './preview-config.js';
 export * from './design.js';
 export * from './build-plan.js';
 export * from './costs.js';
+export * from './help-guide.js';
