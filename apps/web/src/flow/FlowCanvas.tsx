@@ -43,8 +43,8 @@ export function FlowCanvas({
         borderColor: 'divider',
         borderRadius: 2,
         overflow: 'hidden',
-        // Nodes are not selectable or draggable, which switches off pointer events on them; their links still work.
-        '& .react-flow__node a': { pointerEvents: 'auto' },
+        // Nodes are not selectable or draggable, which switches off pointer events on them; their links and buttons still work.
+        '& .react-flow__node a, & .react-flow__node button': { pointerEvents: 'auto' },
       }}
     >
       <ReactFlow

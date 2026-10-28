@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 import { agentRun, buildPlan, buildTask, interaction, stageStart } from '@sdlc/db';
 import type { Db, initiative } from '@sdlc/db';
 import { buildMap } from '@sdlc/core';
@@ -12,7 +12,12 @@ export async function loadStages(
   init: InitiativeRow,
 ): Promise<{ stages: MapStage[]; plan: MapPlan | undefined }> {
   const id = init.id;
-  const runs = await db.select().from(agentRun).where(eq(agentRun.initiativeId, id));
+  // Oldest first: a stage shows its runs in order, and its newest run is the last.
+  const runs = await db
+    .select()
+    .from(agentRun)
+    .where(eq(agentRun.initiativeId, id))
+    .orderBy(asc(agentRun.createdAt));
   const asks = await db
     .select({ i: interaction, role: agentRun.agentRole })
     .from(interaction)

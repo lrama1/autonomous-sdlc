@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { eq } from 'drizzle-orm';
 import {
+  agentRun,
   assumption,
   buildPlan,
   activityEvent,
@@ -355,7 +356,7 @@ test('an approved design waits for a person to start the build, then its first t
   await expect(panel).toHaveAttribute('data-state', 'awaiting_start');
   await expect(page.getByTestId('stage-build')).toHaveAttribute('data-status', 'waiting_human');
   await expect(panel.getByTestId('task-T2')).toContainText('after T1');
-  await panel.getByRole('button', { name: 'Start the build' }).click();
+  await page.getByTestId('stage-build').getByRole('button', { name: 'Start the build' }).click();
   await expect(page.getByTestId('note')).toContainText('The build has started');
   // The build worker queues the first task. The second waits for it to merge.
   await expect(panel.getByTestId('task-T1')).toHaveAttribute('data-state', 'running', {
@@ -379,15 +380,46 @@ test('a step before the build waits for a person to start it', async ({ page }) 
   await signInAs(page, /Alice Park/);
   await page.getByTestId('nav-map').click();
   await page.getByLabel('Initiative').selectOption(f.initiativeId);
-  const step = page.getByTestId('step-spec');
-  await expect(step).toContainText('Draft the spec: Weather');
-  await expect(page.getByTestId('stage-spec')).toHaveAttribute('data-status', 'waiting_human');
-  await step.getByRole('button', { name: 'Start' }).click();
+  const spec = page.getByTestId('stage-spec');
+  await expect(spec).toHaveAttribute('data-status', 'waiting_human');
+  await expect(spec).toContainText('A person starts the spec.');
+  await spec.getByRole('button', { name: 'Start the spec' }).click();
   await expect(page.getByTestId('note')).toContainText('is starting');
-  // The worker starts the run, and the step leaves the list.
-  await expect(page.getByTestId('step-spec')).toHaveCount(0, { timeout: 20_000 });
+  // The worker starts the run, and the button leaves the stage.
+  await expect(spec.getByRole('button', { name: 'Start the spec' })).toHaveCount(0, {
+    timeout: 20_000,
+  });
 });
 
+test('a failed spec run is run again from the stage itself', async ({ page }) => {
+  const f = await createRunFixture(db);
+  await db.insert(agentRun).values({
+    initiativeId: f.initiativeId,
+    agentRole: 'product',
+    task: 'Draft the spec: Retry me',
+    agentDefinitionId: 'product-agent',
+    agentDefinitionVersion: 1,
+    engine: 'claude-code',
+    modelAlias: 'agent-default',
+    state: 'failed',
+    sponsorPersonId: f.personId,
+    repositoryId: f.repositoryId,
+    budgetMicros: 1_000_000,
+  });
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative').selectOption(f.initiativeId);
+  const spec = page.getByTestId('stage-spec');
+  await expect(spec).toContainText('product run: failed');
+  // There is no separate "Start a run" card to hunt for: the button is on the stage.
+  await spec.getByRole('button', { name: 'Run the spec again' }).click();
+  await expect(page.getByTestId('note')).toContainText('Running it again');
+  await expect(spec.getByRole('button', { name: 'Run the spec again' })).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  const runs = await db.select().from(agentRun).where(eq(agentRun.initiativeId, f.initiativeId));
+  expect(runs.filter((r) => r.agentRole === 'product')).toHaveLength(2);
+});
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,
 }) => {
