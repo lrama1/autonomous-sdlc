@@ -14,6 +14,7 @@ import {
   initiative,
   integrationEntry,
   interaction,
+  person,
   stageStart,
   standingDecision,
 } from '../packages/db/src/index.ts';
@@ -533,6 +534,127 @@ test('the Map opens on an initiative in progress, and goes back to the one last 
   await page.getByTestId('nav-queue').click();
   await page.getByTestId('nav-map').click();
   await expect(page).toHaveURL(new RegExp(`#/map/${other}$`));
+});
+const prCard = {
+  kind: 'pull_request',
+  prUrl: 'https://github.com/acme/shop/pull/3',
+  prNumber: 3,
+  repository: 'acme/shop',
+  headSha: 'abc123',
+  summary: 'A change.',
+  verify: { ok: true },
+};
+
+async function reviewOf(f: { initiativeId: string; runId: string }, title: string) {
+  const [row] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G3',
+      title,
+      contextCard: prCard,
+      options: [{ id: 'A', label: 'Yes', impact: '' }],
+      blocks: [{ runId: f.runId }],
+      roleNeeded: 'backend_engineer',
+    })
+    .returning();
+  return row!;
+}
+
+test('Approve is disabled until the required check has run, and the check is marked and one click away', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review needing a security review ${randomUUID().slice(0, 6)}`;
+  const review = await reviewOf(f, title);
+  let ran = false;
+  const security = () => ({
+    available: true,
+    required: true,
+    commit: 'abc123',
+    run: ran
+      ? {
+          id: 'r1',
+          state: 'done',
+          summary: 'Nothing found.',
+          findings: [],
+          detail: null,
+          by: null,
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+        }
+      : null,
+    blocks: ran
+      ? null
+      : 'This change has not had a security review on this commit. Run the security review first.',
+  });
+  await page.route(`**/api/interactions/${review.id}/security`, (route) =>
+    route.fulfill({ json: security() }),
+  );
+  await page.route(`**/api/interactions/${review.id}/security/start`, (route) => {
+    ran = true;
+    return route.fulfill({ json: { id: 'r1', state: 'running' } });
+  });
+  await page.route(`**/api/interactions/${review.id}/smoke`, (route) =>
+    route.fulfill({
+      json: {
+        available: false,
+        required: 'none',
+        detail: null,
+        commit: 'abc123',
+        run: null,
+        blocks: null,
+      },
+    }),
+  );
+
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+
+  const approve = ask.getByRole('button', { name: 'Approve' });
+  await expect(approve).toBeDisabled();
+  await expect(ask.getByRole('button', { name: 'Request changes' })).toBeEnabled();
+  await expect(ask.getByRole('button', { name: 'Reject' })).toBeEnabled();
+  await expect(ask.getByTestId('approve-blocked')).toContainText('Approve is waiting on');
+  await expect(ask.getByTestId('blocker-security')).toContainText('Run the security review first');
+
+  const panel = ask.getByTestId('security');
+  await expect(panel).toHaveAttribute('data-required', 'true');
+  await expect(panel.getByTestId('required-chip')).toContainText('Required before you can approve');
+
+  await ask.getByRole('button', { name: 'Go to it' }).click();
+  await expect(panel.getByRole('button', { name: 'Run the security review' })).toBeFocused();
+  await panel.getByRole('button', { name: 'Run the security review' }).click();
+
+  // The reason goes away by itself, and Approve comes on.
+  await expect(approve).toBeEnabled({ timeout: 15_000 });
+  await expect(ask.getByTestId('approve-blocked')).toHaveCount(0);
+  await expect(panel).toHaveAttribute('data-required', 'false');
+});
+
+test('a person who started the run is told up front that they may not decide it', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review of my own run ${randomUUID().slice(0, 6)}`;
+  await reviewOf(f, title);
+  await signInAs(page, /Bob Lindqvist/);
+  const [bob] = await db.select().from(person).where(eq(person.displayName, 'Bob Lindqvist'));
+  await db.update(agentRun).set({ sponsorPersonId: bob!.id }).where(eq(agentRun.id, f.runId));
+
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask).toBeVisible();
+  await expect(ask.getByTestId('approve-blocked')).toContainText('You cannot decide this one');
+  await expect(ask.getByTestId('blocker-own')).toContainText('someone else must review it');
+  for (const name of ['Approve', 'Request changes', 'Reject'])
+    await expect(ask.getByRole('button', { name })).toBeDisabled();
+  // Nothing on the page can clear it, so there is no link to a check.
+  await expect(ask.getByRole('button', { name: 'Go to it' })).toHaveCount(0);
 });
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,

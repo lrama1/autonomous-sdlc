@@ -2,8 +2,8 @@ import { and, eq, inArray, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { agentRun, initiative, interaction, person } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
-import { chatAnswerable, rankInteractions } from '@sdlc/core';
-import type { AttentionPolicy } from '@sdlc/core';
+import { chatAnswerable, needsDecision, rankInteractions } from '@sdlc/core';
+import type { AttentionPolicy, InteractionType } from '@sdlc/core';
 import { answerRequestSchema, interactionSchema, interactionStateSchema } from '@sdlc/schemas';
 import type { InteractionDto } from '@sdlc/schemas';
 import { z } from 'zod';
@@ -26,6 +26,7 @@ export function toDto(
     initiativeTitle?: string;
     agentRole?: string | null;
     assignedToName?: string | null;
+    youMayNotDecide?: string | null;
   } = {},
 ): InteractionDto {
   return interactionSchema.parse({
@@ -58,6 +59,7 @@ export function toDto(
     initiativeTitle: extra.initiativeTitle,
     agentRole: extra.agentRole,
     assignedToName: extra.assignedToName,
+    youMayNotDecide: extra.youMayNotDecide,
     chatAnswerable: extra.policy
       ? chatAnswerable(
           { type: r.type, hardStop: r.hardStop, triggered: isTriggered(r) },
@@ -68,6 +70,22 @@ export function toDto(
 }
 
 const MAX_SNOOZE_MIN = 24 * 60;
+
+/**
+ * Why this person may not decide this ask, or null. The same rule the answer route applies: with independent review on,
+ * whoever started or steered a run cannot decide its checkpoints and reviews. Told up front so the buttons can say so.
+ */
+export function youMayNotDecide(
+  me: { id: string },
+  row: { type: string },
+  run: { sponsorPersonId: string; contributors: string[] } | null | undefined,
+  rules: { independentReview: boolean },
+): string | null {
+  if (!rules.independentReview || !run || !needsDecision(row.type as InteractionType)) return null;
+  return run.sponsorPersonId === me.id || run.contributors.includes(me.id)
+    ? REASONS.independent_review!.message
+    : null;
+}
 
 export function registerInteractionRoutes(
   app: FastifyInstance,
@@ -100,6 +118,8 @@ export function registerInteractionRoutes(
         initiativeTitle: initiative.title,
         agentRole: agentRun.agentRole,
         assignedToName: person.displayName,
+        sponsorPersonId: agentRun.sponsorPersonId,
+        contributors: agentRun.contributors,
       })
       .from(interaction)
       .innerJoin(initiative, eq(initiative.id, interaction.initiativeId))
@@ -114,6 +134,14 @@ export function registerInteractionRoutes(
         initiativeTitle: e.initiativeTitle,
         agentRole: e.agentRole,
         assignedToName: e.assignedToName,
+        youMayNotDecide: youMayNotDecide(
+          me,
+          e.i,
+          e.sponsorPersonId
+            ? { sponsorPersonId: e.sponsorPersonId, contributors: e.contributors ?? [] }
+            : null,
+          rules,
+        ),
       });
     });
   });
@@ -127,7 +155,10 @@ export function registerInteractionRoutes(
       return reply
         .code(404)
         .send({ error: { code: 'not_found', message: 'No such interaction.' } });
-    return toDto(row, { policy });
+    const [run] = row.runId
+      ? await db.select().from(agentRun).where(eq(agentRun.id, row.runId))
+      : [undefined];
+    return toDto(row, { policy, youMayNotDecide: youMayNotDecide(me, row, run, rules) });
   });
 
   app.post('/api/interactions/:id/answer', async (request, reply) => {

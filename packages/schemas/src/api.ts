@@ -80,6 +80,8 @@ export const interactionSchema = z.object({
   agentRole: z.string().nullable().optional(),
   assignedToName: z.string().nullable().optional(),
   chatAnswerable: z.boolean().optional(),
+  // Why the person asking may not decide this one (they started or steered the run), or null.
+  youMayNotDecide: z.string().nullable().optional(),
 });
 export type InteractionDto = z.infer<typeof interactionSchema>;
 

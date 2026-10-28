@@ -285,6 +285,34 @@ describe('checkpoints and independent review', () => {
     expect(log.map((l) => l.action)).toContain('interaction.approved');
   });
 
+  it('tells the person up front when they may not decide, and nobody else', async () => {
+    const f = await createRunFixture(db);
+    const sponsor = await newPerson(['backend_engineer']);
+    const reviewer = await newPerson(['backend_engineer']);
+    const second = await addRunToFixture(db, f, { sponsorPersonId: sponsor.id });
+    const pr = await ask(f, { type: 'review', title: 'PR #13', runId: second.runId });
+    const question = await ask(f, { title: 'Which provider?', runId: second.runId });
+    const seen = async (cookie: string) => {
+      const list = (
+        await app.inject({ url: '/api/interactions', headers: as(cookie) })
+      ).json() as Array<{
+        id: string;
+        youMayNotDecide?: string | null;
+      }>;
+      return Object.fromEntries(list.map((i) => [i.id, i.youMayNotDecide ?? null]));
+    };
+    const mine = await seen(sponsor.cookie);
+    expect(mine[pr.id]).toBe('You started or steered this run, so someone else must review it.');
+    // A plain question is not a decision, so the rule does not apply to it.
+    expect(mine[question.id]).toBeNull();
+    expect((await seen(reviewer.cookie))[pr.id]).toBeNull();
+    const one = await app.inject({
+      url: `/api/interactions/${pr.id}`,
+      headers: as(sponsor.cookie),
+    });
+    expect(one.json().youMayNotDecide).toContain('someone else must review it');
+  });
+
   it('refuses a decision on a plain question', async () => {
     const f = await createRunFixture(db);
     const bob = await newPerson(['backend_engineer']);
