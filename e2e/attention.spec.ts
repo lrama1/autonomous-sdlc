@@ -656,6 +656,55 @@ test('a person who started the run is told up front that they may not decide it'
   // Nothing on the page can clear it, so there is no link to a check.
   await expect(ask.getByRole('button', { name: 'Go to it' })).toHaveCount(0);
 });
+test('a failed build task is named on the build stage, with Retry and Skip right there', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [design] = await db
+    .insert(interaction)
+    .values({
+      initiativeId: f.initiativeId,
+      runId: f.runId,
+      type: 'review',
+      checkpointId: 'G1',
+      state: 'answered',
+      title: `Review PR #90: design ${randomUUID().slice(0, 6)}`,
+      roleNeeded: 'architect',
+      contextCard: { kind: 'pull_request', prNumber: 90 },
+    })
+    .returning();
+  const [plan] = await db
+    .insert(buildPlan)
+    .values({
+      initiativeId: f.initiativeId,
+      designInteractionId: design!.id,
+      designPath: 'docs/design/failing.md',
+      designSha: 'abc123',
+      state: 'active',
+      detail: 'Building.',
+      startedBy: f.personId,
+    })
+    .returning();
+  await db.insert(buildTask).values({
+    planId: plan!.id,
+    key: 'T1',
+    position: 0,
+    title: 'Add the route',
+    role: 'backend_engineer',
+    paths: ['src/server.js'],
+    doneWhen: ['it answers'],
+    state: 'failed',
+    detail: 'The checks did not pass after three tries.',
+  });
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
+  const build = page.getByTestId('stage-build');
+  await expect(build).toContainText('T1 failed: The checks did not pass after three tries.');
+  await expect(build.getByRole('button', { name: 'Skip T1' })).toBeVisible();
+  await build.getByRole('button', { name: 'Retry T1' }).click();
+  await expect(page.getByTestId('note')).toContainText('T1 will run again');
+});
 test('a person reports a bug, an engineer starts the fix, and the report follows it', async ({
   page,
 }) => {
