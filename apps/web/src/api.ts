@@ -324,6 +324,7 @@ export const createInitiative = (body: {
     body,
   });
 
+export const retryRun = (runId: string) => call(`/api/runs/${runId}/retry`, ok, { method: 'POST' });
 export const startRun = (id: string, body: { role: string; task: string; budgetUsd?: number }) =>
   call(`/api/initiatives/${id}/runs`, z.object({ id: z.string().uuid() }).passthrough(), {
     method: 'POST',

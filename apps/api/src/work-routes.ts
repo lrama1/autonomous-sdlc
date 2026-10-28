@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, ne } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { agentRun, githubApp, initiative, repositoryEntry, runEvent } from '@sdlc/db';
@@ -12,6 +12,10 @@ import { RunError, cancelRun, createRun } from './runs.js';
 import type { RunRow } from './runs.js';
 
 const id = z.object({ id: z.string().uuid() });
+// Who runs a spec or design step again, which runs can be run again, and in which states.
+const RETRY_ROLES = ['product_owner', 'architect', 'platform_admin'];
+const RETRY_STEP_ROLES = ['product', 'architect'];
+const FAILED_RUN_STATES = ['failed', 'cancelled', 'budget_exceeded', 'timed_out'];
 const notFound = (what: string) => ({ error: { code: 'not_found', message: `No such ${what}.` } });
 
 export const repoDto = (r: typeof repositoryEntry.$inferSelect) => ({
@@ -273,5 +277,69 @@ export function registerWorkRoutes(
         .code(409)
         .send({ error: { code: 'already_finished', message: 'This run has already finished.' } });
     return runDto(run);
+  });
+
+  // The spec and design runs have no task list to retry from, so the Map offers "run it again" at the stage itself.
+  // The new run repeats the failed one: same agent, same task, same budget.
+  app.post('/api/runs/:id/retry', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    if (!me.roles.some((r) => RETRY_ROLES.includes(r)))
+      return reply.code(403).send({
+        error: {
+          code: 'wrong_role',
+          message: 'A Product Owner, an Architect or a Platform Admin runs this step again.',
+        },
+      });
+    const { id: runId } = id.parse(request.params);
+    const [run] = await db.select().from(agentRun).where(eq(agentRun.id, runId));
+    if (!run) return reply.code(404).send(notFound('run'));
+    const refuse = (code: string, message: string) =>
+      reply.code(409).send({ error: { code, message } });
+    if (!RETRY_STEP_ROLES.includes(run.agentRole))
+      return refuse(
+        'not_retryable',
+        'Build tasks are run again from the build plan, and bug fixes from the Bugs page.',
+      );
+    if (!FAILED_RUN_STATES.includes(run.state))
+      return refuse('not_failed', `This run is ${run.state}, so there is nothing to run again.`);
+    const [newer] = await db
+      .select({ id: agentRun.id })
+      .from(agentRun)
+      .where(
+        and(
+          eq(agentRun.initiativeId, run.initiativeId),
+          eq(agentRun.agentRole, run.agentRole),
+          ne(agentRun.id, run.id),
+          // JavaScript keeps milliseconds and the table microseconds, so a run's own time can look later than itself.
+          gte(agentRun.createdAt, run.createdAt),
+        ),
+      )
+      .limit(1);
+    if (newer) return refuse('superseded', 'A newer run of this step already exists.');
+    try {
+      const again = await createRun(db, agents, {
+        initiativeId: run.initiativeId,
+        role: run.agentRole,
+        task: run.task,
+        sponsorPersonId: me.id,
+        budgetUsd: run.budgetMicros / 1_000_000,
+      });
+      await recordActivity(db, {
+        actorType: 'person',
+        actorId: me.id,
+        initiativeId: run.initiativeId,
+        runId: again.id,
+        action: 'run.retried',
+        detail: { previousRunId: run.id, previousState: run.state },
+      });
+      return reply.code(201).send(runDto(again));
+    } catch (e) {
+      if (e instanceof RunError) {
+        const status = e.code === 'initiative_not_active' ? 409 : 400;
+        return reply.code(status).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
   });
 }

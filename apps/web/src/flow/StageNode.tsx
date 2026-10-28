@@ -1,11 +1,14 @@
 import { Handle, Position } from '@xyflow/react';
 import type { Node, NodeProps } from '@xyflow/react';
+import { createContext, useContext } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import { roleLabel } from '../labels';
+import type { StageAction } from '../stageActions';
 
 export interface StageView {
   id: string;
@@ -15,7 +18,14 @@ export interface StageView {
   waitingOn: string[];
   detail: string;
   items: Array<{ kind: 'run' | 'ask'; id: string; title: string; state: string }>;
+  /** What a person can do here now: start it, skip it, run it again. */
+  actions?: StageAction[];
+  /** Why something here cannot start. */
+  notes?: string[];
 }
+
+/** What a button on a stage does. The page supplies it, so a node needs no knowledge of the API. */
+export const StageActionContext = createContext<(a: StageAction) => void>(() => {});
 export type StageNodeType = Node<{ stage: StageView; [key: string]: unknown }, 'stage'>;
 
 const WORDS: Record<StageView['status'], string> = {
@@ -36,6 +46,7 @@ const COLOR = {
 /** One stage of an initiative (spec and design, build and review, release) with what it is waiting on. */
 export function StageNode({ data }: NodeProps<StageNodeType>) {
   const s = data.stage;
+  const run = useContext(StageActionContext);
   const p = useTheme().palette;
   const accent =
     s.status === 'done'
@@ -101,6 +112,30 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
             </Typography>
           ))}
         </Box>
+        {s.notes?.map((n) => (
+          <Typography key={n} variant="body2" color="error" sx={{ mt: 0.75 }}>
+            {n}
+          </Typography>
+        ))}
+        {s.actions && s.actions.length > 0 && (
+          <Box
+            className="nodrag nopan"
+            sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.25 }}
+            data-testid={`stage-actions-${s.id}`}
+          >
+            {s.actions.map((a) => (
+              <Button
+                key={`${a.kind}-${a.targetId}`}
+                size="small"
+                variant={a.primary ? 'contained' : 'outlined'}
+                data-testid={`stage-action-${a.kind}`}
+                onClick={() => run(a)}
+              >
+                {a.label}
+              </Button>
+            ))}
+          </Box>
+        )}
       </Box>
       <Handle type="source" position={Position.Right} isConnectable={false} style={hidden} />
     </>

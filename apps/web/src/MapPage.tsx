@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BuildPlanDto, Me, StageStartDto } from '@sdlc/schemas';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -23,6 +27,7 @@ import {
   getRepositories,
   getStageStarts,
   prepareRelease,
+  retryRun,
   retryBuildTask,
   sendBackBuildPlan,
   skipStageStep,
@@ -33,6 +38,9 @@ import {
 } from './api';
 import type { InitiativeMap } from './api';
 import { PipelineFlow } from './flow/PipelineFlow';
+import { StageActionContext } from './flow/StageNode';
+import { stageActions } from './stageActions';
+import type { StageAction } from './stageActions';
 import { PlanGraph } from './flow/PlanGraph';
 import { PageHeader, StatusChip } from './ui';
 import type { Tone } from './ui';
@@ -48,81 +56,6 @@ const RUN_ROLES: Array<{ id: string; label: string }> = [
 ];
 
 type Act = (fn: () => Promise<unknown>, done: string) => Promise<void>;
-
-/** The steps before the build that wait for a person, or are about to start. */
-function NextSteps({
-  steps,
-  mayControl,
-  act,
-}: {
-  steps: StageStartDto[];
-  mayControl: boolean;
-  act: Act;
-}) {
-  // Bug fixes are on the Bugs page.
-  const shown = steps.filter(
-    (s) => s.stage !== 'bug' && ['pending', 'awaiting_start', 'invalid'].includes(s.state),
-  );
-  if (shown.length === 0) return null;
-  return (
-    <Card data-testid="next-steps">
-      <CardContent>
-        <Typography component="h3" variant="h3" gutterBottom>
-          Next steps
-        </Typography>
-        <Stack component="ul" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {shown.map((s) => (
-            <Box component="li" key={s.id} data-testid={`step-${s.stage}`} data-state={s.state}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                <Typography variant="subtitle2" component="b">
-                  {s.title}
-                </Typography>
-                <StatusChip
-                  tone={s.state === 'invalid' ? 'stop' : 'wait'}
-                  label={
-                    s.state === 'awaiting_start'
-                      ? 'Waiting for a person'
-                      : s.state === 'pending'
-                        ? 'Starting'
-                        : 'Cannot start'
-                  }
-                />
-              </Stack>
-              {s.detail && (
-                <Typography variant="body2" color="text.secondary">
-                  {s.detail}
-                </Typography>
-              )}
-              {mayControl && s.state === 'awaiting_start' && (
-                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={() => void act(() => startStageStep(s.id), `${s.title} is starting.`)}
-                  >
-                    Start
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() =>
-                      void act(
-                        () => skipStageStep(s.id),
-                        'Skipped. You can still start that run by hand.',
-                      )
-                    }
-                  >
-                    Skip
-                  </Button>
-                </Stack>
-              )}
-            </Box>
-          ))}
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
 
 const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; tone: Tone }> = {
   waiting: { label: 'Waiting', tone: 'none' },
@@ -233,19 +166,6 @@ function BuildPlan({
           ))}
         </Stack>
         <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: 'wrap', rowGap: 1 }}>
-          {mayControl && plan.state === 'awaiting_start' && (
-            <Button
-              variant="contained"
-              onClick={() =>
-                void act(
-                  () => startBuildPlan(plan.id),
-                  'The build has started. Tasks start as their dependencies merge.',
-                )
-              }
-            >
-              Start the build
-            </Button>
-          )}
           {mayControl && plan.state === 'invalid' && (
             <Button
               variant="contained"
@@ -470,6 +390,29 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const mayControlBuild = me.roles.some((r) =>
     ['product_owner', 'architect', 'platform_admin'].includes(r),
   );
+  const extras = map ? stageActions(map.stages, steps, plan, mayControlBuild) : {};
+  const stageViews = map
+    ? map.stages.map((s) => ({ ...s, actions: extras[s.id]?.actions, notes: extras[s.id]?.notes }))
+    : [];
+  const onStageAction = (a: StageAction) => {
+    if (a.kind === 'start_step')
+      void act(
+        () => startStageStep(a.targetId),
+        'The step is starting. It appears below when it runs.',
+      );
+    else if (a.kind === 'skip_step')
+      void act(() => skipStageStep(a.targetId), 'Skipped. You can still start that run by hand.');
+    else if (a.kind === 'retry_run')
+      void act(
+        () => retryRun(a.targetId),
+        'Running it again. Questions and reviews will arrive in the attention queue.',
+      );
+    else
+      void act(
+        () => startBuildPlan(a.targetId),
+        'The build has started. Tasks start as their dependencies merge.',
+      );
+  };
   const mayRelease = me.roles.some((r) =>
     ['product_owner', 'devops_release', 'platform_admin'].includes(r),
   );
@@ -532,7 +475,9 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
               </Typography>
             )}
           </Box>
-          <PipelineFlow stages={map.stages} />
+          <StageActionContext.Provider value={onStageAction}>
+            <PipelineFlow stages={stageViews} />
+          </StageActionContext.Provider>
 
           <Box
             sx={{
@@ -545,22 +490,29 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
           >
             <Stack spacing={2}>
               {plan && <BuildPlan plan={plan} mayControl={mayControlBuild} act={act} />}
-              <Card
-                component="form"
-                onSubmit={async (e: React.FormEvent) => {
-                  e.preventDefault();
-                  await act(
-                    () => startRun(map.initiative.id, { role, task, budgetUsd: 1 }),
-                    'The run is queued. Questions and reviews will arrive in the attention queue.',
-                  );
-                  setTask('');
-                }}
-              >
-                <CardContent>
-                  <Typography component="h3" variant="h3" gutterBottom>
-                    Start a run
+              <Accordion disableGutters variant="outlined" data-testid="manual-run">
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography component="h3" variant="h3">
+                    Start a run by hand
                   </Typography>
-                  <Stack spacing={1.5}>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    The buttons on the stages above start, skip and repeat the steps for you. Use
+                    this only for something they do not cover, such as a one-off task for an agent.
+                  </Typography>
+                  <Stack
+                    component="form"
+                    spacing={1.5}
+                    onSubmit={async (e: React.FormEvent) => {
+                      e.preventDefault();
+                      await act(
+                        () => startRun(map.initiative.id, { role, task, budgetUsd: 1 }),
+                        'The run is queued. Questions and reviews will arrive in the attention queue.',
+                      );
+                      setTask('');
+                    }}
+                  >
                     <TextField
                       select
                       label="Agent"
@@ -589,11 +541,10 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
                       </Button>
                     </Box>
                   </Stack>
-                </CardContent>
-              </Card>
+                </AccordionDetails>
+              </Accordion>{' '}
             </Stack>
             <Stack spacing={2}>
-              <NextSteps steps={steps} mayControl={mayControlBuild} act={act} />
               <Card data-testid="releases">
                 <CardContent>
                   <Typography component="h3" variant="h3" gutterBottom>

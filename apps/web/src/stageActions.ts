@@ -1,0 +1,81 @@
+// What a person can do at each stage of the Map, worked out from where the stage is. Pure.
+
+export type StageActionKind = 'start_step' | 'skip_step' | 'retry_run' | 'start_plan';
+
+export interface StageAction {
+  kind: StageActionKind;
+  /** The step, run or build plan the button acts on. */
+  targetId: string;
+  label: string;
+  primary: boolean;
+}
+
+interface StageIn {
+  id: string;
+  status: string;
+  items: Array<{ kind: 'run' | 'ask'; id: string; title: string; state: string }>;
+}
+
+const FAILED = ['failed', 'cancelled', 'budget_exceeded', 'timed_out'];
+const ACTIVE = ['queued', 'starting', 'running', 'resuming', 'parked', 'paused'];
+const STEP_WORD: Record<string, string> = { spec: 'spec', design: 'design' };
+
+/**
+ * `steps` are the spec and design starts of the initiative, `plan` its build plan. A person who may not decide these
+ * gets no buttons. The spec stage offers Start and Skip for a step that waits, and Run again when its newest run
+ * failed. The build stage offers Start the build.
+ */
+export function stageActions(
+  stages: StageIn[],
+  steps: Array<{ id: string; stage: string; state: string; title: string; detail: string | null }>,
+  plan: { id: string; state: string } | null,
+  mayControl: boolean,
+): Record<string, { actions: StageAction[]; notes: string[] }> {
+  const out: Record<string, { actions: StageAction[]; notes: string[] }> = {};
+  for (const s of stages) out[s.id] = { actions: [], notes: [] };
+
+  const spec = out['spec'];
+  const specStage = stages.find((s) => s.id === 'spec');
+  if (spec && specStage) {
+    const before = steps.filter((x) => x.stage === 'spec' || x.stage === 'design');
+    for (const x of before.filter((y) => y.state === 'invalid'))
+      spec.notes.push(x.detail ?? `${x.title} cannot start.`);
+    const waiting = before.filter((x) => x.state === 'awaiting_start');
+    if (mayControl)
+      for (const x of waiting) {
+        spec.actions.push({
+          kind: 'start_step',
+          targetId: x.id,
+          label: `Start the ${STEP_WORD[x.stage] ?? x.stage}`,
+          primary: true,
+        });
+        spec.actions.push({ kind: 'skip_step', targetId: x.id, label: 'Skip', primary: false });
+      }
+    const runs = specStage.items.filter((i) => i.kind === 'run');
+    const newest = runs[runs.length - 1];
+    if (
+      mayControl &&
+      newest &&
+      FAILED.includes(newest.state) &&
+      waiting.length === 0 &&
+      specStage.status !== 'done' &&
+      !runs.some((r) => ACTIVE.includes(r.state))
+    )
+      spec.actions.push({
+        kind: 'retry_run',
+        targetId: newest.id,
+        label: `Run the ${newest.title === 'architect' ? 'design' : 'spec'} again`,
+        primary: true,
+      });
+  }
+
+  const build = out['build'];
+  if (build && mayControl && plan?.state === 'awaiting_start')
+    build.actions.push({
+      kind: 'start_plan',
+      targetId: plan.id,
+      label: 'Start the build',
+      primary: true,
+    });
+  return out;
+}

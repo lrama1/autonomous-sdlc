@@ -431,3 +431,87 @@ describe('runs', () => {
     expect(got.json().runs).toHaveLength(1);
   });
 });
+
+describe('running a failed spec or design step again', () => {
+  async function failedRun(role: 'product' | 'architect' | 'backend_engineer', state = 'failed') {
+    const po = await login(['product_owner']);
+    const repo = await registered();
+    const [init] = await db
+      .insert(initiative)
+      .values({ title: 'Retry me', goal: 'G', repositoryId: repo.id, createdBy: po.id })
+      .returning();
+    const [run] = await db
+      .insert(agentRun)
+      .values({
+        initiativeId: init!.id,
+        agentRole: role,
+        task: 'Draft the spec: Retry me',
+        agentDefinitionId: `${role}-agent`,
+        agentDefinitionVersion: 1,
+        engine: 'claude-code',
+        modelAlias: 'agent-default',
+        state,
+        sponsorPersonId: po.id,
+        repositoryId: repo.id,
+        budgetMicros: 1_500_000,
+      })
+      .returning();
+    return { po, init: init!, run: run! };
+  }
+  const retry = (cookie: string, runId: string) =>
+    app.inject({ method: 'POST', url: `/api/runs/${runId}/retry`, headers: as(cookie) });
+
+  it('starts a new run with the same agent, task and budget, and logs it', async () => {
+    const { po, init, run } = await failedRun('product');
+    const res = await retry(po.cookie, run.id);
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      role: 'product',
+      task: 'Draft the spec: Retry me',
+      budgetUsd: 1.5,
+      state: 'queued',
+      initiativeId: init.id,
+      sponsorPersonId: po.id,
+    });
+    const log = await db.select().from(activityEvent).where(eq(activityEvent.runId, res.json().id));
+    expect(log.map((l) => l.action)).toContain('run.retried');
+  });
+
+  it.each(['failed', 'cancelled', 'budget_exceeded', 'timed_out'])(
+    'accepts a run that ended as %s',
+    async (state) => {
+      const { po, run } = await failedRun('architect', state);
+      expect((await retry(po.cookie, run.id)).statusCode).toBe(201);
+    },
+  );
+
+  it('refuses a run that is still going or did not fail', async () => {
+    const { po, run } = await failedRun('product', 'succeeded');
+    const res = await retry(po.cookie, run.id);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('not_failed');
+  });
+
+  it('refuses a second retry of the same step, and a build task', async () => {
+    const { po, run } = await failedRun('product');
+    expect((await retry(po.cookie, run.id)).statusCode).toBe(201);
+    const again = await retry(po.cookie, run.id);
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error.code).toBe('superseded');
+    const build = await failedRun('backend_engineer');
+    const res = await retry(build.po.cookie, build.run.id);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('not_retryable');
+  });
+
+  it('needs a person with a say in the step, and a run that exists', async () => {
+    const { run } = await failedRun('product');
+    const eng = await login(['backend_engineer']);
+    expect((await retry(eng.cookie, run.id)).statusCode).toBe(403);
+    expect(
+      (await app.inject({ method: 'POST', url: `/api/runs/${run.id}/retry` })).statusCode,
+    ).toBe(401);
+    const po = await login(['product_owner']);
+    expect((await retry(po.cookie, '00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+  });
+});

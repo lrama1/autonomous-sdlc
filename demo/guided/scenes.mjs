@@ -176,11 +176,11 @@ export const scenes = {
         await pickInitiative(h);
         await h.sleep(1500);
       });
-      const step = p.getByTestId('step-spec');
+      const step = p.getByTestId('stage-spec');
       await act(
         h,
         'The spec stage says it is waiting for a person to start it. I click Start, because in guided mode nothing begins until I say so. The product agent then starts drafting the spec in its own container on AWS Fargate.',
-        () => h.click(step.getByRole('button', { name: 'Start' }), { label: 'Start the spec', why: 'Guided mode waits for me.' }),
+        () => h.click(step.getByRole('button', { name: 'Start the spec' }), { label: 'Start the spec', why: 'Guided mode waits for me.' }),
       );
       await h.sleep(2500);
     },
@@ -250,7 +250,7 @@ export const scenes = {
         () => h.tab('Map', 'The design stage starts from the map.'),
       );
       await pickInitiative(h);
-      const start = p.getByTestId('next-steps').getByRole('button', { name: 'Start' });
+      const start = p.getByTestId('stage-spec').getByRole('button', { name: 'Start the design' });
       await start.waitFor({ timeout: 240000 });
       await act(
         h,
@@ -325,7 +325,7 @@ export const scenes = {
       await pickInitiative(h);
       const plan = p.getByTestId('build-plan');
       await plan.waitFor({ timeout: 240000 });
-      const start = plan.getByRole('button', { name: 'Start the build' });
+      const start = p.getByTestId('stage-build').getByRole('button', { name: 'Start the build' });
       await start.waitFor({ timeout: 60000 });
       await act(
         h,
