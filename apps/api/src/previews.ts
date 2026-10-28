@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { initiative, interaction, previewRun, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
-import { parsePreviewConfig, PREVIEW_CONFIG_PATH } from '@sdlc/core';
+import { onlyDocuments, parsePreviewConfig, PREVIEW_CONFIG_PATH } from '@sdlc/core';
 import { recordActivity } from './activity.js';
 import { PreviewStartError } from './docker-preview.js';
 import type { PreviewHost } from './docker-preview.js';
@@ -110,9 +110,21 @@ export class PreviewService {
     const { db, github } = this.deps;
     const [review] = await db.select().from(interaction).where(eq(interaction.id, interactionId));
     const card = review?.contextCard as
-      { kind?: string; repository?: string; prNumber?: number } | undefined;
+      | {
+          kind?: string;
+          repository?: string;
+          prNumber?: number;
+          diff?: { changedPaths?: string[] };
+        }
+      | undefined;
     if (!review || card?.kind !== 'pull_request' || !card.repository || !card.prNumber)
       return fail(404, 'not_found', 'That is not a pull request review.');
+    if (onlyDocuments(card.diff?.changedPaths ?? []))
+      return fail(
+        422,
+        'nothing_to_run',
+        'This change only touches documents, so there is no program to run.',
+      );
     if (review.state !== 'open')
       return fail(
         409,
@@ -378,7 +390,7 @@ export class PreviewService {
 
     // Autopilot initiatives start a preview for each open pull request review, once.
     const waiting = await db
-      .select({ id: interaction.id })
+      .select({ id: interaction.id, card: interaction.contextCard })
       .from(interaction)
       .innerJoin(initiative, eq(initiative.id, interaction.initiativeId))
       .where(
@@ -391,6 +403,9 @@ export class PreviewService {
         ),
       );
     for (const w of waiting) {
+      // A spec or a design has no program to run.
+      const paths = (w.card as { diff?: { changedPaths?: string[] } }).diff?.changedPaths ?? [];
+      if (onlyDocuments(paths)) continue;
       const r = await this.start(w.id, null).catch((e) => {
         this.log(`[preview] automatic start failed: ${String(e)}`);
         return null;

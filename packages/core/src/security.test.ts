@@ -4,6 +4,7 @@ import {
   buildReviewPacket,
   findingsAsChangeRequest,
   needsSecurityReview,
+  onlyDocuments,
   parseSecurityReply,
   relativeImports,
   severityCounts,
@@ -190,5 +191,15 @@ describe('what the agent is shown', () => {
     expect(packet).toContain('   2  render();');
     expect(packet).toContain('### src/util.js (imported by a changed file, not itself changed)');
     expect(packet).toContain('(file cut here)');
+  });
+});
+
+describe('onlyDocuments', () => {
+  it('is true only for a known change made of documents', () => {
+    expect(onlyDocuments(['docs/spec/x.md', 'README.md'])).toBe(true);
+    expect(onlyDocuments(['docs/design/x.md', 'src/app.ts'])).toBe(false);
+    expect(onlyDocuments(['.github/workflows/ci.yml'])).toBe(false);
+    // No file list means nobody knows, so it is not treated as documents.
+    expect(onlyDocuments([])).toBe(false);
   });
 });

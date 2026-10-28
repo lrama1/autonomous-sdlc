@@ -38,6 +38,7 @@ export function PreviewPanel({ id }: { id: string }) {
         setP(next);
         setFailed(false);
         // Keep looking while a preview may still appear or finish starting. The platform's own is asked for more often.
+        if (next.docsOnly) return;
         if (next.platform.state === 'starting') timer = setTimeout(load, 2_000);
         else if (next.state === 'building' || next.state === 'none' || next.state === 'stale')
           timer = setTimeout(load, 20_000);
@@ -73,6 +74,19 @@ export function PreviewPanel({ id }: { id: string }) {
     );
   }
   if (!p) return null;
+  if (p.docsOnly)
+    return (
+      <CheckPanel
+        title="No preview"
+        testId="preview"
+        state="none"
+        status={
+          <Typography variant="body2" color="text.secondary" component="span">
+            {p.detail}
+          </Typography>
+        }
+      />
+    );
   const running =
     (p.platform.state === 'starting' || p.platform.state === 'ready') && p.platform.id;
   return (

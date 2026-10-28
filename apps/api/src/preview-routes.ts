@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { interaction, previewRun } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
-import { choosePreview } from '@sdlc/core';
+import { choosePreview, onlyDocuments } from '@sdlc/core';
 import type { PreviewCandidate } from '@sdlc/core';
 import { mainPreviewSchema, previewSchema } from '@sdlc/schemas';
 import type { PreviewDto } from '@sdlc/schemas';
@@ -66,6 +66,31 @@ export function registerPreviewRoutes(
         .send({ error: { code: 'not_found', message: 'That is not a pull request review.' } });
     }
     const { repository, prNumber } = review;
+
+    // A spec or a design is made of documents. There is no program to run and nothing for GitHub to have published.
+    const paths =
+      (review.row.contextCard as { diff?: { changedPaths?: string[] } }).diff?.changedPaths ?? [];
+    if (onlyDocuments(paths)) {
+      const docs: PreviewDto = previewSchema.parse({
+        state: 'none',
+        url: null,
+        label: null,
+        source: null,
+        sha: null,
+        headSha: '',
+        detail: 'Nothing to run: this change only touches documents.',
+        docsOnly: true,
+        platform: {
+          available: false,
+          id: null,
+          state: 'none',
+          expiresAt: null,
+          detail: null,
+          ttlMinutes,
+        },
+      });
+      return docs;
+    }
 
     const key = `${repository}#${prNumber}`;
     let looked = cache.get(key);

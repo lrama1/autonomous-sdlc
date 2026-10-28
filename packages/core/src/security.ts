@@ -136,6 +136,11 @@ export function severityCounts(findings: SecurityFinding[]): string {
 
 const DOCS_ONLY = (p: string) => /\.md$/i.test(p) || p.startsWith('docs/');
 
+/** True when the change is known and holds nothing but documents. A change whose files are not known is not. */
+export function onlyDocuments(changedPaths: string[]): boolean {
+  return changedPaths.length > 0 && changedPaths.every(DOCS_ONLY);
+}
+
 /**
  * A change that only touches documents has nothing for a security review to read. Anything else, including a
  * configuration file or a workflow, does.
