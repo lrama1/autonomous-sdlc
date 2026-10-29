@@ -1,3 +1,4 @@
+import { clearReadyPreview } from '../usePreviewReady';
 import { Handle, Position } from '@xyflow/react';
 import type { Node, NodeProps } from '@xyflow/react';
 import { createContext, useContext } from 'react';
@@ -131,7 +132,15 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
                 data-testid={`stage-action-${a.kind}`}
                 disabled={a.kind === 'preview_wait'}
                 {...(a.href
-                  ? { href: a.href, target: '_blank', rel: 'noreferrer noopener' }
+                  ? {
+                      href: a.href,
+                      target: '_blank',
+                      rel: 'noreferrer noopener',
+                      onClick: () => {
+                        // Opening it from here answers the "preview is ready" notice.
+                        if (a.targetId) void clearReadyPreview(a.targetId);
+                      },
+                    }
                   : { onClick: () => run(a) })}
               >
                 {a.label}

@@ -345,6 +345,22 @@ export const mainPreviewSchema = z.object({
 });
 export type MainPreviewDto = z.infer<typeof mainPreviewSchema>;
 
+// A preview the person started that is ready to open and that they have not opened or dismissed yet.
+export const readyPreviewSchema = z.object({
+  id: z.string(),
+  // The built app (the integration branch), or a pull request under review.
+  kind: z.enum(['main', 'pull_request']),
+  initiativeId: z.string().nullable(),
+  initiativeTitle: z.string(),
+  label: z.string(),
+  url: z.string(),
+  expiresAt: z.string().nullable(),
+  readyAt: z.string().nullable(),
+  // The review it belongs to, for a pull request.
+  interactionId: z.string().nullable(),
+});
+export type ReadyPreviewDto = z.infer<typeof readyPreviewSchema>;
+
 // The smoke test of a pull request's code at the commit under review (mvp-contract section 16).
 export const smokeResultSchema = z.object({
   kind: z.enum(['get', 'run']),

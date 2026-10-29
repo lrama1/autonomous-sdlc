@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AssumptionDto, AttentionProfile, InteractionDto } from '@sdlc/schemas';
+import type {
+  AssumptionDto,
+  AttentionProfile,
+  InteractionDto,
+  ReadyPreviewDto,
+} from '@sdlc/schemas';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -12,6 +17,8 @@ import Typography from '@mui/material/Typography';
 import { decideAssumption, getAssumptions, getProfile, getQueue, makeStanding } from './api';
 import { formatSpan, roleLabel } from './labels';
 import { Ask } from './queue/Ask';
+import { previewName } from './PreviewReadyBanner';
+import { clearReadyPreview, useReadyPreviews } from './usePreviewReady';
 import { PageHeader } from './ui';
 
 function AssumptionRow({ a, onChanged }: { a: AssumptionDto; onChanged: () => void }) {
@@ -49,6 +56,61 @@ function AssumptionRow({ a, onChanged }: { a: AssumptionDto; onChanged: () => vo
           </Button>
           <Button size="small" variant="outlined" disabled={busy} onClick={() => decide('reject')}>
             Reject
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** A preview the person started is ready. A quiet notice: it does not count as an ask, and it goes when it is opened or dismissed. */
+function PreviewReadyRow({ p }: { p: ReadyPreviewDto }) {
+  return (
+    <Card data-testid="preview-ready">
+      <CardContent>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
+        >
+          <Chip label="Notice" />
+          <Typography variant="subtitle2" component="b">
+            Preview is ready: {previewName(p)}
+          </Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
+          You started this preview. It opens in its own browser tab, on its own address, and the
+          platform stops it
+          {p.expiresAt
+            ? `at ${new Date(p.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : 'after a while'}
+          .
+        </Typography>
+        <Stack direction="row" spacing={1}>
+          <Button
+            size="small"
+            variant="contained"
+            href={p.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={() => {
+              void clearReadyPreview(p.id);
+            }}
+          >
+            Open the preview
+          </Button>
+          {p.interactionId && (
+            <Button size="small" variant="outlined" href={`#/queue/${p.interactionId}`}>
+              Go to the review
+            </Button>
+          )}
+          {p.initiativeId && !p.interactionId && (
+            <Button size="small" variant="outlined" href={`#/map/${p.initiativeId}`}>
+              Go to the map
+            </Button>
+          )}
+          <Button size="small" onClick={() => void clearReadyPreview(p.id)}>
+            Dismiss
           </Button>
         </Stack>
       </CardContent>
@@ -114,6 +176,7 @@ export function Queue({ openId }: { openId: string | null }) {
     Array<{ i: InteractionDto; note: string; suggest?: InteractionDto['suggestStanding'] }>
   >([]);
 
+  const ready = useReadyPreviews(true);
   const load = useCallback(async () => {
     try {
       const [q, a] = await Promise.all([getQueue(), getAssumptions()]);
@@ -209,6 +272,19 @@ export function Queue({ openId }: { openId: string | null }) {
                 </CardContent>
               </Card>
             ))}
+          {ready.length > 0 && (
+            <>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Typography component="h2" variant="h2">
+                  Ready to open
+                </Typography>
+                <Chip label={ready.length} className="count" />
+              </Stack>
+              {ready.map((p) => (
+                <PreviewReadyRow key={p.id} p={p} />
+              ))}
+            </>
+          )}
           {assumptions.length > 0 && (
             <>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>

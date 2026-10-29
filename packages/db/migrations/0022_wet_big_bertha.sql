@@ -1,0 +1,1 @@
+ALTER TABLE "preview_run" ADD COLUMN "seen_at" timestamp with time zone;

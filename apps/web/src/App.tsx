@@ -50,6 +50,8 @@ import { Settings } from './Settings';
 import { AssistantPanel } from './assistant/AssistantPanel';
 import { getHealth, getMe, getReady, signOut } from './api';
 import { useAttention } from './useAttention';
+import { PreviewReadyBanner } from './PreviewReadyBanner';
+import { useReadyPreviews } from './usePreviewReady';
 import { AgentFlow } from './flow/AgentFlow';
 import { ROLE_LABEL } from './labels';
 
@@ -162,12 +164,15 @@ export function App() {
   const me = state.phase === 'ready' ? state.me : null;
   const atHome = !signedIn || route.page === 'home';
   const attention = useAttention(signedIn);
+  const ready = useReadyPreviews(signedIn);
 
   // The browser tab says it too, for someone working in another window.
   useEffect(() => {
-    document.title =
-      attention.count > 0 ? `(${attention.count}) Autonomous SDLC` : 'Autonomous SDLC';
-  }, [attention.count]);
+    const count = attention.count > 0 ? `(${attention.count}) ` : '';
+    // A dot says a preview is ready to open, for someone working in another window.
+    document.title = `Autonomous SDLC`;
+    document.title = count + (ready.length > 0 ? '● ' : '') + document.title;
+  }, [attention.count, ready.length]);
 
   const nav = (
     <List component="nav" aria-label="Main" sx={{ px: 1, py: 1.5 }}>
@@ -378,6 +383,7 @@ export function App() {
           )}
         </Container>
       </Box>
+      {state.phase === 'ready' && state.me && <PreviewReadyBanner items={ready} />}
       {state.phase === 'ready' && state.me && <AssistantPanel />}
     </Box>
   );

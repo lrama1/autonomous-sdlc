@@ -1,3 +1,4 @@
+import { clearReadyPreview } from '../usePreviewReady';
 import { useEffect, useState } from 'react';
 import type { PreviewDto } from '@sdlc/schemas';
 import Alert from '@mui/material/Alert';
@@ -97,7 +98,14 @@ export function PreviewPanel({ id }: { id: string }) {
       status={
         <>
           {p.url && (
-            <Link href={p.url} target="_blank" rel="noreferrer noopener">
+            <Link
+              href={p.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              onClick={() => {
+                if (p.platform.id) void clearReadyPreview(p.platform.id);
+              }}
+            >
               {p.label ?? 'Open the preview'}
             </Link>
           )}

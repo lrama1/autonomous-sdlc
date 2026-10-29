@@ -1,15 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { interaction, previewRun } from '@sdlc/db';
+import { initiative, interaction, previewRun } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { choosePreview, onlyDocuments } from '@sdlc/core';
 import type { PreviewCandidate } from '@sdlc/core';
-import { mainPreviewSchema, previewSchema } from '@sdlc/schemas';
+import { mainPreviewSchema, previewSchema, readyPreviewSchema } from '@sdlc/schemas';
 import type { PreviewDto } from '@sdlc/schemas';
 import { GitHubError } from './github-app.js';
 import type { GitHubService } from './github-service.js';
 import { requirePerson } from './people.js';
+import { MAIN_PREVIEW } from './previews.js';
 import type { PreviewRow, PreviewService } from './previews.js';
 
 const CACHE_MS = 15_000;
@@ -203,6 +204,51 @@ export function registerPreviewRoutes(
     if (!out.ok)
       return reply.code(out.status).send({ error: { code: out.code, message: out.message } });
     return reply.code(out.existing ? 200 : 202).send({ id: out.row.id, state: out.row.state });
+  });
+
+  // Previews this person started that are ready to open: the attention queue shows each as a notice, and a banner tells them.
+  app.get('/api/previews/ready', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    const svc = previews();
+    if (!svc) return [];
+    const rows = await svc.readyFor(me.id);
+    const ids = [...new Set(rows.map((r) => r.initiativeId).filter((x): x is string => !!x))];
+    const titles = new Map<string, string>();
+    for (const i of ids) {
+      const [row] = await db
+        .select({ t: initiative.title })
+        .from(initiative)
+        .where(eq(initiative.id, i));
+      if (row) titles.set(i, row.t);
+    }
+    return rows
+      .filter((r) => r.url)
+      .map((r) =>
+        readyPreviewSchema.parse({
+          id: r.id,
+          kind: r.prNumber === MAIN_PREVIEW ? 'main' : 'pull_request',
+          initiativeId: r.initiativeId,
+          initiativeTitle: (r.initiativeId && titles.get(r.initiativeId)) || r.repository,
+          label: r.prNumber === MAIN_PREVIEW ? 'The built app' : `Pull request #${r.prNumber}`,
+          url: r.url,
+          expiresAt: r.expiresAt?.toISOString() ?? null,
+          readyAt: r.readyAt?.toISOString() ?? null,
+          interactionId: r.interactionId,
+        }),
+      );
+  });
+
+  app.post('/api/previews/:id/seen', async (request, reply) => {
+    const me = await requirePerson(db, request, reply);
+    if (!me) return;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const ok = (await previews()?.markSeen(id, me.id)) ?? false;
+    if (!ok)
+      return reply
+        .code(404)
+        .send({ error: { code: 'not_found', message: 'No such preview of yours.' } });
+    return { id };
   });
 
   app.post('/api/previews/:id/stop', async (request, reply) => {
