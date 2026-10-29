@@ -162,6 +162,13 @@
       "when": 1793298780582,
       "tag": "0022_wet_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793316893313,
+      "tag": "0023_funny_chameleon",
+      "breakpoints": true
     }
   ]
 }

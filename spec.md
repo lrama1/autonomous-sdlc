@@ -175,7 +175,7 @@ Per-run and per-Initiative budgets, a monthly budget, a limit on concurrent runs
 
 The v0.4 rules are the **default pack**. They are replaceable per team and enforced by agents and checkpoints.
 
-- One repository per Initiative, chosen from the Repository Registry before the Product Agent goes beyond intake. Monorepo preferred.
+- One repository per Initiative, chosen from the Repository Registry before the Product Agent goes beyond intake. One app per repository is the supported shape: an Initiative adds a feature or fix to the app in its repository, and a separate app gets its own repository. A New app on a repository that already has work is allowed with a warning, and the agents are told to keep it in its own folder (mvp-contract, 2026-10-29).
 - Backend: Node.js (TypeScript preferred) or Python. Frontend: React + TypeScript. Database: PostgreSQL (deviation needs an ADR). IaC: Terraform.
 - Backend services follow Hexagonal Architecture (domain, application, infrastructure separation).
 - ADRs before implementation for significant decisions.
@@ -471,7 +471,7 @@ Agents never approve. Each agent definition (prompt, tools, model alias) is vers
   - *Open points:* who owns the pipeline role that may create resources, a TTL sweeper for orphaned stacks, a per-repository cost cap, and how the link reaches the review pack (§10.1).
   - *Leaning:* start with Option C, add Option B for web stacks, and keep Option A for repositories that need real infrastructure.
 - **Cognito vs IAM Identity Center** as the AWS identity default.
-- **Registry:** one active Initiative per repository vs several in a monorepo. Whether `direct` mode may target non-integration branches.
+- **Registry:** several apps in one repository (a monorepo) would need an app entity with its own root folder, preview file, verify command and required check. Not built. Whether `direct` mode may target non-integration branches.
 - **Earned autonomy:** when to try automatic tuning, and on what signals.
 
 ### Decided

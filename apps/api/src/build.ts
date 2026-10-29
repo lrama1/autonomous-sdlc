@@ -552,6 +552,7 @@ async function advancePlan(deps: BuildDeps, plan: PlanRow): Promise<void> {
           task.history.slice(-3),
           task.guidance ?? undefined,
           init.kind,
+          init.alongside,
         ),
         sponsorPersonId: sponsor,
       });

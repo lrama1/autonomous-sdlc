@@ -35,23 +35,32 @@ const DESIGN_FILE = /^docs\/design\/[^/]+\.md$/;
 /** How many times a spec or a design is revised on request before a person takes over. */
 const MAX_REVISIONS = 3;
 
-export const specTask = (i: { title: string; goal: string; kind?: string | null }) =>
+export const specTask = (i: {
+  title: string;
+  goal: string;
+  kind?: string | null;
+  alongside?: boolean;
+}) =>
   [
     `Draft the spec: ${i.title}`.slice(0, 100),
     '',
     `Draft the spec for this goal, and write it to docs/spec/<short-slug>.md following your instructions.`,
     '',
     `Goal: ${i.goal}`,
-    ...(kindGuidance(i.kind, 'product') ? ['', kindGuidance(i.kind, 'product')!] : []),
+    ...(kindGuidance(i.kind, 'product', i.alongside)
+      ? ['', kindGuidance(i.kind, 'product', i.alongside)!]
+      : []),
   ].join('\n');
 
-export const designTask = (specPath: string, kind?: string | null) => {
+export const designTask = (specPath: string, kind?: string | null, alongside = false) => {
   const slug = specPath.replace(/^docs\/spec\//, '').replace(/\.md$/, '');
   return [
     `Design: ${slug}`.slice(0, 100),
     '',
     `Design the approved spec ${specPath}. Write the design to docs/design/${slug}.md following your instructions.`,
-    ...(kindGuidance(kind, 'architect') ? ['', kindGuidance(kind, 'architect')!] : []),
+    ...(kindGuidance(kind, 'architect', alongside)
+      ? ['', kindGuidance(kind, 'architect', alongside)!]
+      : []),
   ].join('\n');
 };
 
@@ -491,7 +500,7 @@ export async function ensureDesignStarts(deps: StageDeps): Promise<number> {
         stage: 'design',
         role: 'architect',
         sourceInteractionId: i.id,
-        task: specPath ? designTask(specPath, init.kind) : 'Design',
+        task: specPath ? designTask(specPath, init.kind, init.alongside) : 'Design',
         state: missing
           ? 'invalid'
           : init.autonomyMode === 'guided' || !fresh

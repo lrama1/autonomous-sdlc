@@ -365,6 +365,15 @@ function NewInitiative({
               <option value="autopilot">Autopilot: no trigger, no review</option>
             </TextField>
           </Stack>
+          {f.kind === 'new_app' && worked.has(f.repositoryId) && (
+            <Alert severity="warning" data-testid="alongside-warning">
+              This repository already has an app. A new app here is built next to it, in its own
+              folder, but the platform previews and tests one app from a repository root. For a
+              separate app, register another repository on the{' '}
+              <a href="#/repositories">Repositories</a> page, or choose Feature to add to the
+              existing app.
+            </Alert>
+          )}
           <FormControlLabel
             control={
               <Checkbox

@@ -6,6 +6,7 @@ import type { RuleSet } from '@sdlc/core';
 import { autonomyModeSchema, autopilotSchema } from '@sdlc/schemas';
 import { z } from 'zod';
 import { recordActivity } from './activity.js';
+import { repositoryHasWork } from './repository-work.js';
 import { requirePerson } from './people.js';
 
 interface PrCard {
@@ -122,11 +123,20 @@ export function registerAutopilotRoutes(app: FastifyInstance, db: Db, rules: Rul
     if (!before)
       return reply.code(404).send({ error: { code: 'not_found', message: 'No such initiative.' } });
     const { autonomyMode, kind } = body.data;
+    // Only a new app next to another app is built apart from it.
+    const [repoOf] = kind
+      ? await db
+          .select({ repositoryId: initiative.repositoryId })
+          .from(initiative)
+          .where(eq(initiative.id, id))
+      : [];
+    const alongside =
+      kind === 'new_app' && repoOf ? await repositoryHasWork(db, repoOf.repositoryId, id) : false;
     await db
       .update(initiative)
       .set({
         ...(autonomyMode ? { autonomyMode } : {}),
-        ...(kind ? { kind } : {}),
+        ...(kind ? { kind, alongside } : {}),
       })
       .where(eq(initiative.id, id));
     if (autonomyMode)

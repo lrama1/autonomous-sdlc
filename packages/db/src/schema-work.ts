@@ -60,6 +60,8 @@ export const initiative = pgTable('initiative', {
   autonomyMode: text('autonomy_mode').notNull().default('balanced'), // guided | balanced | autopilot
   // What kind of work this is: new_app | feature | change. Null for work made before the kind existed.
   kind: text('kind'),
+  // A new app built in a repository that already had work in it: kept to its own folder (see kindGuidance).
+  alongside: boolean('alongside').notNull().default(false),
   state: text('state').notNull().default('draft'), // draft | active | paused | done | cancelled
   createdBy: uuid('created_by')
     .notNull()
