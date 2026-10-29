@@ -173,15 +173,12 @@ function AddForm({ onAdded }: { onAdded: () => void }) {
               value={f.owner}
               onChange={(e) => set('owner', e.target.value)}
             />
-            <Button
-              variant="contained"
-              type="submit"
-              disabled={busy}
-              sx={{ whiteSpace: 'nowrap', mt: 0.25 }}
-            >
+          </Stack>
+          <Box>
+            <Button variant="contained" type="submit" disabled={busy}>
               Add and confirm
             </Button>
-          </Stack>
+          </Box>
           {problem && <Alert severity="warning">{problem}</Alert>}
         </Stack>
       </CardContent>
