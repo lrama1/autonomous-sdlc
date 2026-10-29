@@ -246,7 +246,7 @@ export function helpers(page, clips, t0, sceneId) {
     },
     /** Switch to another tab of the platform, and say why. */
     async tab(name, why) {
-      const id = { Home: 'home', Portfolio: 'portfolio', Map: 'map', 'Attention queue': 'queue', Costs: 'costs', Integrations: 'integrations', Bugs: 'bugs', Autopilot: 'autopilot' }[name];
+      const id = { Home: 'home', Portfolio: 'portfolio', Map: 'map', 'Attention queue': 'queue', Costs: 'costs', Integrations: 'integrations', Bugs: 'bugs', Autopilot: 'autopilot', Interruptions: 'interruptions', Repositories: 'repositories', Settings: 'settings' }[name];
       const nav = page.getByTestId(`nav-${id}`);
       await page.evaluate(([n, w]) => window.__demo.banner('SWITCHING TAB', n, w, '#4da3ff', 4200), [name, why]);
       await sleep(1300);
