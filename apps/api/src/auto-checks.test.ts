@@ -34,9 +34,16 @@ const smoke = {
 };
 const previews = { hasFreeSlot: vi.fn(async () => true) };
 
+const gate = {
+  autoApprove: vi.fn(
+    async (_row: InteractionRow, _why: { reason: string; rule: string | null }) => null as unknown,
+  ),
+};
+
 const checks = () =>
   new AutoChecks({
     db,
+    gate: () => gate as never,
     security: () => security as never,
     smoke: () => smoke as never,
     previews: () => previews as never,
@@ -64,11 +71,16 @@ beforeEach(async () => {
   security.start.mockClear();
   smoke.requirementFor.mockImplementation(async () => ({ kind: 'required', checks: 2 }) as const);
   smoke.start.mockClear();
+  gate.autoApprove.mockReset();
+  gate.autoApprove.mockImplementation(async () => null);
   previews.hasFreeSlot.mockImplementation(async () => true);
 });
 
 /** An open pull request review for a run, in an initiative of the given mode. */
-async function review(mode = 'balanced', o: { ageHours?: number } = {}) {
+async function review(
+  mode = 'balanced',
+  o: { ageHours?: number; autoMerge?: { auto: boolean; reason: string; rule: string | null } } = {},
+) {
   const f = await createRunFixture(db);
   await db.update(initiative).set({ autonomyMode: mode }).where(eq(initiative.id, f.initiativeId));
   const prNumber = 700 + ++n;
@@ -87,6 +99,7 @@ async function review(mode = 'balanced', o: { ageHours?: number } = {}) {
         repository: 'o/r',
         prNumber,
         headSha: `sha${prNumber}`,
+        autoMerge: o.autoMerge,
       },
     })
     .returning();
@@ -186,5 +199,43 @@ describe('starting the checks a review needs', () => {
     expect(security.start).not.toHaveBeenCalledWith(old.row.id, expect.anything());
     expect(smoke.start).not.toHaveBeenCalledWith(old.row.id, null);
     expect(security.start).not.toHaveBeenCalledWith(decided.row.id, expect.anything());
+  });
+});
+describe('approving what the rules would merge, once its checks are green', () => {
+  const rule = {
+    auto: true,
+    reason: 'Autopilot mode: no trigger fired, so it merges when the checks are green.',
+    rule: null,
+  };
+
+  it('asks the Gate to approve an autopilot review on every pass, with the reason the card gave', async () => {
+    const r = await review('autopilot', { autoMerge: rule });
+    const c = checks();
+    await c.tick();
+    expect(gate.autoApprove).toHaveBeenCalledWith(expect.objectContaining({ id: r.row.id }), {
+      reason: rule.reason,
+      rule: null,
+    });
+    // Held back by a check that is still running: the checks are started, and it is tried again.
+    expect(security.start).toHaveBeenCalledWith(r.row.id, r.personId);
+    await c.tick();
+    expect(gate.autoApprove).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts nothing for a review the Gate approved', async () => {
+    const r = await review('autopilot', { autoMerge: rule });
+    gate.autoApprove.mockImplementation(async (row) =>
+      row.id === r.row.id ? { state: 'waiting_ci' } : null,
+    );
+    await checks().tick();
+    expect(security.start).not.toHaveBeenCalledWith(r.row.id, expect.anything());
+  });
+
+  it('leaves guided mode and a review the rules would not merge to a person', async () => {
+    await review('guided', { autoMerge: rule });
+    await review('autopilot', { autoMerge: { ...rule, auto: false } });
+    await review('autopilot');
+    await checks().tick();
+    expect(gate.autoApprove).not.toHaveBeenCalled();
   });
 });

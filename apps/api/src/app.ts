@@ -418,6 +418,7 @@ export async function buildApp({
     security: () => security,
     smoke: () => smoke,
     previews: () => previews,
+    gate: () => gate,
     log: (l) => app.log.info(l),
   });
   app.decorate('autoChecks', autoChecks);

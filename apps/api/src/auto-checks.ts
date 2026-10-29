@@ -2,6 +2,7 @@ import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { agentRun, initiative, interaction, securityReview, smokeRun } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { recordActivity } from './activity.js';
+import type { Gate } from './gate.js';
 import type { PreviewService } from './previews.js';
 import type { SecurityService } from './security-service.js';
 import type { SmokeService } from './smoke-service.js';
@@ -17,6 +18,7 @@ interface Card {
   repository?: string;
   prNumber?: number;
   headSha?: string;
+  autoMerge?: { auto?: boolean; reason?: string; rule?: string | null };
 }
 
 /** A review older than this was left alone by a person, and is not started for them now. */
@@ -31,7 +33,7 @@ const KEEP = 4000;
  * - The smoke test starts in balanced and autopilot. It runs the app in a sandbox, so it only starts when a preview slot
  *   is free, and one per pass. In guided mode a person starts it.
  *
- * Each check starts at most once for a commit. A failed or errored one is never started again by the platform: a person
+ * A review the rules would merge (autopilot, or a pre-approved kind) cannot be approved when the pull request opens,\n * because its checks have not run yet. Each pass tries again, and the Gate approves it once the checks are green. If one\n * failed or blocks, it stays for a person.\n *\n * Each check starts at most once for a commit. A failed or errored one is never started again by the platform: a person
  * reads it, fixes it, or overrides it, and a new commit gets its own turn.
  */
 export class AutoChecks {
@@ -43,6 +45,7 @@ export class AutoChecks {
       security: () => SecurityService | null;
       smoke: () => SmokeService | null;
       previews: () => PreviewService | null;
+      gate?: () => Pick<Gate, 'autoApprove'> | null;
       now?: () => Date;
       log?: (line: string) => void;
     },
@@ -81,6 +84,20 @@ export class AutoChecks {
       const card = row.contextCard as Card;
       if (!card.repository || !card.prNumber || !card.headSha) continue;
       const { repository, prNumber, headSha } = card;
+      const gate = this.deps.gate?.();
+      if (gate && mode !== 'guided' && card.autoMerge?.auto) {
+        const approved = await gate
+          .autoApprove(row, {
+            reason:
+              card.autoMerge.reason ?? 'The rules approve this change when its checks are green.',
+            rule: card.autoMerge.rule ?? null,
+          })
+          .catch(() => null);
+        if (approved) {
+          this.deps.log?.(`[checks] approved by rule: ${repository}#${prNumber}`);
+          continue;
+        }
+      }
 
       if (security && security.required(row)) {
         const [had] = await db
