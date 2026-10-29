@@ -562,7 +562,11 @@ export function MapPage({
         title="Map"
         subtitle="Where each initiative is, and who it is waiting on. Spec and design, build and review, then release."
         actions={
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Stack
+            direction="row"
+            spacing={2.5}
+            sx={{ alignItems: 'center', flexShrink: 0, flexWrap: 'nowrap' }}
+          >
             <TextField
               select
               label="Initiative"
@@ -583,10 +587,12 @@ export function MapPage({
             </TextField>
             {!creating && !showForm && (
               <Button
-                variant="outlined"
+                variant="contained"
+                size="large"
                 href={`#/map/${NEW}`}
                 startIcon={<AddIcon />}
                 data-testid="new-initiative-button"
+                sx={{ height: 56, whiteSpace: 'nowrap', flexShrink: 0, px: 2.5 }}
               >
                 New initiative
               </Button>
