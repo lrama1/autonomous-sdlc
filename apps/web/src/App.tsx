@@ -70,7 +70,7 @@ type Route =
   | { page: 'bugs' }
   | { page: 'costs' }
   | { page: 'portfolio' }
-  | { page: 'map'; initiativeId: string | null };
+  | { page: 'map'; initiativeId: string | null; creating?: boolean };
 
 function parseRoute(hash: string): Route {
   const [, page, id] = hash.replace(/^#/, '').split('/');
@@ -84,6 +84,7 @@ function parseRoute(hash: string): Route {
   if (page === 'bugs') return { page: 'bugs' };
   if (page === 'costs') return { page: 'costs' };
   if (page === 'portfolio') return { page: 'portfolio' };
+  if (page === 'map' && id === 'new') return { page: 'map', initiativeId: null, creating: true };
   if (page === 'map') return { page: 'map', initiativeId: id ?? null };
   return { page: 'home' };
 }
@@ -301,7 +302,11 @@ export function App() {
           {state.phase === 'ready' && state.me && route.page === 'costs' && <Costs />}
           {state.phase === 'ready' && state.me && route.page === 'portfolio' && <Portfolio />}
           {state.phase === 'ready' && state.me && route.page === 'map' && (
-            <MapPage initiativeId={route.initiativeId} me={state.me} />
+            <MapPage
+              initiativeId={route.initiativeId}
+              creating={route.creating ?? false}
+              me={state.me}
+            />
           )}
           {state.phase === 'ready' && !state.me && route.page === 'home' && (
             <Stack spacing={2}>
