@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { initiative, interaction, previewRun, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { onlyDocuments, parsePreviewConfig, PREVIEW_CONFIG_PATH } from '@sdlc/core';
@@ -113,6 +113,31 @@ export class PreviewService {
       .orderBy(desc(previewRun.createdAt))
       .limit(1);
     return row ?? null;
+  }
+
+  /** Previews a person started that are ready to open and that they have not opened or dismissed yet. */
+  async readyFor(personId: string): Promise<PreviewRow[]> {
+    return this.deps.db
+      .select()
+      .from(previewRun)
+      .where(
+        and(
+          eq(previewRun.startedBy, personId),
+          eq(previewRun.state, 'ready'),
+          isNull(previewRun.seenAt),
+        ),
+      )
+      .orderBy(desc(previewRun.readyAt));
+  }
+
+  /** The person opened or dismissed the notice. Only the person who started the preview, so one person cannot clear another's. */
+  async markSeen(id: string, personId: string): Promise<boolean> {
+    const out = await this.deps.db
+      .update(previewRun)
+      .set({ seenAt: this.now })
+      .where(and(eq(previewRun.id, id), eq(previewRun.startedBy, personId)))
+      .returning({ id: previewRun.id });
+    return out.length > 0;
   }
 
   async get(id: string): Promise<PreviewRow | null> {

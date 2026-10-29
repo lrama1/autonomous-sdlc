@@ -22,6 +22,7 @@ import {
   assistantReplySchema,
   assistantUsageSchema,
   mainPreviewSchema,
+  readyPreviewSchema,
   smokeDiagnosisSchema,
   previewSchema,
   securitySchema,
@@ -31,6 +32,7 @@ import {
   standingDecisionSchema,
 } from '@sdlc/schemas';
 import type {
+  ReadyPreviewDto,
   AnswerRequest,
   AssumptionDto,
   AutopilotDto,
@@ -139,6 +141,13 @@ export const getProfile = (): Promise<AttentionProfile> =>
 
 export const getPreview = (id: string): Promise<PreviewDto> =>
   call(`/api/interactions/${id}/preview`, previewSchema);
+
+// Previews this person started that are ready to open, and not yet opened or dismissed.
+export const getReadyPreviews = (): Promise<ReadyPreviewDto[]> =>
+  call('/api/previews/ready', z.array(readyPreviewSchema));
+
+export const markPreviewSeen = (previewId: string) =>
+  call(`/api/previews/${previewId}/seen`, z.object({ id: z.string() }), { method: 'POST' });
 
 export const getMainPreview = (initiativeId: string): Promise<MainPreviewDto> =>
   call(`/api/initiatives/${initiativeId}/preview`, mainPreviewSchema);

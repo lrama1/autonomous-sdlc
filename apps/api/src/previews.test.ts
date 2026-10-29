@@ -618,3 +618,75 @@ describe('a preview the platform runs', () => {
     );
   });
 });
+
+describe('telling the person their preview is ready', () => {
+  const ready = (headers: Record<string, string>) =>
+    app.inject({ method: 'GET', url: '/api/previews/ready', headers });
+  const startMain = (headers: Record<string, string>, id: string) =>
+    app.inject({ method: 'POST', url: `/api/initiatives/${id}/preview/start`, headers });
+  const seen = (headers: Record<string, string>, id: string) =>
+    app.inject({ method: 'POST', url: `/api/previews/${id}/seen`, headers });
+
+  it('lists a ready preview for the person who started it, and for nobody else', async () => {
+    const r = await review();
+    const mine = await newPerson();
+    const other = await newPerson();
+    gh.mainSha = sha(910);
+    expect((await app.inject({ method: 'GET', url: '/api/previews/ready' })).statusCode).toBe(401);
+
+    const { id } = (await startMain(mine.headers, r.initiativeId)).json() as { id: string };
+    // While it starts there is nothing to open yet.
+    expect((await ready(mine.headers)).json()).toEqual([]);
+    await settle();
+    const got = (await ready(mine.headers)).json() as Array<Record<string, unknown>>;
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      id,
+      kind: 'main',
+      label: 'The built app',
+      initiativeId: r.initiativeId,
+      url: expect.stringContaining('http://127.0.0.1:'),
+      interactionId: null,
+    });
+    expect((await ready(other.headers)).json()).toEqual([]);
+  });
+
+  it('shows a pull request preview with its review, and only the owner may clear it', async () => {
+    const r = await review();
+    const mine = await newPerson();
+    const other = await newPerson();
+    const { id } = (await start(mine.headers, r.row.id)).json() as { id: string };
+    await settle();
+    const got = (await ready(mine.headers)).json() as Array<Record<string, unknown>>;
+    expect(got[0]).toMatchObject({
+      id,
+      kind: 'pull_request',
+      label: `Pull request #${r.prNumber}`,
+      interactionId: r.row.id,
+    });
+    // Someone else cannot clear it, and it stays.
+    expect((await seen(other.headers, id)).statusCode).toBe(404);
+    expect((await ready(mine.headers)).json()).toHaveLength(1);
+    expect((await seen(mine.headers, id)).statusCode).toBe(200);
+    expect((await ready(mine.headers)).json()).toEqual([]);
+    // Clearing the notice does not stop the preview.
+    expect(await rowOf(id)).toMatchObject({ state: 'ready' });
+  });
+
+  it('drops the notice when the preview is stopped or runs out, and never tells about an automatic one', async () => {
+    const r = await review();
+    const mine = await newPerson();
+    gh.mainSha = sha(911);
+    const { id } = (await startMain(mine.headers, r.initiativeId)).json() as { id: string };
+    await settle();
+    expect((await ready(mine.headers)).json()).toHaveLength(1);
+    await stopIt(mine.headers, id);
+    expect((await ready(mine.headers)).json()).toEqual([]);
+
+    // A preview autopilot started has no person to tell.
+    const auto = await review({ mode: 'autopilot', paths: ['src/app.ts'] });
+    await app.previews()!.start(auto.row.id, null);
+    await settle();
+    expect((await ready(mine.headers)).json()).toEqual([]);
+  });
+});

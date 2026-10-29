@@ -457,6 +457,8 @@ export const previewRun = pgTable(
     startedBy: uuid('started_by').references(() => person.id),
     createdAt: createdAt(),
     readyAt: timestamp('ready_at', { withTimezone: true }),
+    // When the person who started it opened or dismissed the "preview is ready" notice in the attention queue.
+    seenAt: timestamp('seen_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     stoppedAt: timestamp('stopped_at', { withTimezone: true }),
   },

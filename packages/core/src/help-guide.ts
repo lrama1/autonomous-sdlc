@@ -71,7 +71,11 @@ export const SHELL_HELP: HelpElement[] = [
   ),
   el(
     'Browser tab title',
-    'Reads "(3) Autonomous SDLC" when 3 asks wait on you, so you can see it from another window.',
+    'Reads "(3) Autonomous SDLC" when 3 asks wait on you, so you can see it from another window. A dot in front ("● Autonomous SDLC") means a preview you started is ready to open.',
+  ),
+  el(
+    'Preview is ready banner',
+    'A green banner at the top of any page when a preview you started (the built app from the Map, or a pull request from a review) is ready. Open opens it in a new browser tab; Queue goes to the Attention queue; the cross closes the banner. Closing it does not stop the preview, and its notice stays in the Attention queue until you open or dismiss it. Only the person who clicked Start is told. It also appears if you reload the page.',
   ),
   el(
     'Your name chip',
@@ -560,6 +564,10 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       el(
         'Make it standing offer',
         'A blue note under a Done. card: you have given this same answer three or more times to the same question on this repository. Make it standing saves it as a standing decision for the repository, so agents stop asking; No hides it. It is never offered for hard stops. You can end it later on Assumptions and decisions.',
+      ),
+      el(
+        'Ready to open (preview notices)',
+        'Below the asks, when a preview you started is ready: a "Notice" chip, "Preview is ready: <the built app or pull request> of <initiative>", and Open the preview opens it in a new tab and clears the notice; Go to the review or Go to the map jumps to where you started it; Dismiss clears it without opening. It is not an ask: it is not counted in the badge and nothing waits on it. It also goes by itself when the preview stops or runs out of time.',
       ),
       el(
         'Assumptions to review',

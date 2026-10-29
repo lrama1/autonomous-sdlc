@@ -1499,3 +1499,62 @@ test('the new initiative form is its own page, opened from the picker or a butto
   await expect(page).toHaveURL(/#\/map\/[0-9a-f-]{36}$/);
   await expect(page.getByTestId('stage-spec')).toBeVisible();
 });
+
+test('a ready preview raises a banner on any screen, a quiet notice in the queue, and a dot in the tab title', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  let list: Array<Record<string, unknown>> = [];
+  const seen: string[] = [];
+  await page.route('**/api/previews/ready', (route) => route.fulfill({ json: list }));
+  await page.route('**/api/previews/*/seen', (route) => {
+    const id = route.request().url().split('/').slice(-2)[0]!;
+    seen.push(id);
+    list = list.filter((p) => p.id !== id);
+    return route.fulfill({ json: { id } });
+  });
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-portfolio').click();
+  await expect(page.getByTestId('preview-ready-banner')).toHaveCount(0);
+
+  // The preview becomes ready while the person is on another screen.
+  list = [
+    {
+      id: 'pv1',
+      kind: 'main',
+      initiativeId: f.initiativeId,
+      initiativeTitle: 'Fernleaf plant shop',
+      label: 'The built app',
+      url: 'https://preview.example.test/pv1/',
+      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+      readyAt: new Date().toISOString(),
+      interactionId: null,
+    },
+  ];
+  await page.evaluate(() => window.dispatchEvent(new Event('sdlc:previews-changed')));
+  const alert = page.getByTestId('preview-ready-alert');
+  await expect(alert).toContainText('Preview is ready. The built app of Fernleaf plant shop');
+  await expect(alert.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute(
+    'href',
+    'https://preview.example.test/pv1/',
+  );
+  await expect(page).toHaveTitle(/●/);
+
+  // Closing the banner leaves the notice in the queue, which does not count as an ask.
+  await alert.getByRole('button', { name: 'Close' }).click();
+  await expect(alert).toHaveCount(0);
+  await page.getByTestId('nav-queue').click();
+  const notice = page.getByTestId('preview-ready');
+  await expect(notice).toContainText('Preview is ready: The built app of Fernleaf plant shop');
+  await expect(notice.getByRole('link', { name: 'Open the preview' })).toHaveAttribute(
+    'href',
+    'https://preview.example.test/pv1/',
+  );
+  expect(seen).toEqual([]);
+
+  // Dismissing it clears it for good.
+  await notice.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(notice).toHaveCount(0);
+  expect(seen).toEqual(['pv1']);
+  await expect(page).not.toHaveTitle(/●/);
+});
