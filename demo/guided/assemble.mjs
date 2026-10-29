@@ -18,6 +18,8 @@ const ts = (s) => {
   return `${h}:${String(m).padStart(2, '0')}:${x.toFixed(2).padStart(5, '0')}`;
 };
 const LEAD = 0.2; // the page opens a moment after the recording starts
+// A short cut plays the scenes that are not time-lapses faster, with the narration sped up to match (DEMO_RUSH=1.3).
+const RUSH = Number(process.env.DEMO_RUSH ?? 1);
 
 function chunks(text) {
   const out = [];
@@ -56,16 +58,18 @@ for (const id of ids) {
   if (meta.lapse) target = Math.max(lastEnd + 1.5, Math.min(30, real / 10));
   target = Math.max(target, lastEnd + 1.2);
   const speed = real > target ? real / target : 1;
-  const T = real / speed;
+  const lapsed = speed > 1.01 && meta.lapse;
+  const rush = lapsed ? 1 : RUSH;
+  const T = real / speed / rush;
   // In a sped-up scene the narration sits at the start; everything else moves with the video.
-  const at = (c) => (speed > 1.01 && meta.lapse ? LEAD + c.at / speed : LEAD + c.at);
+  const at = (c) => (lapsed ? LEAD + c.at / speed : LEAD + c.at / rush);
   let ass = HEAD;
   for (const c of clips) {
     const list = chunks(c.text);
     const total = list.reduce((n, x) => n + x.length, 0);
     let t = at(c);
     for (const x of list) {
-      const d = (x.length / total) * c.sec;
+      const d = ((x.length / total) * c.sec) / rush;
       ass += `Dialogue: 0,${ts(t)},${ts(t + d)},Cap,,0,0,0,,${x}\n`;
       t += d;
     }
@@ -73,15 +77,15 @@ for (const id of ids) {
   if (speed > 1.5) ass += `Dialogue: 1,${ts(0)},${ts(T)},Tag,,0,0,0,,Time-lapse x${Math.round(speed)}\n`;
   fs.writeFileSync(path.join(WORK, 'scenes', `${id}.ass`), ass, 'utf8');
   const out = path.join(dir, `${id}.mp4`);
-  const sf = speed > 1.01 ? `setpts=PTS/${speed.toFixed(4)},` : '';
+  const sf = speed * rush > 1.01 ? `setpts=PTS/${(speed * rush).toFixed(4)},` : '';
   const inputs = ['-i', src];
-  const extra = Math.max(0, T - real / speed) + 0.3; // the narration may run past the last frame
+  const extra = Math.max(0, T - real / speed / rush) + 0.3; // the narration may run past the last frame
   let fc = `[0:v]${sf}fps=25,scale=1280:720,tpad=stop_mode=clone:stop_duration=${extra.toFixed(2)},subtitles=${id}.ass[v];`;
   const labels = [];
   clips.forEach((c, i) => {
     inputs.push('-i', c.mp3);
     const ms = Math.round(at(c) * 1000);
-    fc += `[${i + 1}:a]adelay=${ms}|${ms}[a${i}];`;
+    fc += `[${i + 1}:a]${rush > 1 ? `atempo=${rush},` : ''}adelay=${ms}|${ms}[a${i}];`;
     labels.push(`[a${i}]`);
   });
   if (clips.length === 0) {
