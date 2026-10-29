@@ -7,6 +7,7 @@ import type {
   Me,
   StageStartDto,
 } from '@sdlc/schemas';
+import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -71,6 +72,8 @@ const RUN_ROLES: Array<{ id: string; label: string }> = [
 type Act = (fn: () => Promise<unknown>, done: string) => Promise<void>;
 
 const LAST_VIEWED = 'sdlc.map.initiative';
+// The address (#/map/new) and the picker value that open the form for a new initiative.
+const NEW = 'new';
 
 const TASK_STATE: Record<BuildPlanDto['tasks'][number]['state'], { label: string; tone: Tone }> = {
   waiting: { label: 'Waiting', tone: 'none' },
@@ -226,21 +229,34 @@ function BuildPlan({
   );
 }
 
-function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
+const EMPTY_FORM = {
+  title: '',
+  goal: '',
+  repositoryId: '',
+  autonomyMode: 'balanced' as 'guided' | 'balanced' | 'autopilot',
+  kind: 'new_app' as InitiativeKindDto,
+  autoStages: true,
+  referenceLinks: '',
+};
+// What a person has typed so far. It outlives the form, so looking at another initiative does not lose it.
+let draft: { f: typeof EMPTY_FORM; kindTouched: boolean } | null = null;
+
+function NewInitiative({
+  onCreated,
+  cancelHref,
+}: {
+  onCreated: (id: string) => void;
+  cancelHref: string | null;
+}) {
   const [repos, setRepos] = useState<Array<{ id: string; fullName: string }>>([]);
-  const [f, setF] = useState({
-    title: '',
-    goal: '',
-    repositoryId: '',
-    autonomyMode: 'balanced' as 'guided' | 'balanced' | 'autopilot',
-    kind: 'new_app' as InitiativeKindDto,
-    autoStages: true,
-    referenceLinks: '',
-  });
+  const [f, setF] = useState(draft?.f ?? EMPTY_FORM);
   // Repositories that already have work in them: a new initiative there is most likely a feature.
   const [worked, setWorked] = useState<Set<string>>(new Set());
-  const [kindTouched, setKindTouched] = useState(false);
+  const [kindTouched, setKindTouched] = useState(draft?.kindTouched ?? false);
   const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    draft = { f, kindTouched };
+  }, [f, kindTouched]);
 
   useEffect(() => {
     getInitiatives().then(
@@ -278,6 +294,7 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
             ...f,
             referenceLinks: f.referenceLinks.split(/\s+/).filter(Boolean),
           });
+          draft = null;
           setF({ ...f, title: '', goal: '', referenceLinks: '' });
           onCreated(made.id);
         } catch (err) {
@@ -382,11 +399,16 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
             onChange={(e) => setF({ ...f, referenceLinks: e.target.value })}
             slotProps={{ htmlInput: { 'aria-label': 'Reference links' } }}
           />
-          <Box>
+          <Stack direction="row" spacing={1}>
             <Button variant="contained" type="submit" disabled={!f.repositoryId}>
               Create
             </Button>
-          </Box>
+            {cancelHref && (
+              <Button href={cancelHref} data-testid="new-initiative-cancel">
+                Cancel
+              </Button>
+            )}
+          </Stack>
           {problem && <Alert severity="warning">{problem}</Alert>}
         </Stack>
       </CardContent>
@@ -394,7 +416,15 @@ function NewInitiative({ onCreated }: { onCreated: (id: string) => void }) {
   );
 }
 
-export function MapPage({ initiativeId, me }: { initiativeId: string | null; me: Me }) {
+export function MapPage({
+  initiativeId,
+  creating,
+  me,
+}: {
+  initiativeId: string | null;
+  creating: boolean;
+  me: Me;
+}) {
   const [list, setList] = useState<Array<{ id: string; title: string; state: string }>>([]);
   const [listed, setListed] = useState(false);
   const [map, setMap] = useState<InitiativeMap | null>(null);
@@ -451,10 +481,10 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
 
   // Landing on the Map with nothing chosen opens the initiative that is in progress, or the one last looked at.
   useEffect(() => {
-    if (initiativeId || !listed) return;
+    if (initiativeId || creating || !listed) return;
     const pick = pickInitiative(list, sessionStorage.getItem(LAST_VIEWED));
     if (pick) window.location.replace(`#/map/${pick}`);
-  }, [initiativeId, listed, list]);
+  }, [initiativeId, creating, listed, list]);
   useEffect(() => {
     if (initiativeId) sessionStorage.setItem(LAST_VIEWED, initiativeId);
   }, [initiativeId]);
@@ -523,6 +553,8 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
   const mayRelease = me.roles.some((r) =>
     ['product_owner', 'devops_release', 'platform_admin'].includes(r),
   );
+  // With no initiative yet, the form is the page: there is nothing else to look at.
+  const showForm = creating || (listed && list.length === 0 && !initiativeId);
 
   return (
     <>
@@ -530,23 +562,36 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
         title="Map"
         subtitle="Where each initiative is, and who it is waiting on. Spec and design, build and review, then release."
         actions={
-          <TextField
-            select
-            label="Initiative"
-            value={initiativeId ?? ''}
-            onChange={(e) =>
-              (window.location.hash = e.target.value ? `#/map/${e.target.value}` : '#/map')
-            }
-            sx={{ minWidth: 260, maxWidth: 360 }}
-            slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
-          >
-            {list.length === 0 && <option value="">No initiatives yet</option>}
-            {list.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.title}
-              </option>
-            ))}
-          </TextField>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <TextField
+              select
+              label="Initiative"
+              value={creating ? NEW : (initiativeId ?? '')}
+              onChange={(e) =>
+                (window.location.hash = e.target.value ? `#/map/${e.target.value}` : '#/map')
+              }
+              sx={{ minWidth: 260, maxWidth: 360 }}
+              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+            >
+              <option value={NEW}>New initiative…</option>
+              {list.length === 0 && !creating && <option value="">No initiatives yet</option>}
+              {list.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.title}
+                </option>
+              ))}
+            </TextField>
+            {!creating && !showForm && (
+              <Button
+                variant="outlined"
+                href={`#/map/${NEW}`}
+                startIcon={<AddIcon />}
+                data-testid="new-initiative-button"
+              >
+                New initiative
+              </Button>
+            )}
+          </Stack>
         }
       />
       {error && (
@@ -560,7 +605,22 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
         </Alert>
       )}
 
-      {map ? (
+      {showForm ? (
+        <>
+          {!creating && (
+            <Typography color="text.secondary" data-testid="no-initiatives">
+              No initiatives yet. Create the first one.
+            </Typography>
+          )}
+          <NewInitiative
+            cancelHref={creating && list.length > 0 ? '#/map' : null}
+            onCreated={(id) => {
+              void loadList();
+              window.location.hash = `#/map/${id}`;
+            }}
+          />
+        </>
+      ) : map ? (
         <>
           <Box sx={{ mb: 1.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -751,19 +811,9 @@ export function MapPage({ initiativeId, me }: { initiativeId: string | null; me:
         </>
       ) : (
         !initiativeId && (
-          <Typography color="text.secondary">
-            {list.length === 0
-              ? 'No initiatives yet. Create the first one below.'
-              : 'Choose an initiative.'}
-          </Typography>
+          <Typography color="text.secondary">Choose an initiative, or start a new one.</Typography>
         )
       )}
-      <NewInitiative
-        onCreated={(id) => {
-          void loadList();
-          window.location.hash = `#/map/${id}`;
-        }}
-      />
     </>
   );
 }

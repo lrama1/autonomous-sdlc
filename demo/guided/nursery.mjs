@@ -487,15 +487,14 @@ const handle = (n, stage) => ({
 const form = (p) => p.locator('form', { hasText: 'New initiative' });
 
 const newInitiative = (stage) => ({
-  url: '/#/map',
+  url: '/#/map/new',
   title: stage === 1 ? 'Stage 1 \u00b7 Give the platform a goal' : `Stage ${stage} \u00b7 Add features to the shop that exists`,
   async run(h) {
     T(stage)();
     const f = form(h.page);
     const goal = { 1: GOAL1, 2: GOAL2, 3: GOAL3 }[stage];
-    await act(h, 'At the bottom of the Map tab is the form for a new initiative. An initiative is one goal, with its own spec, design, tasks and cost.', async () => {
+    await act(h, 'On the Map tab, the New initiative button, or the first entry in the Initiative picker, opens the form for a new initiative. An initiative is one goal, with its own spec, design, tasks and cost.', async () => {
       await f.waitFor({ timeout: 30000 });
-      await h.scrollBy(2000, 3000);
     });
     await act(h, 'I click the Title box and name it, so I can find this initiative in lists and in the queue.', () =>
       h.type(f.getByLabel('Title'), TITLES[stage], { label: 'Type a title', why: 'The name I will look for later.' }),

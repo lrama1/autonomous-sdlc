@@ -212,11 +212,15 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
     page: 'map',
     title: 'Map',
     purpose:
-      'The working view of one initiative: where it is on the way from spec and design, through build and review, to release, and whose turn it is. Here people start the spec, design and build steps, retry or skip failed build tasks, preview the built app, prepare a release, and create new initiatives. Choose an initiative at the top; the page refreshes about every 5 seconds.',
+      'The working view of one initiative: where it is on the way from spec and design, through build and review, to release, and whose turn it is. Here people start the spec, design and build steps, retry or skip failed build tasks, preview the built app, prepare a release, and create new initiatives. Choose an initiative at the top, or choose New initiative to create one; the page refreshes about every 5 seconds.',
     elements: [
       el(
         'Initiative picker (top right)',
-        'Switches which initiative you are looking at. With none chosen, the Map opens the initiative you last viewed or, otherwise, the one in progress; finished or cancelled ones are never picked for you but you can choose them by hand. Shows "No initiatives yet" when there are none.',
+        'Switches which initiative you are looking at. With none chosen, the Map opens the initiative you last viewed or, otherwise, the one in progress; finished or cancelled ones are never picked for you but you can choose them by hand. The first entry, "New initiative...", opens the form for a new one. Shows "No initiatives yet" when there are none.',
+      ),
+      el(
+        'New initiative button (next to the picker)',
+        'Opens the New initiative form on its own page (address #/map/new), the same as choosing "New initiative..." in the picker. It hides while the form is open. With no initiatives yet, the Map shows the form straight away.',
       ),
       el(
         'Green or amber message bar',
@@ -328,8 +332,8 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
         'Type a version like 1.2.0 (three numbers) and press Prepare a release. This does not publish anything: it creates a release approval (checkpoint G6) in the Attention queue for the approver. Shown only to Product Owner, DevOps / Release or Platform Admin. Releases are never automatic.',
       ),
       el(
-        'New initiative form (bottom of the page)',
-        'Starts a new initiative: Title; Repository (from the registered list; "No repository is registered" with a note to ask a Platform Admin to add one on the Repositories page when empty); Type (New app, Feature, or Change or fix; it starts as Feature when the repository already has an initiative and New app when it does not, and the agents are told which, so a feature is designed on top of the existing app and not as a fresh one); "How much runs on its own" (Guided: a person reviews every PR; Balanced: pre-approved types merge; Autopilot: no trigger, no review); a checkbox "Draft the spec now, then design and build after each approval (guided mode waits for a click)"; Goal, in a few sentences; and optional Reference links (documentation for any outside system the work must call, one https link per line - agents ask for it if it is missing). Create is disabled until a repository exists. Afterwards the Map opens the new initiative.',
+        'New initiative form (its own page, #/map/new)',
+        'Starts a new initiative: Title; Repository (from the registered list; "No repository is registered" with a note to ask a Platform Admin to add one on the Repositories page when empty); Type (New app, Feature, or Change or fix; it starts as Feature when the repository already has an initiative and New app when it does not, and the agents are told which, so a feature is designed on top of the existing app and not as a fresh one); "How much runs on its own" (Guided: a person reviews every PR; Balanced: pre-approved types merge; Autopilot: no trigger, no review); a checkbox "Draft the spec now, then design and build after each approval (guided mode waits for a click)"; Goal, in a few sentences; and optional Reference links (documentation for any outside system the work must call, one https link per line - agents ask for it if it is missing). Create is disabled until a repository exists. Cancel goes back to the initiative you were looking at. What you typed is kept if you look at another initiative and come back. After Create, the Map opens the new initiative.',
       ),
     ],
     roles:

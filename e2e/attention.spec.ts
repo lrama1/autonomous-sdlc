@@ -846,7 +846,7 @@ test('the new initiative form suggests a type from the repository, and the perso
   page,
 }) => {
   await signInAs(page, /Dev Admin/);
-  await page.goto('/#/map');
+  await page.goto('/#/map/new');
   const type = page.getByLabel('Type', { exact: true });
   await expect(type).toBeVisible();
   // Whatever it suggests is one of the three, and choosing another sticks.
@@ -1464,4 +1464,38 @@ test('an architect is asked for the documentation link of a new system, and give
   expect(after).toMatchObject({ status: 'confirmed', docs: ['https://127.0.0.1/vendor/api'] });
   const [settled] = await db.select().from(interaction).where(eq(interaction.id, row!.id));
   expect(settled).toMatchObject({ state: 'answered' });
+});
+
+test('the new initiative form is its own page, opened from the picker or a button, and a draft is kept', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  await db.update(initiative).set({ state: 'active' }).where(eq(initiative.id, f.initiativeId));
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-map').click();
+  await expect(page).toHaveURL(/#\/map\/[0-9a-f-]{36}$/);
+  const form = page.locator('form', { hasText: 'New initiative' });
+  // The form is not under the map any more.
+  await expect(form).toHaveCount(0);
+
+  // The button opens it, and the map is gone while it is open.
+  await page.getByTestId('new-initiative-button').click();
+  await expect(page).toHaveURL(/#\/map\/new$/);
+  await expect(form).toBeVisible();
+  await expect(page.getByTestId('stage-spec')).toHaveCount(0);
+  await expect(page.getByLabel('Initiative', { exact: true })).toHaveValue('new');
+  await form.getByLabel('Title').fill('A draft I will come back to');
+
+  // Looking at another initiative keeps the draft.
+  await page.getByLabel('Initiative', { exact: true }).selectOption(f.initiativeId);
+  await expect(page).toHaveURL(new RegExp(`#/map/${f.initiativeId}$`));
+  await expect(form).toHaveCount(0);
+  await page.getByLabel('Initiative', { exact: true }).selectOption({ label: 'New initiative…' });
+  await expect(page).toHaveURL(/#\/map\/new$/);
+  await expect(form.getByLabel('Title')).toHaveValue('A draft I will come back to');
+
+  // Cancel returns to the initiative.
+  await form.getByTestId('new-initiative-cancel').click();
+  await expect(page).toHaveURL(/#\/map\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId('stage-spec')).toBeVisible();
 });
