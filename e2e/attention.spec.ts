@@ -16,6 +16,7 @@ import {
   interaction,
   runEvent,
   person,
+  repositoryEntry,
   stageStart,
   standingDecision,
 } from '../packages/db/src/index.ts';
@@ -1557,4 +1558,29 @@ test('a ready preview raises a banner on any screen, a quiet notice in the queue
   await expect(notice).toHaveCount(0);
   expect(seen).toEqual(['pv1']);
   await expect(page).not.toHaveTitle(/●/);
+});
+
+test('choosing New app on a repository that already has work shows a warning, and Feature does not', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [repo] = await db
+    .select()
+    .from(repositoryEntry)
+    .where(eq(repositoryEntry.id, f.repositoryId));
+  await signInAs(page, /Dev Admin/);
+  await page.goto('/#/map/new');
+  const form = page.locator('form', { hasText: 'New initiative' });
+  await form.getByLabel('Repository').selectOption({ label: repo!.fullName });
+  // The platform suggests Feature for a repository with work, so there is nothing to warn about.
+  await expect(form.getByLabel('Type', { exact: true })).toHaveValue('feature');
+  await expect(page.getByTestId('alongside-warning')).toHaveCount(0);
+  await form.getByLabel('Type', { exact: true }).selectOption('new_app');
+  await expect(page.getByTestId('alongside-warning')).toContainText('already has an app');
+  await expect(page.getByTestId('alongside-warning').getByRole('link')).toHaveAttribute(
+    'href',
+    '#/repositories',
+  );
+  await form.getByLabel('Type', { exact: true }).selectOption('feature');
+  await expect(page.getByTestId('alongside-warning')).toHaveCount(0);
 });

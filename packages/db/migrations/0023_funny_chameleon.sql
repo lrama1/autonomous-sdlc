@@ -1,0 +1,1 @@
+ALTER TABLE "initiative" ADD COLUMN "alongside" boolean DEFAULT false NOT NULL;

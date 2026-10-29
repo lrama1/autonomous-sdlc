@@ -99,7 +99,7 @@ The platform acts on GitHub through two Apps: an **Agent App** (pushes branches,
 
 ## 8. Prepare the repository the agents will work on
 
-This is a different repository from your copy of the platform.
+This is a different repository from your copy of the platform. Use one repository per app: features and fixes are further initiatives on it, and a separate app gets its own repository (repeat steps 8 and 9). The platform previews, smoke-tests and verifies one app from a repository's root.
 
 - [ ] **An existing project:** it has a script `npm run verify` that runs its checks and fails when something is wrong, and a GitHub Actions workflow whose **job is named `verify`** and that runs it on pull requests.
 - [ ] **A brand-new, empty repository:** nothing yet. In step 9, **Check readiness** offers **Create the first commit** (a README, shown to you first). The design stage then makes its first task set up the verify command and CI for the chosen stack, and asks you to allow `.github/workflows/ci.yml`, which agents cannot edit alone.

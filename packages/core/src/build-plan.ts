@@ -114,6 +114,8 @@ export function taskPrompt(
   guidance?: string,
   /** What kind of work the initiative is (new_app, feature, change). Older initiatives have none. */
   kind?: string | null,
+  /** A new app built in a repository that already has another app. */
+  alongside?: boolean,
 ): string {
   const lines = [
     `${task.id}: ${task.title}`,
@@ -126,7 +128,7 @@ export function taskPrompt(
     'It is done when:',
     ...task.doneWhen.map((d) => `- ${d}`),
   ];
-  const kindNote = kindGuidance(kind, 'engineer');
+  const kindNote = kindGuidance(kind, 'engineer', alongside);
   if (kindNote) lines.push('', kindNote);
   if (redo) {
     lines.push(

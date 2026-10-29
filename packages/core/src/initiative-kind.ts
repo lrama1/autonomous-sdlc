@@ -25,6 +25,18 @@ export const suggestKind = (repositoryHasInitiatives: boolean): InitiativeKind =
 
 export type KindAudience = 'product' | 'architect' | 'engineer';
 
+/**
+ * A new app in a repository that already holds another app. The platform runs one app from a repository's root (one
+ * preview file, one verify command, one required check), so this is allowed but not the usual way: keep it apart.
+ */
+function alongsideGuidance(head: string, audience: KindAudience): string {
+  const doc = audience === 'product' ? 'spec' : 'design';
+  const apart = `The repository already holds another app, and this is a separate one. Keep every file of the new app in its own top-level folder, named after it (for example apps/<short-name>). Do not edit the other app's files, and do not change shared files (the root package.json scripts, .sdlc/preview.yaml, CI workflows) unless the ${doc} says exactly why.`;
+  if (audience === 'engineer')
+    return `${head} ${apart} Follow the structure the design gives, and run the new app's tests from its own folder.`;
+  return `${head} ${apart} Say in the ${doc} how the new app is started and tested from its own folder, because the platform's preview and smoke checks read the repository root.`;
+}
+
 const EXISTING =
   'The repository already holds a working app. Read what is there before you write anything: the README, the existing specs in docs/spec and designs in docs/design, and the code this work touches.';
 
@@ -35,9 +47,11 @@ const EXISTING =
 export function kindGuidance(
   kind: string | null | undefined,
   audience: KindAudience,
+  alongside = false,
 ): string | null {
   if (!isKind(kind)) return null;
   const head = `Kind of work: ${KIND_LABEL[kind]}.`;
+  if (kind === 'new_app' && alongside) return alongsideGuidance(head, audience);
   if (kind === 'new_app') {
     return audience === 'engineer'
       ? `${head} This is part of a new app. Other tasks build the rest, so keep to your task and to the structure the design gives.`

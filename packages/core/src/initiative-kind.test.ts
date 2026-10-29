@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { INITIATIVE_KINDS, isKind, kindGuidance, suggestKind } from './initiative-kind.js';
 
 describe('initiative kinds', () => {
@@ -25,5 +25,23 @@ describe('initiative kinds', () => {
     for (const k of INITIATIVE_KINDS)
       for (const a of ['product', 'architect', 'engineer'] as const)
         expect(kindGuidance(k, a)).toMatch(/^Kind of work: /);
+  });
+
+  it('tells the agents to keep a new app apart when the repository already holds another', () => {
+    for (const a of ['product', 'architect', 'engineer'] as const) {
+      const g = kindGuidance('new_app', a, true)!;
+      expect(g).toMatch(/^Kind of work: New app\./);
+      expect(g).toContain('its own top-level folder');
+      expect(g).toContain('.sdlc/preview.yaml');
+      // Not the text for a first build, which says the repository may be empty.
+      expect(g).not.toContain('may be empty');
+    }
+    expect(kindGuidance('new_app', 'product', true)).toContain('Say in the spec');
+    expect(kindGuidance('new_app', 'architect', true)).toContain('Say in the design');
+    expect(kindGuidance('new_app', 'engineer', true)).toContain("run the new app's tests");
+    // It changes nothing for the other kinds, or when the repository is not shared.
+    expect(kindGuidance('new_app', 'product', false)).toBe(kindGuidance('new_app', 'product'));
+    expect(kindGuidance('feature', 'engineer', true)).toBe(kindGuidance('feature', 'engineer'));
+    expect(kindGuidance('change', 'architect', true)).toBe(kindGuidance('change', 'architect'));
   });
 });

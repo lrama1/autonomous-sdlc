@@ -25,6 +25,7 @@ import { loadAgents } from './agents.js';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { issueRunToken } from './runs.js';
+import { designTask, specTask } from './stages.js';
 
 const agentsDir = fileURLToPath(new URL('../../../agents', import.meta.url));
 
@@ -257,6 +258,66 @@ describe('initiatives', () => {
     // What a person picks wins over the suggestion.
     expect((await make({ kind: 'change' })).json().kind).toBe('change');
     expect((await make({ kind: 'epic' })).statusCode).toBe(400);
+  });
+
+  it('warns when a new app is made in a repository that already has work, and tells the agents to keep it apart', async () => {
+    const po = await login(['product_owner']);
+    const repo = await registered();
+    const make = (extra: Record<string, unknown> = {}) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/initiatives',
+        headers: as(po.cookie),
+        payload: { title: 'Thing', goal: 'A thing', repositoryId: repo.id, ...extra },
+      });
+    // The first app in an empty repository is the normal case: no warning.
+    const first = (await make()).json();
+    expect(first).toMatchObject({ kind: 'new_app', alongside: false, warnings: [] });
+    // A feature on it is normal too.
+    expect((await make({ kind: 'feature' })).json()).toMatchObject({
+      alongside: false,
+      warnings: [],
+    });
+    // A second new app next to it is allowed, with a warning, and is built apart.
+    const second = await make({ kind: 'new_app' });
+    expect(second.statusCode).toBe(201);
+    expect(second.json()).toMatchObject({ kind: 'new_app', alongside: true });
+    expect(second.json().warnings[0]).toContain('register another repository');
+    const [row] = await db.select().from(initiative).where(eq(initiative.id, second.json().id));
+    expect(row!.alongside).toBe(true);
+    expect(specTask(row!)).toContain('its own top-level folder');
+    expect(designTask('docs/spec/x.md', row!.kind, row!.alongside)).toContain('apps/<short-name>');
+    const [normal] = await db.select().from(initiative).where(eq(initiative.id, first.id));
+    expect(specTask(normal!)).not.toContain('top-level folder');
+    const logged = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.initiativeId, second.json().id));
+    expect(logged.find((e) => e.action === 'initiative.created')!.detail).toMatchObject({
+      warning: 'alongside',
+    });
+
+    // Changing the type moves it in and out of that state.
+    const patch = (id: string, kind: string) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/initiatives/${id}`,
+        headers: as(po.cookie),
+        payload: { kind },
+      });
+    await patch(second.json().id, 'feature');
+    expect(
+      (await db.select().from(initiative).where(eq(initiative.id, second.json().id)))[0]!.alongside,
+    ).toBe(false);
+    await patch(second.json().id, 'new_app');
+    expect(
+      (await db.select().from(initiative).where(eq(initiative.id, second.json().id)))[0]!.alongside,
+    ).toBe(true);
+    // The first app, made a new app again, now has other work beside it.
+    await patch(first.id, 'new_app');
+    expect(
+      (await db.select().from(initiative).where(eq(initiative.id, first.id)))[0]!.alongside,
+    ).toBe(true);
   });
 
   it('lets a Product Owner or Platform Admin change the kind, and nobody else', async () => {

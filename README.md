@@ -146,6 +146,8 @@ This is a different repository from your copy of the platform.
 
 ### 10. Build something
 
+One repository holds one app. Features and fixes to it are further initiatives on the same repository; a separate app gets its own repository (register it as in step 9). The platform previews, smoke-tests and verifies one app from a repository's root.
+
 Open the **Map** tab, create an initiative on your repository with a brief (and links to any API documentation), and start the spec. Approve the spec in the **Attention queue**, then start the design, approve it, and start the build. Expect a few hard stops the first time: agents that write `.sdlc/preview.yaml` stop at a protected path and ask you to allow it, and a new outside system asks you to confirm it. That is by design. After the first run, look at the **Costs** tab.
 
 ### 11. Stop paying for it

@@ -143,6 +143,36 @@ describe('taskPrompt', () => {
     expect(p).not.toContain('Already merged');
   });
 
+  it('keeps a new app apart when the repository already holds another', () => {
+    const alone = taskPrompt(
+      { path: 'd.md' },
+      a,
+      [a],
+      undefined,
+      null,
+      undefined,
+      [],
+      undefined,
+      'new_app',
+    );
+    const apart = taskPrompt(
+      { path: 'd.md' },
+      a,
+      [a],
+      undefined,
+      null,
+      undefined,
+      [],
+      undefined,
+      'new_app',
+      true,
+    );
+    expect(alone).toContain('part of a new app');
+    expect(alone).not.toContain('top-level folder');
+    expect(apart).toContain('its own top-level folder');
+    expect(apart).toContain('.sdlc/preview.yaml');
+  });
+
   it('says why an earlier attempt could not merge, and what to do about it', () => {
     const p = taskPrompt({ path: 'docs/design/x.md' }, a, [a, b], 'It conflicted with main.');
     expect(p).toContain('This is a new attempt');
