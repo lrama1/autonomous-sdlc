@@ -114,6 +114,8 @@ describe('the portfolio', () => {
     });
     expect(row.stage).not.toBeNull();
     expect(new Date(row.lastActivityAt).getTime()).toBeGreaterThan(0);
+    // The Portfolio groups an app's initiatives and lists them oldest first, so it needs to know when each was made.
+    expect(new Date(row.createdAt).getTime()).toBeGreaterThan(0);
     expect(body.releases.find((r) => r.initiativeId === f.initiativeId)).toMatchObject({
       version: '1.2.0',
       tag: 'v1.2.0',
