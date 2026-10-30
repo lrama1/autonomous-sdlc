@@ -126,4 +126,29 @@ describe('what a person can do at each stage', () => {
       stageActions(stages(), [], { id: 'p', state: 'cancelled', tasks }, true)['build']!.actions,
     ).toEqual([]);
   });
+
+  it('says why there is no preview button for an app that shares its repository with another', () => {
+    const built = {
+      id: 'plan',
+      state: 'active',
+      tasks: [{ key: 'T1', title: 'One', state: 'merged' }],
+    };
+    const main = {
+      available: false,
+      shared: true,
+      id: null,
+      state: 'none',
+      url: null,
+      detail: null,
+    };
+    const a = stageActions(stages(), [], built, true, { main, mayStart: true });
+    expect(a['build']!.actions.map((x) => x.kind)).not.toContain('preview_start');
+    expect(a['build']!.notes.join(' ')).toContain('shares a repository with another app');
+    // Nothing merged yet, nothing to say.
+    const none = stageActions(stages(), [], { ...built, tasks: [] }, true, {
+      main,
+      mayStart: true,
+    });
+    expect(none['build']!.notes).toEqual([]);
+  });
 });

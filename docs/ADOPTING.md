@@ -105,6 +105,20 @@ This is a different repository from your copy of the platform. Use one repositor
 - [ ] **A brand-new, empty repository:** nothing yet. In step 9, **Check readiness** offers **Create the first commit** (a README, shown to you first). The design stage then makes its first task set up the verify command and CI for the chosen stack, and asks you to allow `.github/workflows/ci.yml`, which agents cannot edit alone.
 - [ ] Protect its `main` branch the way the platform expects, once the `verify` check has run on a pull request: require the `verify` check (up to date with `main`), require **one approving review**, and dismiss stale approvals. The Gate App's approving review is what allows a merge. **Check readiness** shows the steps.- [ ] Install both Apps on this repository (step 7).
 
+### If two apps already share one repository
+
+The platform cannot preview or smoke-test a second app there, because it runs what the repository root starts. To give an app its own repository, keep its history with `git subtree split`:
+
+```bash
+git clone <the shared repository> app-split && cd app-split
+git subtree split -P apps/blog -b blog-only      # the folder the app lives in
+mkdir ../blog && cd ../blog && git init -b main
+git pull ../app-split blog-only
+git remote add origin <the new, empty GitHub repository> && git push -u origin main
+```
+
+Then register the new repository (step 9), and create further initiatives for that app on it.
+
 ## 9. Register that repository in the platform
 
 - [ ] Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list and choose **Add repository**. The list holds the repositories both Apps are installed on. If yours is not there, add it to both Apps on GitHub, then choose **Check GitHub again**.

@@ -88,6 +88,24 @@ export function PreviewPanel({ id }: { id: string }) {
         }
       />
     );
+  if (p.shared)
+    return (
+      <CheckPanel
+        title="No preview"
+        testId="preview"
+        state="shared"
+        status={
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            component="span"
+            data-testid="preview-shared"
+          >
+            {p.detail}
+          </Typography>
+        }
+      />
+    );
   const running =
     (p.platform.state === 'starting' || p.platform.state === 'ready') && p.platform.id;
   return (

@@ -6,7 +6,7 @@ import type { RuleSet } from '@sdlc/core';
 import { autonomyModeSchema, autopilotSchema } from '@sdlc/schemas';
 import { z } from 'zod';
 import { recordActivity } from './activity.js';
-import { repositoryHasWork } from './repository-work.js';
+import { ALONGSIDE_WARNING, repositoryHasWork } from './repository-work.js';
 import { requirePerson } from './people.js';
 
 interface PrCard {
@@ -107,6 +107,7 @@ export function registerAutopilotRoutes(app: FastifyInstance, db: Db, rules: Rul
       .object({
         autonomyMode: autonomyModeSchema.optional(),
         kind: z.enum(['new_app', 'feature', 'change']).optional(),
+        acknowledgeSharedRepository: z.boolean().optional(),
       })
       .refine((b) => b.autonomyMode !== undefined || b.kind !== undefined, {
         message: 'Say what to change: autonomyMode or kind.',
@@ -117,7 +118,11 @@ export function registerAutopilotRoutes(app: FastifyInstance, db: Db, rules: Rul
         error: { code: 'bad_request', message: body.error.issues[0]?.message ?? 'Bad request.' },
       });
     const [before] = await db
-      .select({ mode: initiative.autonomyMode, kind: initiative.kind })
+      .select({
+        mode: initiative.autonomyMode,
+        kind: initiative.kind,
+        createdAt: initiative.createdAt,
+      })
       .from(initiative)
       .where(eq(initiative.id, id));
     if (!before)
@@ -131,7 +136,16 @@ export function registerAutopilotRoutes(app: FastifyInstance, db: Db, rules: Rul
           .where(eq(initiative.id, id))
       : [];
     const alongside =
-      kind === 'new_app' && repoOf ? await repositoryHasWork(db, repoOf.repositoryId, id) : false;
+      kind === 'new_app' && repoOf
+        ? await repositoryHasWork(db, repoOf.repositoryId, { id, createdAt: before.createdAt })
+        : false;
+    if (alongside && before.kind !== 'new_app' && !body.data.acknowledgeSharedRepository)
+      return reply.code(409).send({
+        error: {
+          code: 'shared_repository',
+          message: `${ALONGSIDE_WARNING} To go ahead anyway, confirm that you understand this.`,
+        },
+      });
     await db
       .update(initiative)
       .set({

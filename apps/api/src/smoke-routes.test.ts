@@ -14,6 +14,7 @@ import {
   buildPlan,
   buildTask,
   hat,
+  initiative,
   interaction,
   person,
   repositoryEntry,
@@ -133,7 +134,7 @@ async function review() {
       },
     })
     .returning();
-  return { id: row!.id, prNumber };
+  return { id: row!.id, prNumber, initiativeId: f.initiativeId };
 }
 
 type Headers = Record<string, string>;
@@ -372,6 +373,21 @@ describe('the smoke test on a review', () => {
     });
     expect((await start(who.headers, r.id)).json().error.code).toBe('no_smoke_checks');
     expect((await override(who.headers, r.id, 'the reason is long enough')).statusCode).toBe(409);
+    expect((await approve(who.headers, r.id)).statusCode).toBe(200);
+  });
+
+  it('does not run or hold the checks of an app that shares its repository with another', async () => {
+    // The repository lists checks, but they belong to the app at its root, which is the other one.
+    const r = await review();
+    const who = await newPerson();
+    await db.update(initiative).set({ alongside: true }).where(eq(initiative.id, r.initiativeId));
+    const shown = (await get(who.headers, r.id)).json();
+    expect(shown).toMatchObject({ available: true, required: 'shared', run: null, blocks: null });
+    const refused = await start(who.headers, r.id);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe('shared_repository');
+    expect((await override(who.headers, r.id, 'the reason is long enough')).statusCode).toBe(409);
+    // Nothing is held, so the person decides from the diff and their own try-out.
     expect((await approve(who.headers, r.id)).statusCode).toBe(200);
   });
 

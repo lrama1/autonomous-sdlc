@@ -288,7 +288,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'Preview the built app / Preview the built app again',
-        'On the Build and review card once at least one task has merged and the platform can run previews (it needs the Docker runner). Starts the built app in a sandbox. It is the filled (primary) button when the whole plan is done. The "again" wording appears after an earlier preview ended or failed. Anyone who holds a role may start it.',
+        'On the Build and review card once at least one task has merged and the platform can run previews (it needs the Docker runner). Starts the built app in a sandbox. It is the filled (primary) button when the whole plan is done. The "again" wording appears after an earlier preview ended or failed. Anyone who holds a role may start it. For a second app in a repository that already has another app there is no such button: a red note on the card says the platform cannot preview it, because a preview would run the other app.',
       ),
       el(
         'Starting the preview...',
@@ -345,7 +345,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'New initiative form (its own page, #/map/new)',
-        'Starts a new initiative: Title; Repository (from the registered list; "No repository is registered" with a note to ask a Platform Admin to add one on the Repositories page when empty); Type (New app, Feature, or Change or fix; it starts as Feature when the repository already has an initiative and New app when it does not, and the agents are told which, so a feature is designed on top of the existing app and not as a fresh one); "How much runs on its own" (Guided: a person reviews every PR; Balanced: pre-approved types merge; Autopilot: no trigger, no review); a checkbox "Draft the spec now, then design and build after each approval (guided mode waits for a click)"; Goal, in a few sentences; and optional Reference links (documentation for any outside system the work must call, one https link per line - agents ask for it if it is missing). A yellow note appears when you choose New app on a repository that already has an app: it is allowed, and the agents are told to keep the new app in its own folder, but the platform previews, smoke-tests and verifies one app from the repository root, so a separate app belongs in its own repository (register one on the Repositories page). Create is disabled until a repository exists. Cancel goes back to the initiative you were looking at. What you typed is kept if you look at another initiative and come back. After Create, the Map opens the new initiative.',
+        'Starts a new initiative: Title; Repository (from the registered list; "No repository is registered" with a note to ask a Platform Admin to add one on the Repositories page when empty); Type (New app, Feature, or Change or fix; it starts as Feature when the repository already has an initiative and New app when it does not, and the agents are told which, so a feature is designed on top of the existing app and not as a fresh one); "How much runs on its own" (Guided: a person reviews every PR; Balanced: pre-approved types merge; Autopilot: no trigger, no review); a checkbox "Draft the spec now, then design and build after each approval (guided mode waits for a click)"; Goal, in a few sentences; and optional Reference links (documentation for any outside system the work must call, one https link per line - agents ask for it if it is missing). A yellow note appears when you choose New app on a repository that already has an app: it is allowed, and the agents are told to keep the new app in its own folder, but the platform previews, smoke-tests and verifies what the repository root starts, which is the other app. So a separate app belongs in its own repository (register one on the Repositories page). To go ahead anyway you must tick "I understand" (the platform cannot preview or smoke-test this app and you will check it yourself); Create stays disabled until you do. Changing the type of an existing initiative to New app in such a repository asks the same question in a confirm box. Create is disabled until a repository exists. Cancel goes back to the initiative you were looking at. What you typed is kept if you look at another initiative and come back. After Create, the Map opens the new initiative.',
       ),
     ],
     roles:
@@ -446,7 +446,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'Preview panel',
-        'On a pull request review. Title: Preview, Preview (building), Preview (failed), Preview (out of date) or No preview. A link ("Open the preview" or the pipeline\'s own label) opens a preview the repository\'s pipeline published, with a short status line. A change that only touches documentation shows "No preview" and says why. If GitHub cannot be asked it says "Could not ask GitHub just now."',
+        'On a pull request review. Title: Preview, Preview (building), Preview (failed), Preview (out of date) or No preview. A link ("Open the preview" or the pipeline\'s own label) opens a preview the repository\'s pipeline published, with a short status line. A change that only touches documentation shows "No preview" and says why. So does a second app in a repository that already has another app: the platform runs what the repository root starts, which is the other app, so it will not preview this one. If GitHub cannot be asked it says "Could not ask GitHub just now."',
       ),
       el(
         'Run it here / Run it again (preview)',
@@ -458,7 +458,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'Smoke test panel',
-        'On a pull request review, only if the repository lists smoke checks (the design asked for them). Title "Smoke test" and a state chip: Not run on this commit, Running, Passed (x of y), Failed (x of y), Could not run, or Overridden. Beneath it each check with a tick or cross and its detail. If the checks cannot be read, an amber note says why.',
+        'On a pull request review, only if the repository lists smoke checks (the design asked for them). Title "Smoke test" and a state chip: Not run on this commit, Running, Passed (x of y), Failed (x of y), Could not run, or Overridden. Beneath it each check with a tick or cross and its detail. If the checks cannot be read, an amber note says why. For a second app in a repository that already has another app, the panel reads "No smoke test" instead: the checks would run the other app, so they are not run and do not hold up approval.',
       ),
       el(
         'Run the smoke test / Run the smoke test again',

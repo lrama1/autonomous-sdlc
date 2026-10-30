@@ -1577,6 +1577,13 @@ test('choosing New app on a repository that already has work shows a warning, an
   await expect(page.getByTestId('alongside-warning')).toHaveCount(0);
   await form.getByLabel('Type', { exact: true }).selectOption('new_app');
   await expect(page.getByTestId('alongside-warning')).toContainText('already has an app');
+  // Create waits for a yes: the platform cannot preview or smoke-test this app.
+  const create = form.getByRole('button', { name: 'Create' });
+  await expect(create).toBeDisabled();
+  await page.getByLabel('I understand').check();
+  await expect(create).toBeEnabled();
+  await page.getByLabel('I understand').uncheck();
+  await expect(create).toBeDisabled();
   await expect(page.getByTestId('alongside-warning').getByRole('link')).toHaveAttribute(
     'href',
     '#/repositories',
@@ -1654,4 +1661,52 @@ test('the portfolio groups initiatives by app, oldest first, and collapses or fl
   await expect(page.getByTestId('view-switch').getByRole('combobox')).toHaveValue('flat');
   await page.getByTestId('view-switch').getByRole('combobox').selectOption('apps');
   await expect(page.getByTestId(`app-${repo!.fullName}`)).toBeVisible();
+});
+test('an app that shares its repository shows no preview and no smoke test, and says why', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const title = `Review of a second app ${randomUUID().slice(0, 6)}`;
+  await reviewOf(f, title);
+  const note = 'This app shares a repository with another app.';
+  await page.route('**/api/interactions/*/smoke', (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        required: 'shared',
+        detail: null,
+        commit: 'abc123',
+        run: null,
+        blocks: null,
+      },
+    }),
+  );
+  await page.route('**/api/interactions/*/preview', (route) =>
+    route.fulfill({
+      json: {
+        state: 'none',
+        url: null,
+        label: null,
+        source: null,
+        sha: null,
+        headSha: '',
+        detail: note,
+        shared: true,
+        platform: {
+          available: false,
+          id: null,
+          state: 'none',
+          expiresAt: null,
+          detail: null,
+          ttlMinutes: 30,
+        },
+      },
+    }),
+  );
+  await signInAs(page, /Bob Lindqvist/);
+  await page.getByTestId('nav-queue').click();
+  const ask = card(page, title);
+  await expect(ask.getByTestId('smoke-shared')).toContainText('do not count toward approving');
+  await expect(ask.getByTestId('preview-shared')).toContainText(note);
+  await expect(ask.getByRole('button', { name: /Run the smoke test|Run it here/ })).toHaveCount(0);
 });

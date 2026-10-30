@@ -4,6 +4,7 @@ import type { Db } from '@sdlc/db';
 import { onlyDocuments, parsePreviewConfig, PREVIEW_CONFIG_PATH } from '@sdlc/core';
 import { recordActivity } from './activity.js';
 import { PreviewStartError } from './docker-preview.js';
+import { SHARED_REPOSITORY_NOTE, isAlongside } from './repository-work.js';
 import type { PreviewHost } from './docker-preview.js';
 import type { GitHubService } from './github-service.js';
 
@@ -171,6 +172,8 @@ export class PreviewService {
         'That review has been decided, so there is nothing to preview.',
       );
     const { repository, prNumber } = card;
+    if (await isAlongside(db, review.initiativeId))
+      return fail(409, 'shared_repository', SHARED_REPOSITORY_NOTE);
 
     const pr = await github.getPullRequest(repository, prNumber);
     if (pr.state !== 'open')
@@ -209,6 +212,8 @@ export class PreviewService {
 
   /** Runs the tip of the integration branch, which is what the merged tasks built. */
   async startMain(initiativeId: string, by: string): Promise<StartResult> {
+    if (await isAlongside(this.deps.db, initiativeId))
+      return fail(409, 'shared_repository', SHARED_REPOSITORY_NOTE);
     const repo = await this.repositoryOf(initiativeId);
     if (!repo) return fail(404, 'not_found', 'That initiative has no registered repository.');
     let sha: string;
@@ -437,6 +442,7 @@ export class PreviewService {
           eq(interaction.type, 'review'),
           eq(interaction.state, 'open'),
           eq(initiative.autonomyMode, 'autopilot'),
+          eq(initiative.alongside, false),
           sql`${interaction.contextCard} ->> 'kind' = 'pull_request'`,
           sql`not exists (select 1 from preview_run p where p.interaction_id = ${interaction.id})`,
         ),

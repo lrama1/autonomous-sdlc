@@ -182,6 +182,8 @@ export const initiativeCreateSchema = z.object({
     .max(10)
     .default([]),
   budgetUsd: z.number().positive().max(10_000).optional(),
+  // Needed to make a new app in a repository that already has another: the platform cannot preview or smoke-test it.
+  acknowledgeSharedRepository: z.boolean().optional(),
 });
 export type InitiativeCreate = z.infer<typeof initiativeCreateSchema>;
 

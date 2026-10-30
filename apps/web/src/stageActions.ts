@@ -31,6 +31,8 @@ export interface MainPreviewIn {
   state: string;
   url: string | null;
   detail: string | null;
+  /** The app shares its repository with another app, so the platform cannot preview it. */
+  shared?: boolean;
 }
 
 interface StageIn {
@@ -131,6 +133,10 @@ export function stageActions(
 
   // Once something has merged, a person can run what the build made, whether or not every task is done.
   const merged = (plan?.tasks ?? []).some((t) => t.state === 'merged');
+  if (build && preview?.main?.shared && merged)
+    build.notes.push(
+      'This app shares a repository with another app, so the platform cannot preview it: a preview would run the other app. Try it from its folder yourself, or move it to its own repository.',
+    );
   if (build && preview?.main?.available && merged) {
     const p = preview.main;
     if (p.state === 'starting')

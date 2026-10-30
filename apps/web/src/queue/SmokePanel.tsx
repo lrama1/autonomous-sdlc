@@ -179,6 +179,26 @@ export function SmokePanel({
   };
 
   if (!s || !s.available || s.required === 'none') return null;
+  // The repository's checks belong to the other app, so a result would say nothing about this one.
+  if (s.required === 'shared')
+    return (
+      <CheckPanel
+        title="No smoke test"
+        testId="smoke"
+        state="shared"
+        status={
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            component="span"
+            data-testid="smoke-shared"
+          >
+            This app shares a repository with another app, so the smoke checks would run the other
+            app. They are not run, and they do not count toward approving this change.
+          </Typography>
+        }
+      />
+    );
   const run = s.run;
   const state = run?.state ?? 'none';
   const done = run?.results.filter((r) => r.ok).length ?? 0;

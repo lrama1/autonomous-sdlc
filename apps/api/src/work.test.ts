@@ -278,8 +278,11 @@ describe('initiatives', () => {
       alongside: false,
       warnings: [],
     });
-    // A second new app next to it is allowed, with a warning, and is built apart.
-    const second = await make({ kind: 'new_app' });
+    // A second new app next to it needs a yes: the platform cannot preview or smoke-test it.
+    const refused = await make({ kind: 'new_app' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe('shared_repository');
+    const second = await make({ kind: 'new_app', acknowledgeSharedRepository: true });
     expect(second.statusCode).toBe(201);
     expect(second.json()).toMatchObject({ kind: 'new_app', alongside: true });
     expect(second.json().warnings[0]).toContain('register another repository');
@@ -295,29 +298,39 @@ describe('initiatives', () => {
       .where(eq(activityEvent.initiativeId, second.json().id));
     expect(logged.find((e) => e.action === 'initiative.created')!.detail).toMatchObject({
       warning: 'alongside',
+      acknowledged: true,
     });
 
     // Changing the type moves it in and out of that state.
-    const patch = (id: string, kind: string) =>
+    const patch = (id: string, kind: string, extra: Record<string, unknown> = {}) =>
       app.inject({
         method: 'PATCH',
         url: `/api/initiatives/${id}`,
         headers: as(po.cookie),
-        payload: { kind },
+        payload: { kind, ...extra },
       });
     await patch(second.json().id, 'feature');
     expect(
       (await db.select().from(initiative).where(eq(initiative.id, second.json().id)))[0]!.alongside,
     ).toBe(false);
-    await patch(second.json().id, 'new_app');
+    // Back to a new app next to another needs the same yes, and nothing changes without it.
+    expect((await patch(second.json().id, 'new_app')).statusCode).toBe(409);
+    expect(
+      (await db.select().from(initiative).where(eq(initiative.id, second.json().id)))[0]!.kind,
+    ).toBe('feature');
+    expect(
+      (await patch(second.json().id, 'new_app', { acknowledgeSharedRepository: true })).statusCode,
+    ).toBe(200);
     expect(
       (await db.select().from(initiative).where(eq(initiative.id, second.json().id)))[0]!.alongside,
     ).toBe(true);
-    // The first app, made a new app again, now has other work beside it.
-    await patch(first.id, 'new_app');
+    // The first app owns the repository root: nothing was there before it, so it is never beside another, and it
+    // needs no yes to be a new app.
+    expect((await patch(first.id, 'feature')).statusCode).toBe(200);
+    expect((await patch(first.id, 'new_app')).statusCode).toBe(200);
     expect(
       (await db.select().from(initiative).where(eq(initiative.id, first.id)))[0]!.alongside,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('lets a Product Owner or Platform Admin change the kind, and nobody else', async () => {

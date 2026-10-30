@@ -321,6 +321,53 @@ describe('a preview of what the build produced', () => {
   });
 });
 
+describe('an app that shares its repository with another', () => {
+  const viewMain = (headers: Record<string, string>, id: string) =>
+    app.inject({ method: 'GET', url: `/api/initiatives/${id}/preview`, headers });
+  const startMain = (headers: Record<string, string>, id: string) =>
+    app.inject({ method: 'POST', url: `/api/initiatives/${id}/preview/start`, headers });
+
+  it('is not previewed, because the preview file at the root belongs to the other app', async () => {
+    const r = await review({ mode: 'autopilot', paths: ['apps/blog/src/index.js'] });
+    const other = await review({ mode: 'autopilot', paths: ['src/index.js'] });
+    await db.update(initiative).set({ alongside: true }).where(eq(initiative.id, r.initiativeId));
+    const who = await newPerson();
+
+    const shown = (await view(who.headers, r.row.id)).json();
+    expect(shown).toMatchObject({ shared: true, state: 'none' });
+    expect(shown.platform.available).toBe(false);
+    expect(shown.detail).toContain('shares a repository with another app');
+    const refused = await start(who.headers, r.row.id);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe('shared_repository');
+
+    // Autopilot starts nothing for it, and still starts one for the app that owns the root.
+    await app.previews()!.tick();
+    await settle();
+    expect(
+      await db.select().from(previewRun).where(eq(previewRun.interactionId, r.row.id)),
+    ).toHaveLength(0);
+    expect(
+      await db.select().from(previewRun).where(eq(previewRun.interactionId, other.row.id)),
+    ).toHaveLength(1);
+    expect((await view(who.headers, other.row.id)).json().shared).toBeUndefined();
+  });
+
+  it('has no preview of the built app either', async () => {
+    const r = await review();
+    await db.update(initiative).set({ alongside: true }).where(eq(initiative.id, r.initiativeId));
+    const who = await newPerson();
+    gh.mainSha = sha(920);
+    expect((await viewMain(who.headers, r.initiativeId)).json()).toMatchObject({
+      available: false,
+      shared: true,
+    });
+    const refused = await startMain(who.headers, r.initiativeId);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe('shared_repository');
+  });
+});
+
 describe('a change that only touches documents', () => {
   it('has nothing to run: the panel says so, a start is refused, and autopilot starts nothing', async () => {
     const docs = await review({ mode: 'autopilot', paths: ['docs/spec/thing.md', 'README.md'] });

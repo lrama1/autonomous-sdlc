@@ -177,6 +177,13 @@ export function registerWorkRoutes(
     const kind = body.kind ?? suggestKind(hasWork);
     // Allowed, but not the usual way: say so, and tell the agents to keep the new app apart.
     const alongside = kind === 'new_app' && hasWork;
+    if (alongside && !body.acknowledgeSharedRepository)
+      return reply.code(409).send({
+        error: {
+          code: 'shared_repository',
+          message: `${ALONGSIDE_WARNING} To go ahead anyway, confirm that you understand this.`,
+        },
+      });
     const [row] = await db
       .insert(initiative)
       .values({
@@ -201,7 +208,7 @@ export function registerWorkRoutes(
         title: body.title,
         repository: repo.fullName,
         kind: row!.kind,
-        ...(alongside ? { warning: 'alongside' } : {}),
+        ...(alongside ? { warning: 'alongside', acknowledged: true } : {}),
       },
     });
     await planSpecStart(db, agents, row!, me.id);
