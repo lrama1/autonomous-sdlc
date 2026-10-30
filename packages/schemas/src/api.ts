@@ -320,6 +320,8 @@ export const previewSchema = z.object({
   detail: z.string(),
   // The change holds only documents (a spec, a design), so there is no program to run.
   docsOnly: z.boolean().optional(),
+  // The app shares its repository with another app, so a preview would run the other one.
+  shared: z.boolean().optional(),
   // The preview the platform itself runs from the pull request, if that is switched on.
   platform: z.object({
     available: z.boolean(),
@@ -342,6 +344,8 @@ export const mainPreviewSchema = z.object({
   expiresAt: z.string().nullable(),
   detail: z.string().nullable(),
   ttlMinutes: z.number(),
+  // The app shares its repository with another app, so a preview would run the other one.
+  shared: z.boolean().optional(),
 });
 export type MainPreviewDto = z.infer<typeof mainPreviewSchema>;
 
@@ -382,7 +386,7 @@ export type SmokeDiagnosisDto = z.infer<typeof smokeDiagnosisSchema>;
 export const smokeSchema = z.object({
   // False when this platform cannot run previews, so it cannot run smoke tests and does not ask for them.
   available: z.boolean(),
-  required: z.enum(['none', 'required', 'invalid']),
+  required: z.enum(['none', 'required', 'invalid', 'shared']),
   // Why the config is invalid, or what stops the test from being read.
   detail: z.string().nullable(),
   commit: z.string(),

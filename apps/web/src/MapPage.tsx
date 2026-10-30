@@ -254,6 +254,9 @@ function NewInitiative({
   const [worked, setWorked] = useState<Set<string>>(new Set());
   const [kindTouched, setKindTouched] = useState(draft?.kindTouched ?? false);
   const [problem, setProblem] = useState<string | null>(null);
+  // The person has read that the platform cannot preview or smoke-test a second app in a repository.
+  const [ack, setAck] = useState(false);
+  const shared = f.kind === 'new_app' && worked.has(f.repositoryId);
   useEffect(() => {
     draft = { f, kindTouched };
   }, [f, kindTouched]);
@@ -293,8 +296,10 @@ function NewInitiative({
           const made = await createInitiative({
             ...f,
             referenceLinks: f.referenceLinks.split(/\s+/).filter(Boolean),
+            ...(shared ? { acknowledgeSharedRepository: true } : {}),
           });
           draft = null;
+          setAck(false);
           setF({ ...f, title: '', goal: '', referenceLinks: '' });
           onCreated(made.id);
         } catch (err) {
@@ -365,13 +370,31 @@ function NewInitiative({
               <option value="autopilot">Autopilot: no trigger, no review</option>
             </TextField>
           </Stack>
-          {f.kind === 'new_app' && worked.has(f.repositoryId) && (
+          {shared && (
             <Alert severity="warning" data-testid="alongside-warning">
               This repository already has an app. A new app here is built next to it, in its own
-              folder, but the platform previews and tests one app from a repository root. For a
-              separate app, register another repository on the{' '}
+              folder, but the platform previews and smoke-tests what the repository root starts,
+              which is the other app. So its previews and smoke checks cannot vouch for this one.
+              For a separate app, register another repository on the{' '}
               <a href="#/repositories">Repositories</a> page, or choose Feature to add to the
               existing app.
+              <FormControlLabel
+                sx={{ display: 'flex', mt: 0.5 }}
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={ack}
+                    onChange={(e) => setAck(e.target.checked)}
+                    slotProps={{ input: { 'aria-label': 'I understand' } }}
+                  />
+                }
+                label={
+                  <Typography variant="body2">
+                    I understand the platform cannot preview or smoke-test this app, and I will
+                    check it myself.
+                  </Typography>
+                }
+              />
             </Alert>
           )}
           <FormControlLabel
@@ -409,7 +432,11 @@ function NewInitiative({
             slotProps={{ htmlInput: { 'aria-label': 'Reference links' } }}
           />
           <Stack direction="row" spacing={1}>
-            <Button variant="contained" type="submit" disabled={!f.repositoryId}>
+            <Button
+              variant="contained"
+              type="submit"
+              disabled={!f.repositoryId || (shared && !ack)}
+            >
               Create
             </Button>
             {cancelHref && (
@@ -651,12 +678,23 @@ export function MapPage({
                 size="small"
                 value={map.initiative.kind ?? ''}
                 disabled={!mayControlBuild}
-                onChange={(e) =>
-                  void act(
-                    () => setInitiativeKind(map.initiative.id, e.target.value as InitiativeKindDto),
-                    'The type is saved. Steps that start from now on are written for it.',
-                  )
-                }
+                onChange={(e) => {
+                  const kind = e.target.value as InitiativeKindDto;
+                  void act(async () => {
+                    try {
+                      await setInitiativeKind(map.initiative.id, kind);
+                    } catch (err) {
+                      // A second app in a repository needs a yes: the platform cannot preview or test it.
+                      if (
+                        err instanceof ApiProblem &&
+                        err.code === 'shared_repository' &&
+                        window.confirm(err.message)
+                      )
+                        await setInitiativeKind(map.initiative.id, kind, true);
+                      else throw err;
+                    }
+                  }, 'The type is saved. Steps that start from now on are written for it.');
+                }}
                 slotProps={{
                   select: { native: true },
                   htmlInput: { 'aria-label': 'Type of initiative' },

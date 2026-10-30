@@ -15,6 +15,7 @@ import type { PreviewHost } from './docker-preview.js';
 import type { GitHubService } from './github-service.js';
 import type { PreviewService } from './previews.js';
 import { getInteraction } from './interactions.js';
+import { SHARED_REPOSITORY_NOTE, isAlongside } from './repository-work.js';
 import type { InteractionRow } from './interactions.js';
 import { runSmoke } from './smoke.js';
 import type { SmokeResult } from './smoke.js';
@@ -29,6 +30,8 @@ export type SmokeStartResult =
 /** Whether a repository asks for smoke checks at a commit. */
 export type SmokeRequirement =
   | { kind: 'none' }
+  // The app shares its repository with another, so the smoke checks would test the other app.
+  | { kind: 'shared' }
   | { kind: 'required'; checks: number; missing?: SmokeCheck[] }
   | { kind: 'invalid'; message: string };
 
@@ -158,6 +161,7 @@ export class SmokeService {
     // A change made only of documents (a spec, a design) has no program to start.
     const paths = card.diff?.changedPaths ?? [];
     if (paths.length > 0 && !needsSecurityReview(paths)) return { kind: 'none' };
+    if (await isAlongside(this.deps.db, review.initiativeId)) return { kind: 'shared' };
     const base = await this.requirement(card.repository!, card.headSha!);
     if (base.kind === 'invalid') return base;
     const missing = await this.designGap(review, card.headSha!);
@@ -196,7 +200,7 @@ export class SmokeService {
     } catch (e) {
       return `Could not check whether this repository requires a smoke test (${e instanceof Error ? e.message : String(e)}). Try again.`;
     }
-    if (req.kind === 'none') return null;
+    if (req.kind === 'none' || req.kind === 'shared') return null;
     const latest = await this.forCommit(card.repository, card.prNumber, card.headSha);
     if (latest?.state === 'passed' || latest?.state === 'overridden') return null;
     const how = 'Run the smoke test again, or override it with a reason.';
@@ -303,7 +307,7 @@ export class SmokeService {
         message: 'That review has been decided, so there is nothing to override.',
       };
     const req = await this.requirementFor(review);
-    if (req.kind === 'none')
+    if (req.kind === 'none' || req.kind === 'shared')
       return {
         ok: false,
         status: 409,
@@ -370,6 +374,8 @@ export class SmokeService {
         'That review has been decided, so there is nothing to test.',
       );
     const { repository, prNumber } = card;
+    if (await isAlongside(db, review.initiativeId))
+      return fail(409, 'shared_repository', SHARED_REPOSITORY_NOTE);
 
     const pr = await github.getPullRequest(repository, prNumber);
     if (pr.state !== 'open')

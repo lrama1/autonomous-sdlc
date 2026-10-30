@@ -248,10 +248,10 @@ export const getInterruptions = (days: number): Promise<InterruptionMetricsDto> 
 
 export const getAutopilot = (): Promise<AutopilotDto> => call('/api/autopilot', autopilotSchema);
 
-export const setInitiativeKind = (id: string, kind: InitiativeKindDto) =>
+export const setInitiativeKind = (id: string, kind: InitiativeKindDto, acknowledge = false) =>
   call(`/api/initiatives/${id}`, z.object({ id: z.string() }).passthrough(), {
     method: 'PATCH',
-    body: { kind },
+    body: { kind, ...(acknowledge ? { acknowledgeSharedRepository: true } : {}) },
   });
 
 export const setAutonomyMode = (id: string, autonomyMode: 'guided' | 'balanced' | 'autopilot') =>
@@ -370,6 +370,7 @@ export const createInitiative = (body: {
   kind?: InitiativeKindDto;
   autoStages: boolean;
   referenceLinks?: string[];
+  acknowledgeSharedRepository?: boolean;
 }) =>
   call('/api/initiatives', z.object({ id: z.string().uuid() }).passthrough(), {
     method: 'POST',

@@ -11,6 +11,7 @@ import { GitHubError } from './github-app.js';
 import type { GitHubService } from './github-service.js';
 import { requirePerson } from './people.js';
 import { MAIN_PREVIEW } from './previews.js';
+import { SHARED_REPOSITORY_NOTE, isAlongside } from './repository-work.js';
 import type { PreviewRow, PreviewService } from './previews.js';
 
 const CACHE_MS = 15_000;
@@ -93,6 +94,29 @@ export function registerPreviewRoutes(
       return docs;
     }
 
+    // An app that shares its repository with another: the root preview file belongs to the other one.
+    if (await isAlongside(db, review.row.initiativeId)) {
+      const shared: PreviewDto = previewSchema.parse({
+        state: 'none',
+        url: null,
+        label: null,
+        source: null,
+        sha: null,
+        headSha: '',
+        detail: SHARED_REPOSITORY_NOTE,
+        shared: true,
+        platform: {
+          available: false,
+          id: null,
+          state: 'none',
+          expiresAt: null,
+          detail: null,
+          ttlMinutes,
+        },
+      });
+      return shared;
+    }
+
     const key = `${repository}#${prNumber}`;
     let looked = cache.get(key);
     if (!looked || now() - looked.at >= CACHE_MS) {
@@ -171,9 +195,11 @@ export function registerPreviewRoutes(
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const svc = previews();
     const mine = svc ? await svc.forMain(id) : null;
+    const shared = await isAlongside(db, id);
     const live = mine?.state === 'starting' || mine?.state === 'ready';
     return mainPreviewSchema.parse({
-      available: svc !== null,
+      available: svc !== null && !shared,
+      shared,
       id: mine?.id ?? null,
       state: mine?.state ?? 'none',
       url: live ? (mine?.url ?? null) : null,
