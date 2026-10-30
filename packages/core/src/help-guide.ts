@@ -161,7 +161,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
     page: 'portfolio',
     title: 'Portfolio',
     purpose:
-      'One list of every initiative with where it stands, how far the build has got, what it has cost, and its open bugs, plus the releases that went out. Use it for a quick overview across initiatives, to see which ones need a person, and to jump into one on the Map. It is read-only and refreshes about every 15 seconds.',
+      'Every initiative, grouped by the app (repository) it belongs to, with where it stands, how far the build has got, what it has cost, and its open bugs, plus the releases that went out. Use it for a quick overview across apps and initiatives, to see which need a person, and to jump into one on the Map. It is read-only and refreshes about every 15 seconds.',
     elements: [
       el('Tile "initiatives"', 'How many initiatives exist.'),
       el(
@@ -171,12 +171,20 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       el('Tile "spent in all"', 'Total model spend across all initiatives, all time, in dollars.'),
       el('Tile "open bugs"', 'Total reported bugs not yet fixed across all initiatives.'),
       el(
+        'App rows (grey, one per repository)',
+        'In the grouped view, each app has a row with its repository name, how many initiatives it has, and a roll-up: a yellow chip when some of its initiatives need a person, what all of them have spent, open bugs, the latest activity, and the latest release version. The arrow at its left collapses or expands the initiatives under it. Apps that need a person come first, then the most recently active.',
+      ),
+      el(
+        'View switch (above the table)',
+        'Grouped by app (the default) or Flat list, one row per initiative with its repository under the title. Your choice is remembered in this browser.',
+      ),
+      el(
         'Initiative column',
-        'The initiative title (a link that opens it on the Map) with a line under it: its repository and its autonomy mode (guided, balanced or autopilot). Next to the title, a chip says its type (New app, Feature, or Change or fix) when one is set.',
+        'The initiative title (a link that opens it on the Map) with a line under it: its autonomy mode (guided, balanced or autopilot), and in the flat list its repository too. Under an app, initiatives are oldest first, so the list reads as the history of the app: a new app, then the features and fixes added to it. Next to the title, a chip says its type (New app, Feature, or Change or fix) when one is set.',
       ),
       el(
         'Type filter (above the table)',
-        'Narrows the list to one type: All types, New app, Feature, Change or fix, or Not set (older initiatives made before types existed). A new app is a first build; a feature adds to an app that exists; a change or fix alters existing behaviour as little as it can.',
+        'Narrows the list, in either view, to one type: All types, New app, Feature, Change or fix, or Not set (older initiatives made before types existed). A new app is a first build; a feature adds to an app that exists; a change or fix alters existing behaviour as little as it can.',
       ),
       el(
         'Where it is column',

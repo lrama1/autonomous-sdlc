@@ -1584,3 +1584,74 @@ test('choosing New app on a repository that already has work shows a warning, an
   await form.getByLabel('Type', { exact: true }).selectOption('feature');
   await expect(page.getByTestId('alongside-warning')).toHaveCount(0);
 });
+
+test('the portfolio groups initiatives by app, oldest first, and collapses or flattens them', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [first] = await db.select().from(initiative).where(eq(initiative.id, f.initiativeId));
+  const [repo] = await db
+    .select()
+    .from(repositoryEntry)
+    .where(eq(repositoryEntry.id, f.repositoryId));
+  await db
+    .update(initiative)
+    .set({ kind: 'new_app', createdAt: new Date(Date.now() - 3 * 86_400_000) })
+    .where(eq(initiative.id, first!.id));
+  const later = async (title: string, kind: string, ageDays: number) =>
+    (
+      await db
+        .insert(initiative)
+        .values({
+          title,
+          goal: 'g',
+          repositoryId: f.repositoryId,
+          createdBy: f.personId,
+          kind,
+          createdAt: new Date(Date.now() - ageDays * 86_400_000),
+        })
+        .returning()
+    )[0]!;
+  const feature = await later(`Added later ${randomUUID().slice(0, 6)}`, 'feature', 1);
+  const middle = await later(`Added in between ${randomUUID().slice(0, 6)}`, 'feature', 2);
+  await signInAs(page, /Alice Park/);
+  await page.getByTestId('nav-portfolio').click();
+
+  // One app row for the repository, with its three initiatives under it, oldest first.
+  const app = page.getByTestId(`app-${repo!.fullName}`);
+  await expect(app).toContainText('3 initiatives');
+  await expect(app).toHaveAttribute('data-expanded', 'true');
+  const ids = [first!.id, middle.id, feature.id];
+  for (const id of ids) await expect(page.getByTestId(`row-${id}`)).toBeVisible();
+  const order = await page
+    .locator(`[data-testid="app-${repo!.fullName}"], [data-testid^="row-"]`)
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+  const at = (id: string) => order.indexOf(`row-${id}`);
+  expect(at(first!.id)).toBeGreaterThan(order.indexOf(`app-${repo!.fullName}`));
+  expect(at(first!.id)).toBeLessThan(at(middle.id));
+  expect(at(middle.id)).toBeLessThan(at(feature.id));
+  // The repository is in the app row, not repeated under every initiative.
+  await expect(page.getByTestId(`row-${feature.id}`)).not.toContainText(repo!.fullName);
+
+  // Collapsing hides the app's initiatives, expanding shows them again.
+  await app.getByRole('button', { name: `Collapse ${repo!.fullName}` }).click();
+  await expect(app).toHaveAttribute('data-expanded', 'false');
+  await expect(page.getByTestId(`row-${feature.id}`)).toHaveCount(0);
+  await app.getByRole('button', { name: `Expand ${repo!.fullName}` }).click();
+  await expect(page.getByTestId(`row-${feature.id}`)).toBeVisible();
+
+  // The type filter works inside the groups.
+  await page.getByTestId('kind-filter').getByRole('combobox').selectOption('new_app');
+  await expect(app).toContainText('1 initiative');
+  await expect(page.getByTestId(`row-${feature.id}`)).toHaveCount(0);
+  await page.getByTestId('kind-filter').getByRole('combobox').selectOption('all');
+
+  // The flat list has no app rows, and names the repository under each initiative. The choice is remembered.
+  await page.getByTestId('view-switch').getByRole('combobox').selectOption('flat');
+  await expect(app).toHaveCount(0);
+  await expect(page.getByTestId(`row-${feature.id}`)).toContainText(repo!.fullName);
+  await page.reload();
+  await expect(page.getByTestId('view-switch').getByRole('combobox')).toHaveValue('flat');
+  await page.getByTestId('view-switch').getByRole('combobox').selectOption('apps');
+  await expect(page.getByTestId(`app-${repo!.fullName}`)).toBeVisible();
+});
