@@ -124,11 +124,14 @@ export const runEvent = pgTable(
       .notNull()
       .references(() => agentRun.id, { onDelete: 'cascade' }),
     seq: integer('seq').notNull(),
+    // One order across every run, in the order events were stored. The live log reads from it: an event id is made
+    // in the application and two made in the same millisecond have no order.
+    gid: bigint('gid', { mode: 'number' }).generatedAlwaysAsIdentity().notNull(),
     ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
     type: text('type').notNull(),
     payload: jsonb('payload').notNull().default({}),
   },
-  (t) => [unique('run_event_run_seq_uq').on(t.runId, t.seq)],
+  (t) => [unique('run_event_run_seq_uq').on(t.runId, t.seq), index('run_event_gid_idx').on(t.gid)],
 );
 
 // Random 32-byte tokens are stored hashed. scopes look like: 'gateway', 'mcp', 'alias:agent-default'.

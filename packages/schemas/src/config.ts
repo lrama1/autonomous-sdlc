@@ -100,6 +100,8 @@ export const apiConfigSchema = z.object({
   // may spend on it in a day, in dollars.
   ASSISTANT: z.enum(['on', 'off']).default('on'),
   ASSISTANT_ALIAS: z.string().default('agent-fast'),
+  // How long the steps of a finished run (messages, tool calls and results) stay in the log.
+  LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   ASSISTANT_DAILY_CAP_USD: z.coerce.number().positive().default(4),
 });
 export type ApiConfig = z.infer<typeof apiConfigSchema>;

@@ -2,6 +2,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGES = new Set([
   'portfolio',
   'map',
+  'log',
   'queue',
   'assumptions',
   'autopilot',
@@ -28,7 +29,7 @@ export function contextFromHash(hash: string): Omit<AssistantContext, 'pageText'
   return {
     page: known,
     hash: hash.replace(/^#/, '').slice(0, 300),
-    ...(known === 'map' && UUID.test(id) ? { initiativeId: id } : {}),
+    ...((known === 'map' || known === 'log') && UUID.test(id) ? { initiativeId: id } : {}),
     ...(known === 'queue' && UUID.test(id) ? { interactionId: id } : {}),
   };
 }

@@ -15,6 +15,7 @@ export const HELP_PAGES = [
   'home',
   'portfolio',
   'map',
+  'log',
   'queue',
   'assumptions',
   'autopilot',
@@ -59,7 +60,7 @@ export const SHELL_HELP: HelpElement[] = [
   ),
   el(
     'Left navigation',
-    'Shown only when signed in. It lists the 12 screens in this order: Home, Portfolio, Map, Attention queue, Assumptions and decisions, Autopilot, Interruptions, Bugs, Costs, Integrations, Repositories, Settings. The screen you are on is highlighted. On a narrow window it is hidden behind the menu button at the left of the top bar.',
+    'Shown only when signed in. It lists the 13 screens in this order: Home, Portfolio, Map, Live log, Attention queue, Assumptions and decisions, Autopilot, Interruptions, Bugs, Costs, Integrations, Repositories, Settings. The screen you are on is highlighted. On a narrow window it is hidden behind the menu button at the left of the top bar.',
   ),
   el(
     'Attention badge (on "Attention queue")',
@@ -356,6 +357,57 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       'A Retry on a task that keeps failing is rarely the answer. Read the failure on the Attention queue (it explains each attempt) before retrying again.',
       'The Preview the built app button is missing when no task has merged yet or the platform has no preview runner.',
       'Creating an initiative on an empty repository (no commits) is refused with a message; the Repositories page offers to make the first commit.',
+    ],
+  },
+
+  log: {
+    page: 'log',
+    title: 'Live log',
+    purpose:
+      'What the agents are doing right now. Every step of every agent run, as it happens, newest at the bottom: what an agent says, each tool it calls with what it asked for, how the call turned out, and the files it changes, plus when a run starts, waits for a person, or finishes. For Claude Code runs these are the steps of Claude Code itself. Use it to watch a build live, to tell an agent that is thinking from one that is stuck, and to see what happened just before a failure. It is read-only. Secrets that a tool printed (keys, tokens, passwords) are removed before the log keeps them.',
+    elements: [
+      el(
+        'Initiative picker (top right)',
+        'Shows every initiative (All initiatives, the default) or only one. The Map has a Live log button that opens it already narrowed to the initiative you are looking at.',
+      ),
+      el(
+        'Live / Paused / Cannot reach the platform chip',
+        'Green Live means the page looks for new steps every 2 seconds (only while the browser tab is showing). Paused means you stopped it. Red means the platform could not be reached; the page keeps what it has and tries again.',
+      ),
+      el(
+        'Pause / Resume',
+        'Stops or restarts the looking. While paused nothing new is added, so you can read.',
+      ),
+      el(
+        'Messages, Tools, Files, Run steps (toggle buttons)',
+        'Choose what to show. Messages are what the agent says. Tools are each tool call and its result (a call shows the tool name and the command, file or pattern it was given; a result says ok or failed). Files are files the agent wrote or edited. Run steps are a run starting, waiting, finishing, asking a person, or opening a pull request.',
+      ),
+      el(
+        'Search the log',
+        'Shows only the lines that contain the text, in their words, a task key such as T2, or an agent name.',
+      ),
+      el(
+        '"n of m shown"',
+        'How many lines pass the filters, out of the lines the page holds (the latest 1,500).',
+      ),
+      el(
+        'The log',
+        'One line per step: the time, a coloured tag with the task and agent (for example "T2 Backend Engineer", a different colour for each run, so one agent can be followed among the others), then the step. Tool names are bold blue, files purple, run steps green, a person being asked amber, errors and failed runs red. Hover over a tag to see the initiative and the run state.',
+      ),
+      el(
+        'Jump to the latest',
+        'Appears when you scroll up to read. The log follows the newest line on its own while you are at the bottom, and stops when you scroll up; this button starts it again.',
+      ),
+      el(
+        '"Nothing yet." message',
+        'No run has produced a step yet for this choice. Start a build, and its steps appear here.',
+      ),
+    ],
+    roles: 'Anyone who holds a role can read it. A person with no role is told they may not.',
+    tips: [
+      'A run that shows no new lines for several minutes is probably stuck. The Map says the same in its "Last heard from the agent" note.',
+      'The steps of a finished run are kept for 30 days (the summary and result are kept longer); after that only the run steps remain.',
+      'The log shows what Claude Code reports as it works: its messages and tool calls. It is not the full output of every command; long results are shortened.',
     ],
   },
 

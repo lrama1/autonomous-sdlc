@@ -1,0 +1,2 @@
+ALTER TABLE "run_event" ADD COLUMN "gid" bigint NOT NULL GENERATED ALWAYS AS IDENTITY (sequence name "run_event_gid_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1);--> statement-breakpoint
+CREATE INDEX "run_event_gid_idx" ON "run_event" USING btree ("gid");
