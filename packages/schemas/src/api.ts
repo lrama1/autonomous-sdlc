@@ -643,6 +643,37 @@ export const portfolioSchema = z.object({
 });
 export type PortfolioDto = z.infer<typeof portfolioSchema>;
 
+// The live log: what the agents are doing, newest last. An event's gid only grows, so it is the cursor for the next look.
+export const logEventSchema = z.object({
+  id: z.string(),
+  gid: z.number(),
+  runId: z.string(),
+  seq: z.number(),
+  ts: z.string(),
+  type: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export const logRunSchema = z.object({
+  id: z.string(),
+  role: z.string(),
+  state: z.string(),
+  initiativeId: z.string(),
+  initiativeTitle: z.string(),
+  // The build task it works on (T1, T2, ...), when it is one.
+  taskKey: z.string().nullable(),
+  taskTitle: z.string().nullable(),
+});
+export const logSchema = z.object({
+  events: z.array(logEventSchema),
+  // The runs the events belong to.
+  runs: z.array(logRunSchema),
+  // True when more events are waiting after the last one returned.
+  more: z.boolean(),
+});
+export type LogDto = z.infer<typeof logSchema>;
+export type LogEventDto = z.infer<typeof logEventSchema>;
+export type LogRunDto = z.infer<typeof logRunSchema>;
+
 // The assistant chat (mvp-contract, assistant).
 export const assistantProposalSchema = z.object({
   id: z.string(),

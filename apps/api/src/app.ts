@@ -2,7 +2,7 @@ import path from 'node:path';
 import cookie from '@fastify/cookie';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
-import { createDb } from '@sdlc/db';
+import { createDb, pruneRunSteps } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { healthSchema, meSchema, readySchema } from '@sdlc/schemas';
 import type { Pool } from 'pg';
@@ -54,6 +54,7 @@ import { registerBuildRoutes } from './build-routes.js';
 import { registerStageRoutes } from './stage-routes.js';
 import { registerBugRoutes } from './bug-routes.js';
 import { registerCostRoutes } from './cost-routes.js';
+import { registerLogRoutes } from './log-routes.js';
 import { registerPortfolioRoutes } from './portfolio.js';
 import { checkBudgetAlert } from './costs.js';
 import { stageTick } from './stages.js';
@@ -352,6 +353,7 @@ export async function buildApp({
     fixed: config.RUNNER_EGRESS_ALLOW,
   });
   registerPortfolioRoutes(app, db);
+  registerLogRoutes(app, db);
   registerIntegrationRoutes(app, db, fetcher);
   registerAttentionRoutes(app, db, {
     policy,
@@ -438,6 +440,21 @@ export async function buildApp({
       }, config.BUILD_TICK_MS);
     });
     app.addHook('onClose', async () => clearInterval(checksTimer));
+  }
+
+  // The steps of runs that ended long ago are dropped, so the log does not grow without end.
+  if (workers) {
+    let pruneTimer: NodeJS.Timeout | undefined;
+    app.addHook('onReady', async () => {
+      const prune = () =>
+        pruneRunSteps(db, config.LOG_RETENTION_DAYS).then(
+          (n) => n > 0 && app.log.info(`[log] dropped ${n} old agent steps`),
+          (e) => app.log.error({ err: e }, 'log pruning failed'),
+        );
+      void prune();
+      pruneTimer = setInterval(() => void prune(), 6 * 3_600_000);
+    });
+    app.addHook('onClose', async () => clearInterval(pruneTimer));
   }
 
   if (workers) {

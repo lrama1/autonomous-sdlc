@@ -7,6 +7,7 @@ import {
   assumption,
   buildPlan,
   activityEvent,
+  appendRunEvent,
   costRecord,
   buildTask,
   createDb,
@@ -1709,4 +1710,80 @@ test('an app that shares its repository shows no preview and no smoke test, and 
   await expect(ask.getByTestId('smoke-shared')).toContainText('do not count toward approving');
   await expect(ask.getByTestId('preview-shared')).toContainText(note);
   await expect(ask.getByRole('button', { name: /Run the smoke test|Run it here/ })).toHaveCount(0);
+});
+
+test('the live log shows what an agent does as it happens, without its secrets, and can be filtered and paused', async ({
+  page,
+}) => {
+  const f = await createRunFixture(db);
+  const [init] = await db.select().from(initiative).where(eq(initiative.id, f.initiativeId));
+  await appendRunEvent(db, f.runId, 'engine.started', { engine: 'claude-code', model: 'sonnet' });
+  await appendRunEvent(db, f.runId, 'message', {
+    role: 'assistant',
+    text: 'Reading the design first.',
+  });
+  await appendRunEvent(db, f.runId, 'tool.call', {
+    name: 'Bash',
+    input: JSON.stringify({
+      command: 'curl -H "Authorization: Bearer abcdef0123456789xyz" https://x.test',
+    }),
+  });
+  await appendRunEvent(db, f.runId, 'tool.result', {
+    ok: true,
+    summary: 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123',
+  });
+
+  await signInAs(page, /Alice Park/);
+  await page.goto(`/#/map/${f.initiativeId}`);
+  // The Map links to the log of the initiative it shows.
+  await page.getByTestId('open-log').click();
+  await expect(page).toHaveURL(new RegExp(`#/log/${f.initiativeId}$`));
+  await expect(page.getByLabel('Initiative', { exact: true })).toHaveValue(f.initiativeId);
+  const lines = page.getByTestId('log-line');
+  await expect(lines).toHaveCount(4);
+  await expect(page.getByTestId('log-live')).toHaveAttribute('data-live', 'true');
+  await expect(lines.filter({ hasText: 'Reading the design first.' })).toHaveAttribute(
+    'data-kind',
+    'message',
+  );
+  await expect(lines.filter({ hasText: 'Bash' })).toHaveAttribute('data-kind', 'tool');
+  // The secrets a tool printed are not on the page.
+  const text = await page.getByTestId('log-view').innerText();
+  expect(text).not.toContain('abcdef0123456789xyz');
+  expect(text).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123');
+  expect(text).toContain('[redacted]');
+
+  // A new step arrives by itself.
+  await appendRunEvent(db, f.runId, 'file.changed', { path: 'src/server.js', tool: 'Write' });
+  await expect(lines.filter({ hasText: 'src/server.js' })).toBeVisible({ timeout: 10_000 });
+
+  // Filters and search.
+  await page.getByRole('button', { name: 'Messages' }).click();
+  await expect(lines.filter({ hasText: 'Reading the design first.' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Messages' }).click();
+  await page.getByLabel('Search the log').fill('server.js');
+  await expect(lines).toHaveCount(1);
+  await page.getByLabel('Search the log').fill('');
+
+  // Paused, nothing new is added. Resumed, it catches up.
+  await page.getByTestId('log-pause').click();
+  await expect(page.getByTestId('log-live')).toHaveText('Paused');
+  await appendRunEvent(db, f.runId, 'message', {
+    role: 'assistant',
+    text: 'Written while paused.',
+  });
+  await page.waitForTimeout(3500);
+  await expect(lines.filter({ hasText: 'Written while paused.' })).toHaveCount(0);
+  await page.getByTestId('log-pause').click();
+  await expect(lines.filter({ hasText: 'Written while paused.' })).toBeVisible({ timeout: 10_000 });
+
+  // Another initiative's steps are not in this one's log, and are in the log of everything.
+  const other = await createRunFixture(db);
+  await appendRunEvent(db, other.runId, 'message', { role: 'assistant', text: 'Somewhere else.' });
+  await page.waitForTimeout(3000);
+  await expect(lines.filter({ hasText: 'Somewhere else.' })).toHaveCount(0);
+  await page.getByLabel('Initiative', { exact: true }).selectOption('');
+  await expect(page).toHaveURL(/#\/log$/);
+  await expect(lines.filter({ hasText: 'Somewhere else.' })).toBeVisible();
+  void init;
 });

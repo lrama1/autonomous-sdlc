@@ -22,6 +22,7 @@ import {
   assistantReplySchema,
   assistantUsageSchema,
   mainPreviewSchema,
+  logSchema,
   readyPreviewSchema,
   smokeDiagnosisSchema,
   previewSchema,
@@ -32,6 +33,7 @@ import {
   standingDecisionSchema,
 } from '@sdlc/schemas';
 import type {
+  LogDto,
   ReadyPreviewDto,
   AnswerRequest,
   AssumptionDto,
@@ -148,6 +150,19 @@ export const getReadyPreviews = (): Promise<ReadyPreviewDto[]> =>
 
 export const markPreviewSeen = (previewId: string) =>
   call(`/api/previews/${previewId}/seen`, z.object({ id: z.string() }), { method: 'POST' });
+
+// What the agents are doing, newest last. fter is the gid of the last event already seen.
+export const getLog = (q: {
+  initiativeId?: string;
+  after?: number;
+  limit?: number;
+}): Promise<LogDto> => {
+  const p = new URLSearchParams();
+  if (q.initiativeId) p.set('initiativeId', q.initiativeId);
+  if (q.after !== undefined) p.set('after', String(q.after));
+  if (q.limit) p.set('limit', String(q.limit));
+  return call(`/api/log${p.size ? `?${p}` : ''}`, logSchema);
+};
 
 export const getMainPreview = (initiativeId: string): Promise<MainPreviewDto> =>
   call(`/api/initiatives/${initiativeId}/preview`, mainPreviewSchema);

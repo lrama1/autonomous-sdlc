@@ -8,6 +8,7 @@ import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -44,6 +45,7 @@ import { Integrations } from './Integrations';
 import { MapPage } from './MapPage';
 import { Landing, SignInCard } from './Landing';
 import { Interruptions } from './Interruptions';
+import { LogPage } from './LogPage';
 import { Queue } from './Queue';
 import { Repositories } from './Repositories';
 import { Settings } from './Settings';
@@ -65,6 +67,7 @@ type Route =
   | { page: 'queue'; openId: string | null }
   | { page: 'assumptions' }
   | { page: 'interruptions' }
+  | { page: 'log'; initiativeId: string | null }
   | { page: 'autopilot' }
   | { page: 'integrations' }
   | { page: 'repositories' }
@@ -79,6 +82,7 @@ function parseRoute(hash: string): Route {
   if (page === 'queue') return { page: 'queue', openId: id ?? null };
   if (page === 'assumptions') return { page: 'assumptions' };
   if (page === 'interruptions') return { page: 'interruptions' };
+  if (page === 'log') return { page: 'log', initiativeId: id ?? null };
   if (page === 'autopilot') return { page: 'autopilot' };
   if (page === 'integrations') return { page: 'integrations' };
   if (page === 'repositories') return { page: 'repositories' };
@@ -105,6 +109,7 @@ const NAV: Array<{ page: Route['page']; href: string; label: string; icon: React
   { page: 'home', href: '#/', label: 'Home', icon: <HomeOutlinedIcon /> },
   { page: 'portfolio', href: '#/portfolio', label: 'Portfolio', icon: <DashboardOutlinedIcon /> },
   { page: 'map', href: '#/map', label: 'Map', icon: <AccountTreeOutlinedIcon /> },
+  { page: 'log', href: '#/log', label: 'Live log', icon: <TerminalOutlinedIcon /> },
   { page: 'queue', href: '#/queue', label: 'Attention queue', icon: <InboxOutlinedIcon /> },
   {
     page: 'assumptions',
@@ -292,6 +297,9 @@ export function App() {
             <Queue openId={route.openId} />
           )}
           {state.phase === 'ready' && state.me && route.page === 'assumptions' && <Assumptions />}
+          {state.phase === 'ready' && state.me && route.page === 'log' && (
+            <LogPage initiativeId={route.initiativeId} />
+          )}
           {state.phase === 'ready' && state.me && route.page === 'interruptions' && (
             <Interruptions />
           )}

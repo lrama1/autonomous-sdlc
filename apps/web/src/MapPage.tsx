@@ -621,6 +621,16 @@ export function MapPage({
                 </option>
               ))}
             </TextField>
+            {initiativeId && !creating && (
+              <Button
+                variant="outlined"
+                href={`#/log/${initiativeId}`}
+                data-testid="open-log"
+                sx={{ height: 56, whiteSpace: 'nowrap' }}
+              >
+                Live log
+              </Button>
+            )}
             {!creating && !showForm && (
               <Button
                 variant="contained"

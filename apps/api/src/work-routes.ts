@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { agentRun, githubApp, initiative, repositoryEntry, runEvent } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { initiativeCreateSchema, repositoryCreateSchema, runCreateSchema } from '@sdlc/schemas';
-import { suggestKind } from '@sdlc/core';
+import { redactDeep, suggestKind } from '@sdlc/core';
 import { ALONGSIDE_WARNING, repositoryHasWork } from './repository-work.js';
 import { recordActivity } from './activity.js';
 import { planSpecStart } from './stages.js';
@@ -282,7 +282,7 @@ export function registerWorkRoutes(
       seq: e.seq,
       ts: e.ts.toISOString(),
       type: e.type,
-      payload: e.payload,
+      payload: redactDeep(e.payload),
     }));
   });
 

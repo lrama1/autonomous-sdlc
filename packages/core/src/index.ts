@@ -17,3 +17,4 @@ export * from './build-plan.js';
 export * from './costs.js';
 export * from './help-guide.js';
 export * from './initiative-kind.js';
+export * from './redact.js';
