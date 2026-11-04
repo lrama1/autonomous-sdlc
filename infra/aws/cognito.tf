@@ -5,7 +5,14 @@ resource "aws_cognito_user_pool" "main" {
   deletion_protection      = "INACTIVE"
 
   # People are invited by an admin. Nobody can sign themselves up.
-  admin_create_user_config { allow_admin_create_user_only = true }
+  admin_create_user_config {
+    allow_admin_create_user_only = true
+    invite_message_template {
+      email_subject = "Your Autonomous SDLC sign-in"
+      email_message = "You have been invited to Autonomous SDLC.<br><br>Open <a href=\"${local.public_url}\">${local.public_url}</a> and sign in with your email address ({username}) and this temporary password: <b>{####}</b><br><br>You will be asked to choose a new password the first time. The temporary password works for 7 days."
+      sms_message   = "Autonomous SDLC: sign in at ${local.public_url} as {username} with the temporary password {####}"
+    }
+  }
 
   password_policy {
     minimum_length    = 12

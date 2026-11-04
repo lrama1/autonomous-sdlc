@@ -82,7 +82,7 @@ In your copy, Settings, Secrets and variables, Actions:
 | ----------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | `AWS_DEPLOY_ROLE_ARN`   | variable           | the bootstrap's `deploy_role_arn` output                                                                          |
 | `TF_STATE_BUCKET`       | variable           | the bootstrap's `state_bucket` output                                                                             |
-| `BOOTSTRAP_ADMIN_EMAIL` | variable           | the email of the first person to sign in; they become the platform admin                                          |
+| `BOOTSTRAP_ADMIN_EMAIL` | variable, optional | the first admin's email, if you would rather not type it in the deploy form (step 6)                              |
 | `OPENROUTER_KEY_AGENTS` | secret             | your OpenRouter key                                                                                               |
 | `APP_DOMAIN`            | variable, optional | e.g. `app.example.com`                                                                                            |
 | `PREVIEW_DOMAIN`        | variable, optional | e.g. `previews.example.com`; must differ from `APP_DOMAIN`, so previewed code never shares the platform's cookies |
@@ -98,19 +98,25 @@ Settings, Environments, New environment, named exactly `production`. Add yoursel
 
 Actions, **deploy**, Run workflow, on `main`. Inputs:
 
-| Input                | Meaning                                                                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------- |
-| `action`             | `deploy` (default) or `destroy`                                                                     |
-| `confirm_destroy`    | to destroy, type `destroy` here; anything else refuses                                              |
-| `independent_review` | require a second person to approve (turn off to work alone)                                         |
-| `security_review`    | `on`: a pull request needs a security review before it can be approved; `off`: it does not          |
-| `agent_engine`       | `claude-code` or `copilot-cli` moves every agent to that engine; empty leaves each agent on its own |
+| Input                 | Meaning                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| `action`              | `deploy` (default) or `destroy`                                                                     |
+| `confirm_destroy`     | to destroy, type `destroy` here; anything else refuses                                              |
+| `independent_review`  | require a second person to approve (turn off to work alone)                                         |
+| `security_review`     | `on`: a pull request needs a security review before it can be approved; `off`: it does not          |
+| `agent_engine`        | `claude-code` or `copilot-cli` moves every agent to that engine; empty leaves each agent on its own |
+| `admin_email`         | the first admin: they get the admin hat and an emailed temporary password and the platform address  |
+| `admin_email_confirm` | the same address again; the run refuses to start if the two differ                                  |
 
 The run stops at "Review deployments": open the run and approve it. It then builds and pushes the platform and runner images (tagged with the commit), applies `infra/aws`, and waits for `/readyz`. A full deploy takes about 11 minutes (more with a custom domain, because of certificate validation). The run summary prints the platform and previews addresses. Deploying again later updates the same stack in place; it does not create a second one.
 
-### 7. Create the first sign-in
+### 7. Sign in as the first admin
 
-People cannot sign themselves up. An admin creates each sign-in in Amazon Cognito. Make the first one for the person in `BOOTSTRAP_ADMIN_EMAIL`, using the AWS CLI signed in to the same account (nothing else to install, and no Terraform needed):
+The deploy run has already created the first sign-in. Cognito emailed `admin_email` (or `BOOTSTRAP_ADMIN_EMAIL`) a temporary password and the platform address. Open the address, sign in with that email and the temporary password, and choose a new password when asked. That person gets the platform admin hat on first sign-in. The temporary password works for 7 days, and the email can land in spam (Cognito's built-in sender is `no-reply@verificationemail.com`).
+
+If the email never arrives, `infra/aws/invite-admin.ps1 -Email you@example.com -Resend` sends a new one to someone who has not signed in yet; pass `-PoolId` or run it where Terraform can read the stack's state, as for `create-user.ps1` below. If you mistyped the address, run **deploy** again with the right one: it is invited and gets the admin hat.
+
+People cannot sign themselves up. An admin creates every other sign-in in Amazon Cognito, using the AWS CLI signed in to the same account (nothing else to install, and no Terraform needed):
 
 ```bash
 POOL_ID=$(aws cognito-idp list-user-pools --max-results 20 --region us-east-1 \
@@ -127,7 +133,7 @@ aws cognito-idp admin-set-user-password --region us-east-1 --user-pool-id "$POOL
 
 In PowerShell, write the first line as `$POOL_ID = aws cognito-idp list-user-pools ...` and use `$POOL_ID` in place of `"$POOL_ID"`. Passwords need 12 or more characters.
 
-Then sign in at the platform address, which is printed in the deploy run's summary (or is your `APP_DOMAIN`). The `BOOTSTRAP_ADMIN_EMAIL` person gets the platform admin hat on first sign-in. Repeat the two commands for each other person. Signing in gives them no hats: [docs/ADOPTING.md](./docs/ADOPTING.md) step 6 shows how an admin gives them roles.
+The platform address is printed in the deploy run's summary (or is your `APP_DOMAIN`). Repeat the two commands for each other person. Signing in gives them no hats: [docs/ADOPTING.md](./docs/ADOPTING.md) step 6 shows how an admin gives them roles.
 
 Optional, with PowerShell and Terraform installed: `infra/aws/create-user.ps1 -Email you@example.com` does the same and generates a password. It reads the pool id from the stack's Terraform state, so run `. ./tf-init.ps1; Initialize-Terraform 'us-east-1'` once in `infra/aws` first.
 

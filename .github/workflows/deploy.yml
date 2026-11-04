@@ -30,6 +30,14 @@ on:
         type: choice
         options: ['', claude-code, copilot-cli]
         default: ''
+      admin_email:
+        description: First admin's email. They are emailed a temporary password. Empty uses the BOOTSTRAP_ADMIN_EMAIL variable
+        type: string
+        default: ''
+      admin_email_confirm:
+        description: Type the first admin's email again
+        type: string
+        default: ''
 
 permissions:
   id-token: write
@@ -48,7 +56,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      TF_VAR_bootstrap_admin_email: ${{ vars.BOOTSTRAP_ADMIN_EMAIL }}
+      ADMIN_EMAIL: ${{ inputs.admin_email || vars.BOOTSTRAP_ADMIN_EMAIL }}
+      TF_VAR_bootstrap_admin_email: ${{ inputs.admin_email || vars.BOOTSTRAP_ADMIN_EMAIL }}
       TF_VAR_openrouter_key_agents: ${{ secrets.OPENROUTER_KEY_AGENTS }}
       TF_VAR_independent_review: ${{ inputs.independent_review }}
       TF_VAR_security_review: ${{ inputs.security_review }}
@@ -64,6 +73,25 @@ jobs:
         run: |
           echo "::error::To destroy the stack, type destroy in the confirmation box."
           exit 1
+      - name: Check the admin email
+        if: inputs.action == 'deploy'
+        env:
+          TYPED: ${{ inputs.admin_email }}
+          TYPED_AGAIN: ${{ inputs.admin_email_confirm }}
+        run: |
+          if [ -n "$TYPED" ] || [ -n "$TYPED_AGAIN" ]; then
+            if [ "${TYPED,,}" != "${TYPED_AGAIN,,}" ]; then
+              echo "::error::The two admin email fields do not match."
+              exit 1
+            fi
+          fi
+          if [ -n "$ADMIN_EMAIL" ] && ! [[ "$ADMIN_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
+            echo "::error::The admin email is not a valid address."
+            exit 1
+          fi
+          if [ -z "$ADMIN_EMAIL" ]; then
+            echo "::warning::No admin email was given and the BOOTSTRAP_ADMIN_EMAIL variable is empty. On a first deployment nobody will be able to sign in as admin."
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
@@ -105,7 +133,11 @@ jobs:
                 echo "- Previews: $(terraform output -raw previews_url)"
                 echo "- Image tag: ${{ github.sha }}"
                 echo ""
-                echo "Next, by hand: create a sign-in user (infra/aws/create-user.ps1) and register the GitHub Apps at $url/admin/github."
+                if [ -n "$ADMIN_EMAIL" ]; then
+                  echo "- Admin: $ADMIN_EMAIL was emailed a temporary password (check spam; it works for 7 days)."
+                fi
+                echo ""
+                echo "Next, by hand: sign in, then register the GitHub Apps at $url/admin/github."
               } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
