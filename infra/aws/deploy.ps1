@@ -1,5 +1,5 @@
 # Deploys the stack to your AWS account. Run from this folder. Needs: Terraform, Docker, the AWS CLI, pnpm.
-#   $env:TF_VAR_bootstrap_admin_email = 'you@example.com'      # required: the first admin
+#   $env:TF_VAR_bootstrap_admin_email = 'you@example.com'      # the first admin: gets the admin hat and an emailed temporary password
 #   $env:TF_VAR_openrouter_key_agents = '<key>'                 # optional: the gateway's model key
 #   ./deploy.ps1
 # State lives in S3 (see ../bootstrap), so your machine and the Deploy workflow can manage the same stack.
@@ -38,3 +38,9 @@ Run { docker push "${runnerRepo}:$Tag" }
 # 3. Everything else.
 Run { terraform apply -input=false -auto-approve -var "image_tag=$Tag" }
 terraform output
+
+# 4. The first admin gets a sign-in and an emailed temporary password. Does nothing if they already have one.
+if ($env:TF_VAR_bootstrap_admin_email) {
+  try { & "$PSScriptRoot/invite-admin.ps1" -Email $env:TF_VAR_bootstrap_admin_email -Region $Region }
+  catch { Write-Warning "The stack is up, but the admin could not be invited: $_ Run infra/aws/invite-admin.ps1 -Email ... yourself." }
+}

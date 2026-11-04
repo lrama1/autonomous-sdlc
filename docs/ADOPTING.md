@@ -47,21 +47,23 @@ In your copy: Settings → Secrets and variables → Actions.
 
 - [ ] Variable `AWS_DEPLOY_ROLE_ARN` = the bootstrap's `deploy_role_arn`
 - [ ] Variable `TF_STATE_BUCKET` = the bootstrap's `state_bucket`
-- [ ] Variable `BOOTSTRAP_ADMIN_EMAIL` = the email of the first person to sign in. They become the platform admin.
+- [ ] **Optional:** variable `BOOTSTRAP_ADMIN_EMAIL` = the email of the first admin, if you would rather not type it in the deploy form (step 5).
 - [ ] Secret `OPENROUTER_KEY_AGENTS` = your OpenRouter key
 - [ ] **Optional, only if you use your own domain, all three or none:** variables `APP_DOMAIN`, `PREVIEW_DOMAIN` (a different name from `APP_DOMAIN`) and `HOSTED_ZONE_ID`.
 - [ ] **Create the `production` environment** (Settings, Environments): add yourself as a required reviewer and allow deployments from `main` only. The deploy job runs in this environment, and the AWS role trusts only it, so every deploy needs your approval. Required reviewers on a private repository need a paid GitHub plan; on a free plan, make the repository public first.
 
 ## 5. Deploy
 
-- [ ] Actions → **deploy** → Run workflow, on `main`. Choose `action` = `deploy`. Turn `independent_review` off if one person will approve everything.
-- [ ] Wait about 10 to 20 minutes (more with a custom domain, because of certificate validation). The run summary prints the platform address. The workflow waits for the platform to answer on `/readyz`.
+- [ ] Actions → **deploy** → Run workflow, on `main`. Choose `action` = `deploy`. Type the first admin's email in both `admin_email` fields (the run refuses if they differ). Turn `independent_review` off if one person will approve everything.
+- [ ] Wait about 10 to 20 minutes (more with a custom domain, because of certificate validation). The run summary prints the platform address. The workflow waits for the platform to answer on `/readyz`, and Cognito emails the admin a temporary password.
 
-## 6. Create sign-in users
+## 6. Sign in as the first admin
 
-People cannot sign themselves up. An admin creates each sign-in in Amazon Cognito. Find the user pool id in the AWS console (Cognito, User pools; the pool is named `sdlc-dev`) or with `aws cognito-idp list-user-pools --max-results 20 --region us-east-1 --query "UserPools[?Name=='sdlc-dev'].Id" --output text`.
+The deploy run created the first sign-in for you. Cognito emailed the address you typed in `admin_email` (or `BOOTSTRAP_ADMIN_EMAIL`) a temporary password and the platform address.
 
-- [ ] Create each person, with a password they can use at once:
+- [ ] Open the platform address and sign in with that email and the temporary password. Choose a new password (12 or more characters) when asked. The person gets the **Platform Admin** hat, which can make every decision. That is enough for a team of one.
+- [ ] No email? Check spam first: Cognito's built-in sender is `no-reply@verificationemail.com`. The temporary password works for 7 days. `infra/aws/invite-admin.ps1 -Email you@example.com -Resend -PoolId POOL_ID` sends a new one to someone who has not signed in yet. If you mistyped the address, run **deploy** again with the right one.
+- [ ] Other people cannot sign themselves up. An admin creates each sign-in in Amazon Cognito. Find the user pool id in the AWS console (Cognito, User pools; the pool is named `sdlc-dev`) or with `aws cognito-idp list-user-pools --max-results 20 --region us-east-1 --query "UserPools[?Name=='sdlc-dev'].Id" --output text`. Then, for each person, with a password they can use at once:
 
   ```bash
   aws cognito-idp admin-create-user --region us-east-1 --user-pool-id POOL_ID \
@@ -72,9 +74,8 @@ People cannot sign themselves up. An admin creates each sign-in in Amazon Cognit
     --username them@example.com --password 'A-long-password-1' --permanent
   ```
 
-  Passwords need 12 or more characters. The sign-in address is printed in the deploy run's summary, or is your `APP_DOMAIN`. If you have PowerShell and Terraform installed, `infra/aws/create-user.ps1 -Email you@example.com` (or `-UsersFile users.csv`) does the same and generates passwords; run `. ./tf-init.ps1; Initialize-Terraform 'us-east-1'` once in `infra/aws` first, because the script reads the pool id from the stack's Terraform state.
+  Passwords need 12 or more characters. If you have PowerShell and Terraform installed, `infra/aws/create-user.ps1 -Email you@example.com` (or `-UsersFile users.csv`) does the same and generates passwords; run `. ./tf-init.ps1; Initialize-Terraform 'us-east-1'` once in `infra/aws` first, because the script reads the pool id from the stack's Terraform state.
 
-- [ ] Sign in at the platform address as the `BOOTSTRAP_ADMIN_EMAIL` person. They get the **Platform Admin** hat, which can make every decision. That is enough for a team of one.
 - [ ] To give other people hats (`product_owner`, `architect`, `frontend_engineer`, `backend_engineer`, `qa`, `devops_release`, `security`), an admin calls the API. There is no page for it yet. While signed in as an admin, open the browser console on the platform and run:
 
   ```js
@@ -134,7 +135,7 @@ Then register the new repository (step 9), and create further initiatives for th
 
 ## Running costs and cleanup
 
-- [ ] Idle cost is about $3.30 a day. To stop it, run the **deploy** workflow with `action` = `destroy` and type `destroy` in `confirm_destroy`. Redeploying later gives you a new Cognito pool, so repeat steps 6 and 7.
+- [ ] Idle cost is about $3.30 a day. To stop it, run the **deploy** workflow with `action` = `destroy` and type `destroy` in `confirm_destroy`. Redeploying later gives you a new Cognito pool: the admin is invited again by the deploy, but other people (step 6) and the GitHub Apps (step 7) must be redone.
 - [ ] To remove the bootstrap as well (state bucket and deploy role), run `terraform destroy` in `infra/bootstrap`.
 - [ ] A cost alarm is not wired up yet. Set a budget in AWS Billing yourself.
 

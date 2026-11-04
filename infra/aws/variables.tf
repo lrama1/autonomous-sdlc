@@ -39,7 +39,8 @@ variable "aws_profile" {
 
 variable "bootstrap_admin_email" {
   type        = string
-  description = "The person who signs in first and gets the platform admin hat."
+  description = "The person who signs in first and gets the platform admin hat. Leave empty on later deployments."
+  default     = ""
 }
 
 variable "independent_review" {
