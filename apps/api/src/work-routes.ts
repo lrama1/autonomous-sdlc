@@ -10,6 +10,7 @@ import { recordActivity } from './activity.js';
 import { planSpecStart } from './stages.js';
 import type { LoadedAgent } from './agents.js';
 import { requirePerson } from './people.js';
+import type { RepositoryInspection } from './repo-inspection.js';
 import { RunError, cancelRun, createRun } from './runs.js';
 import type { RunRow } from './runs.js';
 
@@ -79,6 +80,8 @@ export function registerWorkRoutes(
     fullName: string;
     integrationBranch: string;
   }) => Promise<'exists' | 'missing' | 'unknown'> = async () => 'unknown',
+  /** What is in a repository, for the warning about one that looks like several apps. Null when GitHub cannot be asked, which never blocks adding it. */
+  inspectRepo: (fullName: string) => Promise<RepositoryInspection | null> = async () => null,
 ): void {
   // ---- Repository Registry (spec 6.5) ----
   app.get('/api/repositories', async (request, reply) => {
@@ -96,7 +99,7 @@ export function registerWorkRoutes(
         error: { code: 'forbidden', message: 'Only a Platform Admin edits the registry.' },
       });
     }
-    const body = repositoryCreateSchema.parse(request.body ?? {});
+    const { acknowledgeExistingCode, ...body } = repositoryCreateSchema.parse(request.body ?? {});
 
     // Both Apps must be installed on the repository before agents may use it (spec 6.6). A repository a person added to
     // an installation a moment ago is not known here yet, so look again before saying no.
@@ -135,12 +138,28 @@ export function registerWorkRoutes(
       return reply.code(409).send({
         error: { code: 'exists', message: `${body.fullName} is already in the registry.` },
       });
+
+    // A repository that looks like it holds several apps is added only by a person who has read what that means.
+    if (!acknowledgeExistingCode) {
+      const seen = await inspectRepo(body.fullName).catch(() => null);
+      if (seen?.needsAcknowledgement)
+        return reply.code(409).send({
+          error: {
+            code: 'existing_code',
+            message: `${seen.headline} ${seen.details.join(' ')} Confirm that you want to add it anyway.`,
+          },
+        });
+    }
     const [row] = await db.insert(repositoryEntry).values(body).returning();
     await recordActivity(db, {
       actorType: 'person',
       actorId: me.id,
       action: 'registry.added',
-      detail: { fullName: body.fullName, writeMode: body.writeMode },
+      detail: {
+        fullName: body.fullName,
+        writeMode: body.writeMode,
+        ...(acknowledgeExistingCode ? { acknowledgedExistingCode: true } : {}),
+      },
     });
     return reply.code(201).send(repoDto(row!));
   });

@@ -11,7 +11,9 @@ import {
   modelTestSchema,
   repositoryAvailableSchema,
   repositoryDtoSchema,
+  repositoryInspectionSchema,
   repositoryReadinessSchema,
+  repositorySetupSchema,
   healthSchema,
   integrationSchema,
   interactionSchema,
@@ -362,8 +364,17 @@ export const testModel = (model: string) =>
 export const listRegistry = () => call('/api/repositories', z.array(repositoryDtoSchema));
 export const getAvailableRepositories = (refresh: boolean) =>
   call(`/api/repositories/available${refresh ? '?refresh=1' : ''}`, repositoryAvailableSchema);
-export const registerRepository = (fullName: string) =>
-  call('/api/repositories', repositoryDtoSchema, { method: 'POST', body: { fullName } });
+export const getRepositorySetup = () => call('/api/repositories/setup', repositorySetupSchema);
+export const inspectRepository = (fullName: string) =>
+  call(
+    `/api/repositories/inspect?fullName=${encodeURIComponent(fullName)}`,
+    repositoryInspectionSchema,
+  );
+export const registerRepository = (
+  fullName: string,
+  more: { integrationBranch?: string; acknowledgeExistingCode?: boolean } = {},
+) =>
+  call('/api/repositories', repositoryDtoSchema, { method: 'POST', body: { fullName, ...more } });
 export const updateRepository = (id: string, body: RepositoryUpdate) =>
   call(`/api/repositories/${id}`, repositoryDtoSchema, { method: 'PATCH', body });
 export const createFirstCommit = (id: string) =>

@@ -9,7 +9,7 @@ export interface ReadinessCheck {
   /** Something the platform can do for the person with one click. */
   fix?: { kind: 'first_commit'; path: string; content: string; message: string };
   /** Something only the person can do, step by step. */
-  howTo?: { steps: string[]; link?: string };
+  howTo?: { steps: string[]; link?: string; linkLabel?: string };
 }
 
 /** The one file the platform writes into an empty repository so that the integration branch exists. */
@@ -45,6 +45,8 @@ export interface RepoToCheck {
 
 export interface AppState {
   kind: string;
+  /** The App's name in GitHub's addresses, for the link to its install page. */
+  slug?: string;
   installationId: number | null;
   installedOn: string[];
 }
@@ -88,8 +90,13 @@ export async function checkReadiness(
   repo: RepoToCheck,
   apps: AppState[],
   github: RepoReader,
+  githubWebUrl = 'https://github.com',
 ): Promise<ReadinessCheck[]> {
   const out: ReadinessCheck[] = [];
+  const installUrl = (kind: string) => {
+    const slug = apps.find((x) => x.kind === kind)?.slug;
+    return slug ? `${githubWebUrl.replace(/\/+$/, '')}/apps/${slug}/installations/new` : null;
+  };
 
   const missing = (['agent', 'gate'] as const).filter((kind) => {
     const a = apps.find((x) => x.kind === kind);
@@ -103,6 +110,18 @@ export async function checkReadiness(
       missing.length === 0
         ? 'The Agent App and the Gate App can both reach it.'
         : `Install the ${missing.join(' and ')} GitHub App on ${repo.fullName}, then refresh. See GitHub setup.`,
+    howTo:
+      missing.length === 0
+        ? undefined
+        : {
+            steps: missing.map((kind) =>
+              installUrl(kind)
+                ? `Open the ${kind} App's page on GitHub, add ${repo.fullName} to its repositories, and save.`
+                : `The ${kind} App is not registered yet. Open GitHub setup on this platform and register it.`,
+            ),
+            link: installUrl(missing[0]!) ?? undefined,
+            linkLabel: `Open the ${missing[0]} App on GitHub`,
+          },
   });
   const needApps = 'Needs both GitHub Apps first.';
   if (missing.length > 0) {

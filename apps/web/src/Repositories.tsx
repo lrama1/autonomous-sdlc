@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Me, RepositoryDto, RepositoryReadinessDto } from '@sdlc/schemas';
+import type {
+  Me,
+  RepositoryDto,
+  RepositoryInspectionDto,
+  RepositoryReadinessDto,
+  RepositorySetupDto,
+} from '@sdlc/schemas';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Link from '@mui/material/Link';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
@@ -17,6 +25,8 @@ import {
   createFirstCommit,
   getAvailableRepositories,
   getRepositoryReadiness,
+  getRepositorySetup,
+  inspectRepository,
   listRegistry,
   registerRepository,
   removeRepository,
@@ -44,12 +54,102 @@ const READINESS_WORD = { ok: 'Ready', problem: 'Needs attention', unknown: 'Coul
 
 const problemText = (e: unknown) => (e instanceof ApiProblem ? e.message : String(e));
 
-function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
+/** Where setup stands, in order, with the one thing to do next. Folds away to a single line once everything is connected. */
+function SetupChecklist({ setup }: { setup: RepositorySetupDto | null }) {
+  if (!setup) return null;
+  const agent = setup.apps.find((a) => a.kind === 'agent')!;
+  const gate = setup.apps.find((a) => a.kind === 'gate')!;
+  const rows: Array<{ id: string; label: string; done: boolean }> = [
+    {
+      id: 'agent-registered',
+      label: 'The Agent App is registered on GitHub',
+      done: agent.registered,
+    },
+    { id: 'gate-registered', label: 'The Gate App is registered on GitHub', done: gate.registered },
+    {
+      id: 'agent-installed',
+      label: 'The Agent App is installed on your repositories',
+      done: agent.installed,
+    },
+    {
+      id: 'gate-installed',
+      label: 'The Gate App is installed on your repositories',
+      done: gate.installed,
+    },
+    { id: 'repository', label: 'A repository is added here', done: setup.repositories > 0 },
+  ];
+  const appsDone = rows.slice(0, 4).every((r) => r.done);
+
+  if (appsDone && setup.repositories > 0) {
+    return (
+      <Alert severity="success" sx={{ mb: 2 }} data-testid="setup-done">
+        GitHub is connected: both Apps are installed on your repositories.
+      </Alert>
+    );
+  }
+
+  return (
+    <Card sx={{ mb: 2 }} data-testid="setup-checklist">
+      <CardContent>
+        <Typography component="h2" variant="h3" gutterBottom>
+          Set up GitHub
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Two GitHub Apps give the agents and the merge step separate, narrow access. You do this
+          once; after that, adding a repository takes a minute.
+        </Typography>
+        <Stack spacing={0.75} sx={{ mb: 1.5 }}>
+          {rows.map((r) => (
+            <Stack
+              key={r.id}
+              direction="row"
+              spacing={1.5}
+              sx={{ alignItems: 'center' }}
+              data-testid={`setup-${r.id}`}
+            >
+              <Box sx={{ minWidth: 110 }}>
+                <StatusChip label={r.done ? 'Done' : 'To do'} tone={r.done ? 'done' : 'wait'} />
+              </Box>
+              <Typography variant="body2">{r.label}</Typography>
+            </Stack>
+          ))}
+        </Stack>
+        {!appsDone && (
+          <>
+            <Button variant="contained" href={setup.startUrl} data-testid="setup-start">
+              {rows.slice(0, 4).some((r) => r.done) ? 'Continue the setup' : 'Set up both Apps'}
+            </Button>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              You confirm each App on GitHub, and the platform takes you from one to the next. When
+              you install them, choose “Only select repositories” and pick the same ones for both.
+            </Typography>
+          </>
+        )}
+        {appsDone && (
+          <Typography variant="body2">Both Apps are installed. Add a repository below.</Typography>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AddCard({
+  setup,
+  onAdded,
+}: {
+  setup: RepositorySetupDto | null;
+  onAdded: (fullName: string) => void;
+}) {
   const [available, setAvailable] = useState<string[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [choice, setChoice] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inspection, setInspection] = useState<RepositoryInspectionDto | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const [cannotInspect, setCannotInspect] = useState<string | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [serverAsksToConfirm, setServerAsksToConfirm] = useState(false);
 
   const look = useCallback(async (refresh: boolean) => {
     setBusy(true);
@@ -70,6 +170,28 @@ function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
     void look(false);
   }, [look]);
 
+  // Look inside the chosen repository, so nobody adds one without knowing what is in it.
+  useEffect(() => {
+    setInspection(null);
+    setCannotInspect(null);
+    setAcknowledged(false);
+    setServerAsksToConfirm(false);
+    if (!choice) return;
+    let current = true;
+    setInspecting(true);
+    inspectRepository(choice)
+      .then((r) => current && setInspection(r))
+      .catch((e: unknown) => current && setCannotInspect(problemText(e)))
+      .finally(() => current && setInspecting(false));
+    return () => {
+      current = false;
+    };
+  }, [choice]);
+
+  const needsConfirm = Boolean(inspection?.needsAcknowledgement) || serverAsksToConfirm;
+  const agent = setup?.apps.find((a) => a.kind === 'agent');
+  const gate = setup?.apps.find((a) => a.kind === 'gate');
+
   return (
     <Card
       component="form"
@@ -80,9 +202,14 @@ function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
         setBusy(true);
         setError(null);
         try {
-          await registerRepository(choice);
+          await registerRepository(choice, {
+            ...(inspection?.defaultBranch ? { integrationBranch: inspection.defaultBranch } : {}),
+            ...(needsConfirm && acknowledged ? { acknowledgeExistingCode: true } : {}),
+          });
           onAdded(choice);
         } catch (err) {
+          if (err instanceof ApiProblem && err.code === 'existing_code')
+            setServerAsksToConfirm(true);
           setError(problemText(err));
         } finally {
           setBusy(false);
@@ -94,13 +221,13 @@ function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
           Add a repository
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          The list holds the repositories both GitHub Apps are installed on. To offer another one,
-          add it to both Apps on GitHub, then choose Check GitHub again.
+          The list holds the repositories both GitHub Apps are installed on. Not in the list? Add
+          the repository to each App on GitHub, then choose Check GitHub again.
         </Typography>
         {problem && (
           <Alert severity="warning" sx={{ mb: 1.5 }}>
             {problem}{' '}
-            <Link href="/admin/github" data-testid="open-github-setup">
+            <Link href={setup?.startUrl ?? '/admin/github'} data-testid="open-github-setup">
               Open GitHub setup
             </Link>
           </Alert>
@@ -115,7 +242,12 @@ function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
             No repository is waiting to be added.
           </Typography>
         )}
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={1.5}
+          useFlexGap
+          sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+        >
           <TextField
             select
             label="Repository"
@@ -134,7 +266,7 @@ function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
           <Button
             variant="contained"
             type="submit"
-            disabled={busy || !choice}
+            disabled={busy || inspecting || !choice || (needsConfirm && !acknowledged)}
             sx={{ whiteSpace: 'nowrap' }}
           >
             Add repository
@@ -148,6 +280,81 @@ function AddCard({ onAdded }: { onAdded: (fullName: string) => void }) {
             Check GitHub again
           </Button>
         </Stack>
+        {!problem && (agent?.installUrl || gate?.installUrl) && (
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ mt: 1.5, alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Offer another repository on GitHub:
+            </Typography>
+            {agent?.installUrl && (
+              <Button
+                size="small"
+                variant="outlined"
+                component="a"
+                href={agent.installUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="install-agent"
+              >
+                Agent App
+              </Button>
+            )}
+            {gate?.installUrl && (
+              <Button
+                size="small"
+                variant="outlined"
+                component="a"
+                href={gate.installUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="install-gate"
+              >
+                Gate App
+              </Button>
+            )}
+          </Stack>
+        )}
+        {choice && inspecting && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+            Looking at {choice}…
+          </Typography>
+        )}
+        {inspection && (
+          <Alert
+            severity={inspection.needsAcknowledgement ? 'warning' : 'info'}
+            sx={{ mt: 1.5 }}
+            data-testid="inspection"
+          >
+            <b>{inspection.headline}</b>
+            <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+              {inspection.details.map((d) => (
+                <li key={d}>{d}</li>
+              ))}
+            </Box>
+          </Alert>
+        )}
+        {!inspection && cannotInspect && !inspecting && (
+          <Alert severity="info" sx={{ mt: 1.5 }} data-testid="inspection-failed">
+            {cannotInspect} You can still add it, and Check readiness will tell you what it needs.
+          </Alert>
+        )}
+        {needsConfirm && (
+          <FormControlLabel
+            sx={{ mt: 1, display: 'block' }}
+            control={
+              <Checkbox
+                checked={acknowledged}
+                onChange={(e) => setAcknowledged(e.target.checked)}
+                slotProps={{ input: { 'aria-label': 'I understand and want to add it anyway' } }}
+              />
+            }
+            label="I understand, and I want to add it anyway"
+            data-testid="acknowledge"
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -413,7 +620,7 @@ function Readiness({
                     rel="noreferrer"
                     sx={{ mt: 0.5 }}
                   >
-                    Open the rule form on GitHub
+                    {c.howTo.linkLabel ?? 'Open the rule form on GitHub'}
                   </Button>
                 )}
               </Box>
@@ -428,10 +635,13 @@ function RepoCard({
   repo,
   onChanged,
   onNote,
+  autoCheck,
 }: {
   repo: RepositoryDto;
   onChanged: () => void;
   onNote: (s: string) => void;
+  /** Look at what it still needs as soon as the card appears: it was just added. */
+  autoCheck: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [checks, setChecks] = useState<RepositoryReadinessDto['checks'] | null>(null);
@@ -450,6 +660,11 @@ function RepoCard({
       setChecking(false);
     }
   };
+
+  useEffect(() => {
+    if (autoCheck) void check();
+    // Only when the card first appears.
+  }, []);
 
   return (
     <Card sx={{ mb: 2 }} data-testid="repo-card" aria-label={repo.fullName}>
@@ -585,6 +800,8 @@ export function Repositories({ me }: { me: Me }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [addedCount, setAddedCount] = useState(0);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const [setup, setSetup] = useState<RepositorySetupDto | null>(null);
   const admin = me.roles.includes('platform_admin');
 
   const load = useCallback(async () => {
@@ -594,7 +811,9 @@ export function Repositories({ me }: { me: Me }) {
     } catch (e) {
       setError(problemText(e));
     }
-  }, []);
+    // The checklist is a nicety: if it cannot be read, the page works without it.
+    if (admin) setSetup(await getRepositorySetup().catch(() => null));
+  }, [admin]);
 
   useEffect(() => {
     void load();
@@ -621,11 +840,14 @@ export function Repositories({ me }: { me: Me }) {
           {note}
         </Alert>
       )}
+      {admin && <SetupChecklist setup={setup} />}
       {admin && (
         <AddCard
           key={addedCount}
+          setup={setup}
           onAdded={(n) => {
-            setNote(`${n} is registered. Use Check readiness to see what it still needs.`);
+            setNote(`${n} is registered. Its card below shows what it still needs.`);
+            setJustAdded(n);
             setAddedCount((c) => c + 1);
             void load();
           }}
@@ -638,7 +860,13 @@ export function Repositories({ me }: { me: Me }) {
       )}
       {rows?.map((r) =>
         admin ? (
-          <RepoCard key={r.id} repo={r} onChanged={() => void load()} onNote={setNote} />
+          <RepoCard
+            key={r.id}
+            repo={r}
+            autoCheck={r.fullName === justAdded}
+            onChanged={() => void load()}
+            onNote={setNote}
+          />
         ) : (
           <Card key={r.id} sx={{ mb: 2 }}>
             <CardContent>

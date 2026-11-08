@@ -53,6 +53,8 @@ export const repositoryCreateSchema = z.object({
   modelPolicy: repositorySettings.modelPolicy.default('any'),
   verifyCommand: repositorySettings.verifyCommand.default('npm run verify'),
   requiredCheck: repositorySettings.requiredCheck.default('verify'),
+  // Set when the person has read the warning about a repository that looks like it holds several apps.
+  acknowledgeExistingCode: z.boolean().optional(),
 });
 export type RepositoryCreate = z.infer<typeof repositoryCreateSchema>;
 
@@ -84,6 +86,40 @@ export const repositoryAvailableSchema = z.object({
 });
 export type RepositoryAvailableDto = z.infer<typeof repositoryAvailableSchema>;
 
+// Where GitHub setup stands: the two Apps, and how many repositories are registered.
+export const repositorySetupSchema = z.object({
+  apps: z.array(
+    z.object({
+      kind: z.enum(['agent', 'gate']),
+      registered: z.boolean(),
+      installed: z.boolean(),
+      installedOn: z.number().int(),
+      registerUrl: z.string(),
+      // GitHub's page for choosing which repositories the App may reach. Null until the App is registered.
+      installUrl: z.string().nullable(),
+    }),
+  ),
+  repositories: z.number().int(),
+  // Walks a person through registering and installing both Apps, one confirmation after another.
+  startUrl: z.string(),
+});
+export type RepositorySetupDto = z.infer<typeof repositorySetupSchema>;
+
+// What is in a repository, shown before it is registered.
+export const repositoryInspectionSchema = z.object({
+  shape: z.enum(['empty', 'starter', 'project', 'multi_app']),
+  defaultBranch: z.string().nullable(),
+  fileCount: z.number().int(),
+  lastCommitAt: z.string().nullable(),
+  archived: z.boolean(),
+  stacks: z.array(z.string()),
+  appFolders: z.array(z.string()),
+  needsAcknowledgement: z.boolean(),
+  headline: z.string(),
+  details: z.array(z.string()),
+});
+export type RepositoryInspectionDto = z.infer<typeof repositoryInspectionSchema>;
+
 // What a repository still needs before agents can deliver a change through it.
 export const repositoryReadinessSchema = z.object({
   checks: z.array(
@@ -100,7 +136,13 @@ export const repositoryReadinessSchema = z.object({
           message: z.string(),
         })
         .optional(),
-      howTo: z.object({ steps: z.array(z.string()), link: z.string().optional() }).optional(),
+      howTo: z
+        .object({
+          steps: z.array(z.string()),
+          link: z.string().optional(),
+          linkLabel: z.string().optional(),
+        })
+        .optional(),
     }),
   ),
 });

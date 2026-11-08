@@ -93,9 +93,9 @@ The deploy run created the first sign-in for you. Cognito emailed the address yo
 
 The platform acts on GitHub through two Apps: an **Agent App** (pushes branches, opens pull requests) and a **Gate App** (merges, and approves when a person has). The platform makes them for you.
 
-- [ ] Signed in as the admin, open `<platform address>/admin/github`.
-- [ ] Register the **Agent** App, then the **Gate** App. GitHub asks you to confirm each one, so be signed in to GitHub as the account that should own them.
-- [ ] Install each App on **only the repositories the agents may use** ("Only select repositories"). The platform refuses an install on all repositories.
+- [ ] Signed in as the admin, open **Repositories** in the left menu. The **Set up GitHub** checklist shows what is left. Choose **Set up both Apps**. (The same steps, one at a time, are at `<platform address>/admin/github`.)
+- [ ] The platform registers the **Agent** App, then the **Gate** App, then sends you to install each. GitHub asks you to confirm every step, so be signed in to GitHub as the account that should own the Apps. You land back on the Repositories page when it is done.
+- [ ] When you install each App, choose **Only select repositories** and pick the same repositories for both. The platform refuses an install on all repositories.
 - [ ] Keep the private keys where they are. The platform stores them in AWS Secrets Manager.
 
 ## 8. Prepare the repository the agents will work on
@@ -122,8 +122,9 @@ Then register the new repository (step 9), and create further initiatives for th
 
 ## 9. Register that repository in the platform
 
-- [ ] Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list and choose **Add repository**. The list holds the repositories both Apps are installed on. If yours is not there, add it to both Apps on GitHub, then choose **Check GitHub again**.
-- [ ] Choose **Check readiness** on its card. Fix anything marked **Needs attention** (a missing branch, `verify` script, or a workflow job with the required check name that runs on pull requests). **Could not tell** means GitHub could not be asked, or the verify command is not an npm script.
+- [ ] Signed in as the admin, open the **Repositories** page in the left menu. Choose the repository in the list. The list holds the repositories both Apps are installed on. If yours is not there, use the **Agent App** and **Gate App** buttons under the list to add it to each App on GitHub, then choose **Check GitHub again**.
+- [ ] Read the note the platform shows under the list: it looked inside the repository and says whether it is empty, only a README, an existing project, or looks like more than one app. **Nothing is overwritten**: agents work on branches and open pull requests, and `main` changes only when a person approves. If it looks like several apps you must tick **I understand, and I want to add it anyway** (see step 8 for splitting one out). Then choose **Add repository**.
+- [ ] **Check readiness** runs by itself on the new card; choose it again after a fix. Fix anything marked **Needs attention** (a missing branch, `verify` script, or a workflow job with the required check name that runs on pull requests). **Could not tell** means GitHub could not be asked, or the verify command is not an npm script.
 - [ ] **Edit** on the card changes the verify command, required check, protected paths, and how agents deliver.
 
 ## 10. Check that it works

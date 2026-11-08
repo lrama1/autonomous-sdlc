@@ -1009,13 +1009,21 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
         "Shown to everyone who is not a Platform Admin. Those people see only each repository's name, branch and verify command.",
       ),
       el(
+        'Set up GitHub card (Platform Admin)',
+        'A checklist shown until GitHub is connected: the Agent App and the Gate App each registered and installed, and a repository added. Each line says Done or To do. "Set up both Apps" (or "Continue the setup") walks you through registering and installing both, one confirmation on GitHub after another, then returns here. When you install them, choose "Only select repositories" and pick the same ones for both. Once both Apps are installed and a repository is added, the card folds into one green line with links to each App on GitHub, where you add more repositories.',
+      ),
+      el(
         'Add a repository card (Platform Admin)',
-        'A list of the repositories both GitHub Apps are installed on and that are not yet registered. Choose one and press Add repository. To offer another, add it to both Apps on GitHub, then choose Check GitHub again.',
+        'A list of the repositories both GitHub Apps are installed on and that are not yet registered. Choose one and press Add repository. To offer another, use the Agent App and Gate App buttons under the list (they open each App on GitHub), add the repository to both, then choose Check GitHub again.',
       ),
       el('Repository menu', 'The repositories waiting to be added. Disabled when there are none.'),
       el(
+        'What is in the repository (blue or amber note under the menu)',
+        'When you choose a repository the platform looks inside it and says what it found: empty (nothing to overwrite), only a README or licence (treated as new), an existing project (its kind, number of files and last commit), or something that looks like more than one app. Nothing is ever overwritten: agents work on branches and open pull requests, and the main branch changes only when a person approves. For an existing project the note is only information. If it looks like more than one app the note is amber and you must tick "I understand, and I want to add it anyway" before Add repository is enabled, because the platform previews and verifies one app from the repository root. If GitHub cannot be read the note says so and you can still add the repository. The repository\'s default branch is used as the integration branch.',
+      ),
+      el(
         'Add repository',
-        'Registers the chosen repository. A green bar says to use Check readiness to see what it still needs.',
+        'Registers the chosen repository and runs Check readiness on its card straight away, so the card shows what it still needs.',
       ),
       el('Check GitHub again', 'Looks at GitHub again for newly installed repositories.'),
       el(
@@ -1040,7 +1048,7 @@ export const HELP_GUIDE: Record<HelpPage, HelpScreen> = {
       ),
       el(
         'Readiness how-to steps',
-        'Numbered steps for a check the platform cannot fix itself, with a button such as "Open the rule form on GitHub".',
+        'Numbered steps for a check the platform cannot fix itself, with a button such as "Open the rule form on GitHub" or, when an App is not installed on the repository, "Open the gate App on GitHub".',
       ),
       el(
         'Edit / Close',
