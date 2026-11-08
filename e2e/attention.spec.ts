@@ -29,6 +29,15 @@ test.afterAll(async () => {
   await pool.end();
 });
 
+/** A new app opens in the wizard first. These tests are about the plain form, so go there. */
+async function plainForm(page: Page) {
+  const skip = page.getByTestId('wizard-skip');
+  const type = page.getByLabel('Type', { exact: true });
+  await expect(skip.or(type)).toBeVisible();
+  if (await skip.isVisible()) await skip.click();
+  await expect(type).toBeVisible();
+}
+
 async function signInAs(page: Page, name: RegExp) {
   await page.goto('/');
   await page.getByTestId('sign-in').click();
@@ -849,8 +858,8 @@ test('the new initiative form suggests a type from the repository, and the perso
 }) => {
   await signInAs(page, /Dev Admin/);
   await page.goto('/#/map/new');
+  await plainForm(page);
   const type = page.getByLabel('Type', { exact: true });
-  await expect(type).toBeVisible();
   // Whatever it suggests is one of the three, and choosing another sticks.
   await type.selectOption('change');
   await expect(type).toHaveValue('change');
@@ -1483,6 +1492,7 @@ test('the new initiative form is its own page, opened from the picker or a butto
   // The button opens it, and the map is gone while it is open.
   await page.getByTestId('new-initiative-button').click();
   await expect(page).toHaveURL(/#\/map\/new$/);
+  await plainForm(page);
   await expect(form).toBeVisible();
   await expect(page.getByTestId('stage-spec')).toHaveCount(0);
   await expect(page.getByLabel('Initiative', { exact: true })).toHaveValue('new');
@@ -1571,12 +1581,15 @@ test('choosing New app on a repository that already has work shows a warning, an
     .where(eq(repositoryEntry.id, f.repositoryId));
   await signInAs(page, /Dev Admin/);
   await page.goto('/#/map/new');
+  await plainForm(page);
   const form = page.locator('form', { hasText: 'New initiative' });
   await form.getByLabel('Repository').selectOption({ label: repo!.fullName });
   // The platform suggests Feature for a repository with work, so there is nothing to warn about.
   await expect(form.getByLabel('Type', { exact: true })).toHaveValue('feature');
   await expect(page.getByTestId('alongside-warning')).toHaveCount(0);
   await form.getByLabel('Type', { exact: true }).selectOption('new_app');
+  // Choosing New app opens the wizard; this test is about the plain form.
+  await page.getByTestId('wizard-skip').click();
   await expect(page.getByTestId('alongside-warning')).toContainText('already has an app');
   // Create waits for a yes: the platform cannot preview or smoke-test this app.
   const create = form.getByRole('button', { name: 'Create' });

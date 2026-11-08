@@ -639,6 +639,7 @@ describe('setting up: where it stands and what a repository holds', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.startUrl).toBe('/admin/github/start');
+    expect(body.newRepositoryUrl).toBe('https://github.com/new');
     expect(body.apps).toEqual([
       {
         kind: 'agent',
@@ -745,5 +746,66 @@ describe('setting up: where it stands and what a repository holds', () => {
     for (const fullName of [project, empty, blind]) {
       expect((await add(admin.cookie, { fullName })).statusCode).toBe(201);
     }
+  });
+});
+
+describe('is a repository ready for a new initiative', () => {
+  const check = (cookie: string | null, repoId: string) =>
+    app.inject({
+      url: `/api/repositories/${repoId}/start-check`,
+      headers: cookie ? as(cookie) : {},
+    });
+
+  it('needs a session, but any role may ask', async () => {
+    const r = await register();
+    expect((await check(null, r.id)).statusCode).toBe(401);
+    const eng = await login(['backend_engineer']);
+    expect((await check(eng.cookie, r.id)).statusCode).toBe(200);
+    expect((await check(eng.cookie, '00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+  });
+
+  it('says the branch exists, and whether anyone has worked there', async () => {
+    const name = `acme/ready-${Date.now()}`;
+    repos[name] = { branch: true };
+    await installApps({ agent: [name], gate: [name] });
+    const r = await register(name);
+    const admin = await login(['platform_admin']);
+    expect((await check(admin.cookie, r.id)).json()).toEqual({
+      branch: 'exists',
+      empty: null,
+      hasWork: false,
+      integrationBranch: 'main',
+    });
+    await db
+      .insert(initiative)
+      .values({ title: 't', goal: 'g', repositoryId: r.id, createdBy: admin.id });
+    expect((await check(admin.cookie, r.id)).json().hasWork).toBe(true);
+  });
+
+  it('tells an empty repository from one that only lacks the branch', async () => {
+    const empty = `acme/blank-${Date.now()}`;
+    const other = `acme/other-${Date.now()}`;
+    repos[empty] = { empty: true };
+    repos[other] = { branch: false };
+    await installApps({ agent: [empty, other], gate: [empty, other] });
+    const a = await register(empty);
+    const b = await register(other);
+    const admin = await login(['platform_admin']);
+    expect((await check(admin.cookie, a.id)).json()).toMatchObject({
+      branch: 'missing',
+      empty: true,
+    });
+    expect((await check(admin.cookie, b.id)).json()).toMatchObject({
+      branch: 'missing',
+      empty: false,
+    });
+  });
+
+  it('says unknown when GitHub cannot be asked, and does not fail', async () => {
+    const r = await register();
+    const admin = await login(['platform_admin']);
+    const res = await check(admin.cookie, r.id);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ branch: 'unknown', empty: null });
   });
 });

@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { githubApp, initiative, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { repositoryUpdateSchema } from '@sdlc/schemas';
-import type { RepositorySetupDto } from '@sdlc/schemas';
+import type { RepositorySetupDto, RepositoryStartCheckDto } from '@sdlc/schemas';
 import { recordActivity } from './activity.js';
 import { requirePerson } from './people.js';
 import type { Signed } from './people.js';
 import { checkReadiness, firstCommitFor } from './repo-readiness.js';
+import { repositoryHasWork } from './repository-work.js';
 import type { RepositoryInspection } from './repo-inspection.js';
 import type { RepoReader } from './repo-readiness.js';
 
@@ -75,6 +76,35 @@ export function registerRegistryRoutes(
       }),
       repositories: (await db.select({ id: repositoryEntry.id }).from(repositoryEntry)).length,
       startUrl: '/admin/github/start',
+      newRepositoryUrl: `${web}/new`,
+    };
+    return dto;
+  });
+
+  // Whether a registered repository can take a new initiative, for the New app wizard. Anyone signed in may ask.
+  app.get('/api/repositories/:id/start-check', async (request, reply) => {
+    if (!(await requirePerson(db, request, reply))) return;
+    const { id: repoId } = id.parse(request.params);
+    const [repo] = await db.select().from(repositoryEntry).where(eq(repositoryEntry.id, repoId));
+    if (!repo)
+      return reply.code(404).send({ error: { code: 'not_found', message: 'No such repository.' } });
+    let branch: RepositoryStartCheckDto['branch'] = 'unknown';
+    let empty: boolean | null = null;
+    try {
+      if (await deps.github.branchInfo(repo.fullName, repo.integrationBranch)) {
+        branch = 'exists';
+      } else {
+        branch = 'missing';
+        empty = await deps.github.isEmpty(repo.fullName);
+      }
+    } catch (e) {
+      request.log.warn({ err: e instanceof Error ? e.message : String(e) }, 'start check failed');
+    }
+    const dto: RepositoryStartCheckDto = {
+      branch,
+      empty,
+      hasWork: await repositoryHasWork(db, repo.id),
+      integrationBranch: repo.integrationBranch,
     };
     return dto;
   });
