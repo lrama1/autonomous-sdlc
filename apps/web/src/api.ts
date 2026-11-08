@@ -14,6 +14,7 @@ import {
   repositoryInspectionSchema,
   repositoryReadinessSchema,
   repositorySetupSchema,
+  repositoryStartCheckSchema,
   healthSchema,
   integrationSchema,
   interactionSchema,
@@ -365,6 +366,8 @@ export const listRegistry = () => call('/api/repositories', z.array(repositoryDt
 export const getAvailableRepositories = (refresh: boolean) =>
   call(`/api/repositories/available${refresh ? '?refresh=1' : ''}`, repositoryAvailableSchema);
 export const getRepositorySetup = () => call('/api/repositories/setup', repositorySetupSchema);
+export const getRepositoryStartCheck = (id: string) =>
+  call(`/api/repositories/${id}/start-check`, repositoryStartCheckSchema);
 export const inspectRepository = (fullName: string) =>
   call(
     `/api/repositories/inspect?fullName=${encodeURIComponent(fullName)}`,

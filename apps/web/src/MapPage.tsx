@@ -50,6 +50,7 @@ import {
 } from './api';
 import type { InitiativeMap } from './api';
 import { PipelineFlow } from './flow/PipelineFlow';
+import { NewAppWizard, clearWizardDraft } from './NewAppWizard';
 import { StageActionContext } from './flow/StageNode';
 import { activityNote } from './activity';
 import { pickInitiative } from './pickInitiative';
@@ -239,12 +240,14 @@ const EMPTY_FORM = {
   referenceLinks: '',
 };
 // What a person has typed so far. It outlives the form, so looking at another initiative does not lose it.
-let draft: { f: typeof EMPTY_FORM; kindTouched: boolean } | null = null;
+let draft: { f: typeof EMPTY_FORM; kindTouched: boolean; wizard: boolean } | null = null;
 
 function NewInitiative({
+  me,
   onCreated,
   cancelHref,
 }: {
+  me: Me;
   onCreated: (id: string) => void;
   cancelHref: string | null;
 }) {
@@ -253,22 +256,28 @@ function NewInitiative({
   // Repositories that already have work in them: a new initiative there is most likely a feature.
   const [worked, setWorked] = useState<Set<string>>(new Set());
   const [kindTouched, setKindTouched] = useState(draft?.kindTouched ?? false);
+  // A new app starts in the wizard. Skipping it, or choosing another type, leaves it for the plain form.
+  const [wizard, setWizard] = useState(draft?.wizard ?? true);
+  // Which type to suggest depends on both lists, so nothing is shown until they are in.
+  const [loaded, setLoaded] = useState({ repos: false, worked: false });
   const [problem, setProblem] = useState<string | null>(null);
   // The person has read that the platform cannot preview or smoke-test a second app in a repository.
   const [ack, setAck] = useState(false);
   const shared = f.kind === 'new_app' && worked.has(f.repositoryId);
   useEffect(() => {
-    draft = { f, kindTouched };
-  }, [f, kindTouched]);
+    draft = { f, kindTouched, wizard };
+  }, [f, kindTouched, wizard]);
 
   useEffect(() => {
-    getInitiatives().then(
-      (all) =>
-        setWorked(
-          new Set(all.map((i) => String((i as { repositoryId?: unknown }).repositoryId ?? ''))),
-        ),
-      () => {},
-    );
+    getInitiatives()
+      .then(
+        (all) =>
+          setWorked(
+            new Set(all.map((i) => String((i as { repositoryId?: unknown }).repositoryId ?? ''))),
+          ),
+        () => {},
+      )
+      .finally(() => setLoaded((x) => ({ ...x, worked: true })));
   }, []);
   useEffect(() => {
     if (kindTouched || !f.repositoryId) return;
@@ -276,14 +285,57 @@ function NewInitiative({
   }, [worked, f.repositoryId, kindTouched]);
 
   useEffect(() => {
-    getRepositories().then(
-      (r) => {
-        setRepos(r.map((x) => ({ id: x.id, fullName: x.fullName })));
-        setF((x) => ({ ...x, repositoryId: x.repositoryId || r[0]?.id || '' }));
-      },
-      () => {},
-    );
+    getRepositories()
+      .then(
+        (r) => {
+          setRepos(r.map((x) => ({ id: x.id, fullName: x.fullName })));
+          setF((x) => ({ ...x, repositoryId: x.repositoryId || r[0]?.id || '' }));
+        },
+        () => {},
+      )
+      .finally(() => setLoaded((x) => ({ ...x, repos: true })));
   }, []);
+
+  if (!loaded.repos || !loaded.worked) {
+    return (
+      <Typography color="text.secondary" sx={{ mt: 2 }}>
+        Loading…
+      </Typography>
+    );
+  }
+
+  if (f.kind === 'new_app' && wizard) {
+    return (
+      <NewAppWizard
+        me={me}
+        worked={worked}
+        cancelHref={cancelHref}
+        initial={{ repositoryId: f.repositoryId, title: f.title }}
+        onCreated={(id) => {
+          draft = null;
+          onCreated(id);
+        }}
+        onSkip={(v) => {
+          // Keep what the form already holds where the wizard has nothing to add.
+          setF((x) => ({
+            ...x,
+            repositoryId: v.repositoryId || x.repositoryId,
+            autonomyMode: v.autonomyMode,
+            autoStages: v.autoStages,
+            title: v.title.trim() ? v.title : x.title,
+            goal: v.goal.trim() ? v.goal : x.goal,
+            referenceLinks: v.referenceLinks.trim() ? v.referenceLinks : x.referenceLinks,
+          }));
+          setWizard(false);
+        }}
+        onOtherType={(kind) => {
+          setKindTouched(true);
+          setF((x) => ({ ...x, kind }));
+          setWizard(false);
+        }}
+      />
+    );
+  }
 
   return (
     <Card
@@ -299,6 +351,7 @@ function NewInitiative({
             ...(shared ? { acknowledgeSharedRepository: true } : {}),
           });
           draft = null;
+          clearWizardDraft();
           setAck(false);
           setF({ ...f, title: '', goal: '', referenceLinks: '' });
           onCreated(made.id);
@@ -311,6 +364,15 @@ function NewInitiative({
         <Typography component="h3" variant="h3" gutterBottom>
           New initiative
         </Typography>
+        {f.kind === 'new_app' && (
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            <Button size="small" onClick={() => setWizard(true)} data-testid="use-wizard">
+              Use the guided wizard
+            </Button>{' '}
+            for a new app: it checks the repository, helps you describe the app, and explains the
+            choices.
+          </Typography>
+        )}
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
             <TextField
@@ -665,6 +727,7 @@ export function MapPage({
             </Typography>
           )}
           <NewInitiative
+            me={me}
             cancelHref={creating && list.length > 0 ? '#/map' : null}
             onCreated={(id) => {
               void loadList();

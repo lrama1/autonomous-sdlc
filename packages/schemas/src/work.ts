@@ -102,8 +102,21 @@ export const repositorySetupSchema = z.object({
   repositories: z.number().int(),
   // Walks a person through registering and installing both Apps, one confirmation after another.
   startUrl: z.string(),
+  // GitHub's page for making a new repository.
+  newRepositoryUrl: z.string(),
 });
 export type RepositorySetupDto = z.infer<typeof repositorySetupSchema>;
+
+// Whether a registered repository is ready for a new initiative: asked by anyone starting one, not only an admin.
+export const repositoryStartCheckSchema = z.object({
+  branch: z.enum(['exists', 'missing', 'unknown']),
+  // When the branch is missing: whether the repository has no commits at all. Null when not asked or unknown.
+  empty: z.boolean().nullable(),
+  // Another initiative has already used this repository.
+  hasWork: z.boolean(),
+  integrationBranch: z.string(),
+});
+export type RepositoryStartCheckDto = z.infer<typeof repositoryStartCheckSchema>;
 
 // What is in a repository, shown before it is registered.
 export const repositoryInspectionSchema = z.object({

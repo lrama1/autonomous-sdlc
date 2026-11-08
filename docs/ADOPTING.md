@@ -129,7 +129,7 @@ Then register the new repository (step 9), and create further initiatives for th
 
 ## 10. Check that it works
 
-- [ ] Open the **Map** tab, create an initiative on your repository with a one-sentence goal, and start the spec.
+- [ ] Open the **Map** tab and choose **New initiative**. For a new app, follow the wizard: it checks the repository (and offers the first commit for an empty one), then asks what the app is, who it is for and what it must do. Choose **Guided** for a first app. Create it, and start the spec.
 - [ ] When the spec arrives in the **Attention queue**, approve it. Then start the design, approve it, and start the build.
 - [ ] Expect a few hard stops the first time. Agents that write `.sdlc/preview.yaml` stop at a protected path and ask you to allow it. That is by design.
 - [ ] Look at the **Costs** tab after the first run, so you know what a run costs.
