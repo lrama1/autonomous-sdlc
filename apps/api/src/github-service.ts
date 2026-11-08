@@ -5,6 +5,8 @@ import type { PreviewCandidate } from '@sdlc/core';
 import type { Db } from '@sdlc/db';
 import { GitHubError, appJwt, secretName } from './github-app.js';
 import type { AppKind, GitHubClient } from './github-app.js';
+import { describeRepository } from './repo-inspection.js';
+import type { RepositoryInspection } from './repo-inspection.js';
 import type { SecretsStore } from './secrets.js';
 
 export interface PullRequestInfo {
@@ -171,6 +173,49 @@ export class GitHubService {
     const { token } = await this.tokenFor('gate', repo);
     const r = await this.client.call<unknown[]>('GET', `/repos/${repo}/branches?per_page=1`, token);
     return Array.isArray(r) && r.length === 0;
+  }
+
+  /** What is in a repository, read before anyone registers it: empty, a project, or several apps. The Gate App reads it. */
+  async inspect(repo: string): Promise<RepositoryInspection> {
+    const { token } = await this.tokenFor('gate', repo);
+    const meta = await this.client.call<{ default_branch?: string; archived?: boolean }>(
+      'GET',
+      `/repos/${repo}`,
+      token,
+    );
+    const archived = Boolean(meta.archived);
+    if (await this.isEmpty(repo)) {
+      return describeRepository({
+        empty: true,
+        defaultBranch: null,
+        archived,
+        paths: [],
+        truncated: false,
+        lastCommitAt: null,
+      });
+    }
+    const branch = meta.default_branch ?? 'main';
+    const tree = await this.client.call<{
+      tree?: Array<{ path: string; type: string }>;
+      truncated?: boolean;
+    }>('GET', `/repos/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`, token);
+    let lastCommitAt: string | null = null;
+    try {
+      const commits = await this.client.call<
+        Array<{ commit?: { committer?: { date?: string } | null } }>
+      >('GET', `/repos/${repo}/commits?per_page=1&sha=${encodeURIComponent(branch)}`, token);
+      lastCommitAt = commits[0]?.commit?.committer?.date ?? null;
+    } catch {
+      // The date is a nicety.
+    }
+    return describeRepository({
+      empty: false,
+      defaultBranch: branch,
+      archived,
+      paths: (tree.tree ?? []).filter((e) => e.type === 'blob').map((e) => e.path),
+      truncated: Boolean(tree.truncated),
+      lastCommitAt,
+    });
   }
 
   /**

@@ -7,9 +7,11 @@ import { createDb, githubApp, repositoryEntry } from '../packages/db/src/index.t
 const DATABASE_URL = 'postgres://sdlc:sdlc@localhost:54329/sdlc';
 const { db, pool } = createDb(DATABASE_URL);
 const REPO = 'acme/e2e-registry-shop';
+const MANY = 'acme/e2e-many-apps';
 
 test.afterAll(async () => {
   await db.delete(repositoryEntry).where(eq(repositoryEntry.fullName, REPO));
+  await db.delete(repositoryEntry).where(eq(repositoryEntry.fullName, MANY));
   await db.delete(githubApp);
   await pool.end();
 });
@@ -158,4 +160,67 @@ test('an empty repository offers a first commit, shows what it writes, and says 
     `https://github.com/${NAME}/settings/rules/new?target=branch`,
   );
   await db.delete(repositoryEntry).where(eq(repositoryEntry.fullName, NAME));
+});
+
+test('the checklist shows what is left, and a repository that looks like several apps needs a tick', async ({
+  page,
+}) => {
+  await db.delete(repositoryEntry).where(eq(repositoryEntry.fullName, MANY));
+  await db.delete(githubApp);
+
+  await signInAs(page, /Dev Admin/);
+  await page.getByTestId('nav-repositories').click();
+  const checklist = page.getByTestId('setup-checklist');
+  await expect(checklist).toContainText('The Agent App is registered on GitHub');
+  await expect(page.getByTestId('setup-agent-registered')).toContainText('To do');
+  await expect(page.getByTestId('setup-start')).toHaveAttribute('href', '/admin/github/start');
+
+  for (const kind of ['agent', 'gate']) {
+    await db.insert(githubApp).values({
+      kind,
+      appId: 1,
+      slug: `${kind}-e2e`,
+      name: kind,
+      ownerLogin: 'acme',
+      htmlUrl: 'https://example.test',
+      installationId: 7,
+      installedOn: [MANY],
+    });
+  }
+  await page.route(/\/api\/repositories\/inspect/, (route) =>
+    route.fulfill({
+      json: {
+        shape: 'multi_app',
+        defaultBranch: 'main',
+        fileCount: 40,
+        lastCommitAt: '2026-11-03T12:00:00Z',
+        archived: false,
+        stacks: ['Node.js'],
+        appFolders: ['apps/blog', 'apps/shop'],
+        needsAcknowledgement: true,
+        headline: 'It looks like it holds more than one app (apps/blog, apps/shop).',
+        details: ['Nothing is overwritten: agents work on branches and open pull requests.'],
+      },
+    }),
+  );
+  await page.reload();
+  // Other repositories are already registered, so the checklist has folded into one line.
+  await expect(page.getByTestId('setup-done')).toContainText('GitHub is connected');
+  await expect(page.getByTestId('install-agent')).toHaveAttribute(
+    'href',
+    'https://github.com/apps/agent-e2e/installations/new',
+  );
+
+  const inspection = page.getByTestId('inspection');
+  await expect(inspection).toContainText('more than one app');
+  await expect(inspection).toContainText('Nothing is overwritten');
+  const add = page.getByRole('button', { name: 'Add repository' });
+  await expect(add).toBeDisabled();
+  await page.getByLabel('I understand and want to add it anyway').check();
+  await expect(add).toBeEnabled();
+  await add.click();
+  const card = page.getByTestId('repo-card').filter({ hasText: MANY });
+  await expect(card).toBeVisible();
+  // Its readiness is looked at without a click.
+  await expect(card.getByTestId('readiness')).toBeVisible();
 });

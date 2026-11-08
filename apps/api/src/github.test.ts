@@ -13,6 +13,7 @@ import type { DevDb } from '@sdlc/dev-db';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import { GitHubClient, appJwt, buildManifest, secretName } from './github-app.js';
+import { nextSetupStep } from './github-admin.js';
 import { MemorySecrets } from './secrets.js';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', {
@@ -532,5 +533,146 @@ describe('installation tokens', () => {
       permissions: { contents: 'write' },
     });
     expect(t.token).toBe('ghs_installation_token');
+  });
+});
+
+describe('setting up both Apps in one go', () => {
+  const web = 'https://github.example';
+  const row = (kind: 'agent' | 'gate', installationId: number | null = null) => ({
+    kind,
+    appId: 4242,
+    slug: `${kind}-app`,
+    name: kind,
+    ownerLogin: 'lrama1',
+    htmlUrl: 'https://github.com/apps/x',
+    installationId,
+    installedOn: installationId ? ['lrama1/sdlc-scratch'] : [],
+  });
+
+  it('plans registering both Apps first, then installing each', () => {
+    const agent = { kind: 'agent', slug: 'agent-app', installationId: null };
+    const gate = { kind: 'gate', slug: 'gate-app', installationId: null };
+    expect(nextSetupStep([], web)).toBe('/admin/github/register?kind=agent');
+    expect(nextSetupStep([gate], web)).toBe('/admin/github/register?kind=agent');
+    expect(nextSetupStep([agent], web)).toBe('/admin/github/register?kind=gate');
+    expect(nextSetupStep([agent, gate], `${web}/`)).toBe(`${web}/apps/agent-app/installations/new`);
+    expect(nextSetupStep([{ ...agent, installationId: 1 }, gate], web)).toBe(
+      `${web}/apps/gate-app/installations/new`,
+    );
+    expect(
+      nextSetupStep(
+        [
+          { ...agent, installationId: 1 },
+          { ...gate, installationId: 2 },
+        ],
+        web,
+      ),
+    ).toBeNull();
+  });
+
+  it('is for Platform Admins only', async () => {
+    const eng = await login(['backend_engineer']);
+    const res = await app.inject({ url: '/admin/github/start', headers: { cookie: eng.cookie } });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('starts at the Agent App and remembers that it is guiding', async () => {
+    const admin = await login(['platform_admin']);
+    const res = await app.inject({ url: '/admin/github/start', headers: { cookie: admin.cookie } });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('/admin/github/register?kind=agent');
+    expect(cookieValue(res, 'sdlc_gh_flow')).toBeTruthy();
+  });
+
+  it('has nothing to do when both Apps are installed', async () => {
+    await db.insert(githubApp).values([row('agent', 1), row('gate', 2)]);
+    const admin = await login(['platform_admin']);
+    const res = await app.inject({ url: '/admin/github/start', headers: { cookie: admin.cookie } });
+    expect(res.headers.location).toMatch(/^\/admin\/github\?done=/);
+    expect(cookieValue(res, 'sdlc_gh_flow')).toBeUndefined();
+  });
+
+  it('goes on to the Gate App after the Agent App is registered, only when guided', async () => {
+    const admin = await login(['platform_admin']);
+    const started = await app.inject({
+      url: '/admin/github/start',
+      headers: { cookie: admin.cookie },
+    });
+    const flow = `sdlc_gh_flow=${cookieValue(started, 'sdlc_gh_flow')}`;
+    const reg = await app.inject({
+      url: '/admin/github/register?kind=agent',
+      headers: { cookie: `${admin.cookie}; ${flow}` },
+    });
+    const state = /state=([0-9a-f]{32})/.exec(reg.body)![1]!;
+    const stateCookie = `sdlc_gh_state=${cookieValue(reg, 'sdlc_gh_state')}`;
+    const res = await app.inject({
+      url: `/admin/github/created?code=good-code&state=${state}`,
+      headers: { cookie: `${admin.cookie}; ${stateCookie}; ${flow}` },
+    });
+    expect(res.headers.location).toBe('/admin/github/register?kind=gate');
+  });
+
+  it('goes on to install the Gate App, and ends on the Repositories page when both are done', async () => {
+    await db.insert(githubApp).values([row('agent'), row('gate')]);
+    await secrets.put(secretName('agent', 'private_key'), privateKey);
+    await secrets.put(secretName('gate', 'private_key'), privateKey);
+    const admin = await login(['platform_admin']);
+    const started = await app.inject({
+      url: '/admin/github/start',
+      headers: { cookie: admin.cookie },
+    });
+    expect(started.headers.location).toBe(`${web}/apps/agent-app/installations/new`);
+    const cookie = `${admin.cookie}; sdlc_gh_flow=${cookieValue(started, 'sdlc_gh_flow')}`;
+
+    const first = await app.inject({
+      url: '/admin/github/installed?kind=agent&installation_id=777',
+      headers: { cookie },
+    });
+    expect(first.headers.location).toBe(`${web}/apps/gate-app/installations/new`);
+
+    const last = await app.inject({
+      url: '/admin/github/installed?kind=gate&installation_id=777',
+      headers: { cookie },
+    });
+    expect(last.headers.location).toBe('/#/repositories');
+  });
+
+  it('does not guide a person who did not start it', async () => {
+    await db.insert(githubApp).values([row('agent'), row('gate')]);
+    await secrets.put(secretName('agent', 'private_key'), privateKey);
+    const admin = await login(['platform_admin']);
+    const res = await app.inject({
+      url: '/admin/github/installed?kind=agent&installation_id=777',
+      headers: { cookie: admin.cookie },
+    });
+    expect(res.headers.location).toMatch(/^\/admin\/github\?done=/);
+  });
+
+  it('stops guiding when a step fails', async () => {
+    await db.insert(githubApp).values([row('agent'), row('gate')]);
+    await secrets.put(secretName('agent', 'private_key'), privateKey);
+    installation = { repository_selection: 'all' };
+    const admin = await login(['platform_admin']);
+    const started = await app.inject({
+      url: '/admin/github/start',
+      headers: { cookie: admin.cookie },
+    });
+    const res = await app.inject({
+      url: '/admin/github/installed?kind=agent&installation_id=777',
+      headers: {
+        cookie: `${admin.cookie}; sdlc_gh_flow=${cookieValue(started, 'sdlc_gh_flow')}`,
+      },
+    });
+    expect(res.headers.location).toMatch(/error=/);
+    expect(res.cookies.find((c) => c.name === 'sdlc_gh_flow')?.value).toBe('');
+  });
+
+  it('offers the guided setup on the status page only while something is left', async () => {
+    const admin = await login(['platform_admin']);
+    const before = await app.inject({ url: '/admin/github', headers: { cookie: admin.cookie } });
+    expect(before.body).toContain('Start the setup');
+    await db.insert(githubApp).values([row('agent', 1), row('gate', 2)]);
+    const after = await app.inject({ url: '/admin/github', headers: { cookie: admin.cookie } });
+    expect(after.body).not.toContain('Start the setup');
   });
 });

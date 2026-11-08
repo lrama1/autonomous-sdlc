@@ -13,7 +13,28 @@ import type { Signed } from './people.js';
 import type { SecretsStore } from './secrets.js';
 
 const STATE_COOKIE = 'sdlc_gh_state';
+// Set while a person is being walked through registering and installing both Apps in one go.
+const FLOW_COOKIE = 'sdlc_gh_flow';
 const kindSchema = z.enum(['agent', 'gate']);
+
+/**
+ * The next page of the guided setup, or null when both Apps are registered and installed: first register each App, then
+ * install each one. Every page is one GitHub confirmation.
+ */
+export function nextSetupStep(
+  apps: Array<{ kind: string; slug: string; installationId: number | null }>,
+  githubWebUrl: string,
+): string | null {
+  for (const kind of ['agent', 'gate'] as const) {
+    if (!apps.some((a) => a.kind === kind)) return `/admin/github/register?kind=${kind}`;
+  }
+  for (const kind of ['agent', 'gate'] as const) {
+    const a = apps.find((x) => x.kind === kind)!;
+    if (!a.installationId)
+      return `${githubWebUrl.replace(/\/+$/, '')}/apps/${a.slug}/installations/new`;
+  }
+  return null;
+}
 
 const esc = (s: unknown) =>
   String(s).replace(
@@ -106,6 +127,22 @@ export function registerGitHubAdminRoutes(
     return db.select().from(githubApp);
   }
 
+  const guided = (request: FastifyRequest) => {
+    const raw = request.cookies[FLOW_COOKIE];
+    const unsigned = raw ? request.unsignCookie(raw) : null;
+    return Boolean(unsigned?.valid && unsigned.value === '1');
+  };
+  const endGuided = (reply: FastifyReply) => reply.clearCookie(FLOW_COOKIE, { path: '/admin' });
+
+  /** After a step succeeded: on to the next page of the guided setup, or back to the page that lists everything. */
+  async function afterStep(request: FastifyRequest, reply: FastifyReply, done: string) {
+    if (!guided(request)) return reply.redirect('/admin/github?done=' + encodeURIComponent(done));
+    const next = nextSetupStep(await rows(), config.GITHUB_WEB_URL);
+    if (next) return reply.redirect(next);
+    endGuided(reply);
+    return reply.redirect('/#/repositories');
+  }
+
   app.get('/api/admin/github', async (request, reply) => {
     const me = await requirePerson(db, request, reply);
     if (!me) return;
@@ -146,10 +183,32 @@ export function registerGitHubAdminRoutes(
     return (await rows()).map((r) => ({ kind: r.kind, installedOn: r.installedOn }));
   });
 
+  // Registers and installs both Apps one after the other. Each page is one confirmation on GitHub.
+  app.get('/admin/github/start', async (request, reply) => {
+    const me = await requireAdmin(db, request, reply);
+    if (!me) return;
+    const next = nextSetupStep(await rows(), config.GITHUB_WEB_URL);
+    if (!next) {
+      return reply.redirect(
+        '/admin/github?done=' + encodeURIComponent('Both Apps are registered and installed.'),
+      );
+    }
+    reply.setCookie(FLOW_COOKIE, '1', {
+      signed: true,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure,
+      path: '/admin',
+      maxAge: 3600,
+    });
+    return reply.redirect(next);
+  });
+
   app.get('/admin/github', async (request, reply) => {
     const me = await requireAdmin(db, request, reply);
     if (!me) return;
     const all = await rows();
+    const unfinished = nextSetupStep(all, config.GITHUB_WEB_URL) !== null;
     const q = z
       .object({ error: z.string().optional(), done: z.string().optional() })
       .parse(request.query);
@@ -183,7 +242,11 @@ export function registerGitHubAdminRoutes(
       .send(
         page(
           'GitHub setup',
-          `<h1>GitHub setup</h1><p class="muted">Signed in as ${esc(me.displayName)}. Two GitHub Apps give agents and the merge step separate, narrow access.</p>${notice}${cards}<p><a href="/">Back</a></p>`,
+          `<h1>GitHub setup</h1><p class="muted">Signed in as ${esc(me.displayName)}. Two GitHub Apps give agents and the merge step separate, narrow access.</p>${notice}${
+            unfinished
+              ? `<div class="card"><h2>Set up both Apps in one go</h2><p class="muted">Registers the Agent App and the Gate App, then installs both. You confirm each on GitHub; the platform takes you from one to the next. When installing, choose &ldquo;Only select repositories&rdquo; and pick the same ones for both Apps.</p><a class="btn" href="/admin/github/start">Start the setup</a></div>`
+              : ''
+          }${cards}<p><a href="/#/repositories">Back to Repositories</a></p>`,
         ),
       );
   });
@@ -226,6 +289,7 @@ export function registerGitHubAdminRoutes(
     const [state, kindRaw] = (unsigned?.valid && unsigned.value ? unsigned.value : '').split('.');
     const kind = kindSchema.safeParse(kindRaw);
     if (!state || state !== q.state || !kind.success) {
+      endGuided(reply);
       return reply.redirect(
         '/admin/github?error=' +
           encodeURIComponent(
@@ -265,13 +329,12 @@ export function registerGitHubAdminRoutes(
         action: 'github.app_registered',
         detail: { kind: kind.data, slug: converted.slug, appId: converted.id },
       });
-      return reply.redirect(
-        '/admin/github?done=' + encodeURIComponent(`Registered ${converted.name}. Now install it.`),
-      );
+      return afterStep(request, reply, `Registered ${converted.name}. Now install it.`);
     } catch (e) {
       request.log.error({ err: e }, 'github manifest conversion failed');
       const msg =
         e instanceof GitHubError ? e.message : 'Could not complete the registration with GitHub.';
+      endGuided(reply);
       return reply.redirect('/admin/github?error=' + encodeURIComponent(msg));
     }
   });
@@ -285,15 +348,18 @@ export function registerGitHubAdminRoutes(
       .parse(request.query);
     const [row] = await db.select().from(githubApp).where(eq(githubApp.kind, q.kind));
     const pem = await secrets.get(secretName(q.kind, 'private_key'));
-    if (!row || !pem)
+    if (!row || !pem) {
+      endGuided(reply);
       return reply.redirect(
         '/admin/github?error=' + encodeURIComponent('That App is not registered here.'),
       );
+    }
     try {
       const jwt = appJwt(row.appId, pem);
       const inst = await github.getInstallation(jwt, q.installation_id);
       // Spec 6.6: only select repositories, never the whole account.
       if (inst.repository_selection !== 'selected') {
+        endGuided(reply);
         return reply.redirect(
           '/admin/github?error=' +
             encodeURIComponent(
@@ -320,14 +386,14 @@ export function registerGitHubAdminRoutes(
           repositories: repos.repositories.map((r) => r.full_name),
         },
       });
-      return reply.redirect(
-        '/admin/github?done=' +
-          encodeURIComponent(
-            `Installed on ${repos.repositories.length} repositor${repos.repositories.length === 1 ? 'y' : 'ies'}.`,
-          ),
+      return afterStep(
+        request,
+        reply,
+        `Installed on ${repos.repositories.length} repositor${repos.repositories.length === 1 ? 'y' : 'ies'}.`,
       );
     } catch (e) {
       request.log.error({ err: e }, 'github installation check failed');
+      endGuided(reply);
       return reply.redirect(
         '/admin/github?error=' +
           encodeURIComponent(

@@ -4,14 +4,17 @@ import { z } from 'zod';
 import { githubApp, initiative, repositoryEntry } from '@sdlc/db';
 import type { Db } from '@sdlc/db';
 import { repositoryUpdateSchema } from '@sdlc/schemas';
+import type { RepositorySetupDto } from '@sdlc/schemas';
 import { recordActivity } from './activity.js';
 import { requirePerson } from './people.js';
 import type { Signed } from './people.js';
 import { checkReadiness, firstCommitFor } from './repo-readiness.js';
+import type { RepositoryInspection } from './repo-inspection.js';
 import type { RepoReader } from './repo-readiness.js';
 
 const id = z.object({ id: z.string().uuid() });
 const refreshFlag = z.object({ refresh: z.enum(['0', '1']).optional() });
+const inspectQuery = z.object({ fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/) });
 
 /** Managing the registry from the platform's own pages. Adding a repository is in work-routes. */
 export function registerRegistryRoutes(
@@ -25,7 +28,10 @@ export function registerRegistryRoutes(
         repo: string,
         f: { branch: string; path: string; content: string; message: string },
       ): Promise<{ sha: string }>;
+      inspect(repo: string): Promise<RepositoryInspection>;
     };
+    /** Where GitHub's own pages are (for the App install links). */
+    githubWebUrl: string;
     dto: (r: typeof repositoryEntry.$inferSelect) => unknown;
   },
 ): void {
@@ -49,6 +55,45 @@ export function registerRegistryRoutes(
         request.log.warn({ err: e instanceof Error ? e.message : String(e) }, 'refresh failed'),
       );
   }
+
+  // Where setup stands, for the checklist at the top of the Repositories page.
+  app.get('/api/repositories/setup', async (request, reply) => {
+    if (!(await admin(request, reply))) return;
+    const apps = await db.select().from(githubApp);
+    const web = deps.githubWebUrl.replace(/\/+$/, '');
+    const dto: RepositorySetupDto = {
+      apps: (['agent', 'gate'] as const).map((kind) => {
+        const a = apps.find((x) => x.kind === kind);
+        return {
+          kind,
+          registered: Boolean(a),
+          installed: Boolean(a?.installationId),
+          installedOn: a?.installedOn.length ?? 0,
+          registerUrl: `/admin/github/register?kind=${kind}`,
+          installUrl: a ? `${web}/apps/${a.slug}/installations/new` : null,
+        };
+      }),
+      repositories: (await db.select({ id: repositoryEntry.id }).from(repositoryEntry)).length,
+      startUrl: '/admin/github/start',
+    };
+    return dto;
+  });
+
+  // What is in a repository, so that nobody adds one without knowing.
+  app.get('/api/repositories/inspect', async (request, reply) => {
+    if (!(await admin(request, reply))) return;
+    const { fullName } = inspectQuery.parse(request.query ?? {});
+    try {
+      return await deps.github.inspect(fullName);
+    } catch (e) {
+      return reply.code(502).send({
+        error: {
+          code: 'github_failed',
+          message: `Could not look inside ${fullName}: ${e instanceof Error ? e.message : String(e)}`,
+        },
+      });
+    }
+  });
 
   // The repositories both Apps are installed on that nobody has registered yet: what a person can pick from.
   app.get('/api/repositories/available', async (request, reply) => {
@@ -179,6 +224,6 @@ export function registerRegistryRoutes(
     if (!repo)
       return reply.code(404).send({ error: { code: 'not_found', message: 'No such repository.' } });
     const apps = await db.select().from(githubApp);
-    return { checks: await checkReadiness(repo, apps, deps.github) };
+    return { checks: await checkReadiness(repo, apps, deps.github, deps.githubWebUrl) };
   });
 }

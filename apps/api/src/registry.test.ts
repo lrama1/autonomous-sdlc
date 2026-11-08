@@ -39,6 +39,10 @@ interface FakeRepo {
   branch?: boolean;
   protected?: boolean;
   files?: Record<string, string>;
+  /** Every path in the repository, when the test needs more than the files it reads. */
+  tree?: string[];
+  defaultBranch?: string;
+  archived?: boolean;
 }
 const repos: Record<string, FakeRepo> = {};
 let puts: Array<{ auth: string | null; path: string; body: Record<string, unknown> }> = [];
@@ -58,12 +62,21 @@ class FakeGitHub extends GitHubClient {
       tokenAsks.push((body ?? {}) as Record<string, unknown>);
       return { token: 'tok', expires_at: '2099-01-01T00:00:00Z' } as T;
     }
-    const m = /^\/repos\/([^/]+\/[^/]+)\/(.*)$/.exec(path);
+    const m = /^\/repos\/([^/]+\/[^/]+)(?:\/(.*))?$/.exec(path);
     if (!m) throw new GitHubError(404, `unexpected ${method} ${path}`);
     const r = repos[m[1]!];
-    const rest = m[2]!;
+    const rest = m[2] ?? '';
     if (!r) throw new GitHubError(404, 'Not Found');
     const [route, query = ''] = rest.split('?');
+    if (method === 'GET' && route === '')
+      return { default_branch: r.defaultBranch ?? 'main', archived: Boolean(r.archived) } as T;
+    if (method === 'GET' && route!.startsWith('git/trees/'))
+      return {
+        tree: (r.tree ?? Object.keys(r.files ?? {})).map((p) => ({ path: p, type: 'blob' })),
+        truncated: false,
+      } as T;
+    if (method === 'GET' && route === 'commits')
+      return [{ commit: { committer: { date: '2026-11-03T12:00:00Z' } } }] as T;
     if (method === 'GET' && route!.startsWith('branches/')) {
       if (r.empty || !r.branch) throw new GitHubError(404, 'Branch not found');
       return { commit: { sha: 'abcdef1234567' }, protected: Boolean(r.protected) } as T;
@@ -494,6 +507,31 @@ describe('the readiness checks', () => {
     expect(checks[0]!.detail).not.toContain('agent and');
   });
 
+  it('links to the install page of the first App that lacks the repository', async () => {
+    const checks = await checkReadiness(
+      repo,
+      [
+        { ...both[0]!, slug: 'agent-app' },
+        { kind: 'gate', slug: 'gate-app', installationId: 2, installedOn: ['acme/other'] },
+      ],
+      fake({}),
+      'https://github.example/',
+    );
+    expect(checks[0]!.howTo).toEqual({
+      steps: [expect.stringContaining('gate App')],
+      link: 'https://github.example/apps/gate-app/installations/new',
+      linkLabel: 'Open the gate App on GitHub',
+    });
+  });
+
+  it('offers no link for an App that is not registered, and none when both are installed', async () => {
+    const unregistered = await checkReadiness(repo, [both[0]!], fake({}));
+    expect(unregistered[0]!.howTo?.link).toBeUndefined();
+    expect(unregistered[0]!.howTo?.steps[0]).toContain('not registered yet');
+    const fine = await checkReadiness(repo, both, fake({}));
+    expect(fine[0]!.howTo).toBeUndefined();
+  });
+
   it('tells an empty repository from one that only lacks the branch', async () => {
     const empty = await checkReadiness(repo, both, fake({}, { branch: false, empty: true }));
     expect(empty.find((c) => c.id === 'branch')).toMatchObject({
@@ -574,5 +612,138 @@ ${job}`;
     expect(scriptOf('yarn run test:all')).toBe('test:all');
     expect(scriptOf('make check')).toBeNull();
     expect(scriptOf('npm run verify && echo hi')).toBeNull();
+  });
+});
+
+describe('setting up: where it stands and what a repository holds', () => {
+  const setup = (cookie: string) =>
+    app.inject({ url: '/api/repositories/setup', headers: as(cookie) });
+  const inspect = (cookie: string, fullName: string) =>
+    app.inject({
+      url: `/api/repositories/inspect?fullName=${encodeURIComponent(fullName)}`,
+      headers: as(cookie),
+    });
+  const add = (cookie: string, payload: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: '/api/repositories', headers: as(cookie), payload });
+
+  it('is for a Platform Admin only', async () => {
+    expect((await app.inject('/api/repositories/setup')).statusCode).toBe(401);
+    const eng = await login(['backend_engineer']);
+    expect((await setup(eng.cookie)).statusCode).toBe(403);
+    expect((await inspect(eng.cookie, 'acme/x')).statusCode).toBe(403);
+  });
+
+  it('says nothing is registered or installed on a fresh platform', async () => {
+    const admin = await login(['platform_admin']);
+    const res = await setup(admin.cookie);
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.startUrl).toBe('/admin/github/start');
+    expect(body.apps).toEqual([
+      {
+        kind: 'agent',
+        registered: false,
+        installed: false,
+        installedOn: 0,
+        registerUrl: '/admin/github/register?kind=agent',
+        installUrl: null,
+      },
+      {
+        kind: 'gate',
+        registered: false,
+        installed: false,
+        installedOn: 0,
+        registerUrl: '/admin/github/register?kind=gate',
+        installUrl: null,
+      },
+    ]);
+  });
+
+  it('gives each registered App an install link, and counts what is installed and registered', async () => {
+    await installApps({ agent: ['acme/a', 'acme/b'], gate: ['acme/a'] });
+    const before = (await db.select().from(repositoryEntry)).length;
+    const admin = await login(['platform_admin']);
+    const body = (await setup(admin.cookie)).json();
+    expect(body.apps[0]).toMatchObject({
+      kind: 'agent',
+      registered: true,
+      installed: true,
+      installedOn: 2,
+      installUrl: 'https://github.com/apps/agent-app/installations/new',
+    });
+    expect(body.apps[1]).toMatchObject({ kind: 'gate', installedOn: 1 });
+    expect(body.repositories).toBe(before);
+  });
+
+  it('describes an empty repository, an ordinary project, and one that looks like several apps', async () => {
+    await installApps({ agent: [], gate: [] });
+    repos['acme/empty'] = { empty: true };
+    repos['acme/project'] = { tree: ['package.json', 'src/a.ts'], defaultBranch: 'master' };
+    repos['acme/many'] = { tree: ['apps/a/package.json', 'apps/b/package.json'] };
+    const admin = await login(['platform_admin']);
+    const names = ['acme/empty', 'acme/project', 'acme/many'];
+    await installApps({ agent: names, gate: names });
+
+    const empty = (await inspect(admin.cookie, 'acme/empty')).json();
+    expect(empty).toMatchObject({ shape: 'empty', needsAcknowledgement: false });
+    const project = (await inspect(admin.cookie, 'acme/project')).json();
+    expect(project).toMatchObject({
+      shape: 'project',
+      defaultBranch: 'master',
+      stacks: ['Node.js'],
+      needsAcknowledgement: false,
+    });
+    const many = (await inspect(admin.cookie, 'acme/many')).json();
+    expect(many).toMatchObject({ shape: 'multi_app', needsAcknowledgement: true });
+    expect(many.appFolders).toEqual(['apps/a', 'apps/b']);
+  });
+
+  it('says so when it cannot look inside a repository', async () => {
+    const admin = await login(['platform_admin']);
+    const res = await inspect(admin.cookie, 'acme/not-installed');
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error.code).toBe('github_failed');
+  });
+
+  it('refuses a repository that looks like several apps until the person confirms', async () => {
+    const name = `acme/many-${Date.now()}`;
+    repos[name] = { tree: ['apps/a/package.json', 'apps/b/package.json'] };
+    await installApps({ agent: [name], gate: [name] });
+    const admin = await login(['platform_admin']);
+
+    const refused = await add(admin.cookie, { fullName: name });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe('existing_code');
+    expect(refused.json().error.message).toContain('more than one app');
+    expect(
+      await db.select().from(repositoryEntry).where(eq(repositoryEntry.fullName, name)),
+    ).toHaveLength(0);
+
+    const ok = await add(admin.cookie, { fullName: name, acknowledgeExistingCode: true });
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json()).not.toHaveProperty('acknowledgeExistingCode');
+    const events = await db
+      .select()
+      .from(activityEvent)
+      .where(eq(activityEvent.action, 'registry.added'));
+    expect(
+      events.some(
+        (e) => (e.detail as { acknowledgedExistingCode?: boolean }).acknowledgedExistingCode,
+      ),
+    ).toBe(true);
+  });
+
+  it('adds an ordinary project, an empty repository, and one it cannot look inside, without asking', async () => {
+    const project = `acme/proj-${Date.now()}`;
+    const empty = `acme/empty-${Date.now()}`;
+    const blind = `acme/blind-${Date.now()}`;
+    repos[project] = { tree: ['package.json', 'src/a.ts'] };
+    repos[empty] = { empty: true };
+    // `blind` is unknown to the fake GitHub, so looking inside it fails.
+    await installApps({ agent: [project, empty, blind], gate: [project, empty, blind] });
+    const admin = await login(['platform_admin']);
+    for (const fullName of [project, empty, blind]) {
+      expect((await add(admin.cookie, { fullName })).statusCode).toBe(201);
+    }
   });
 });
